@@ -1,0 +1,59 @@
+import { Controller, Get, Patch, Body, UseGuards } from '@nestjs/common';
+import { SchoolProfileService } from './school-profile.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+
+@Controller('school')
+export class SchoolProfileController {
+  constructor(private readonly schoolProfileService: SchoolProfileService) {}
+
+  @Get('home')
+  async getForHome() {
+    const profile = await this.schoolProfileService.getProfile();
+    if (!profile) {
+      return { ok: true, school: null };
+    }
+    return {
+      ok: true,
+      school: {
+        id: profile.id,
+        name: profile.name,
+        slogan: profile.slogan ?? null,
+        domain: profile.domain ?? null,
+        logo_url: profile.logo_url ?? null,
+        primary_color: profile.primary_color,
+        secondary_color: profile.secondary_color,
+        active: profile.active,
+      },
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('profile')
+  async updateProfile(
+    @Body()
+    body: {
+      name?: string;
+      slogan?: string;
+      domain?: string;
+      logo_url?: string | null;
+      primary_color?: string;
+      secondary_color?: string;
+      active?: boolean;
+    },
+  ) {
+    const profile = await this.schoolProfileService.updateProfile(body);
+    return {
+      ok: true,
+      school: {
+        id: profile.id,
+        name: profile.name,
+        slogan: profile.slogan ?? null,
+        domain: profile.domain ?? null,
+        logo_url: profile.logo_url ?? null,
+        primary_color: profile.primary_color,
+        secondary_color: profile.secondary_color,
+        active: profile.active,
+      },
+    };
+  }
+}

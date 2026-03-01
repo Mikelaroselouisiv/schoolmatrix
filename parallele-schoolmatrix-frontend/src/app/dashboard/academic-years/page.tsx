@@ -1,0 +1,426 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { fetchWithAuth } from "@/src/lib/api";
+
+type AcademicYear = {
+  id: string;
+  name: string;
+  start_date: string | null;
+  end_date: string | null;
+  active: boolean;
+};
+
+type Period = {
+  id: string;
+  name: string;
+  order_index: number;
+  academic_year_id: string;
+  academic_year_name?: string;
+};
+
+export default function AcademicYearsPage() {
+  const [years, setYears] = useState<AcademicYear[]>([]);
+  const [periods, setPeriods] = useState<Period[]>([]);
+  const [selectedYearId, setSelectedYearId] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const [showYearForm, setShowYearForm] = useState(false);
+  const [editingYear, setEditingYear] = useState<AcademicYear | null>(null);
+  const [yearName, setYearName] = useState("");
+  const [yearStart, setYearStart] = useState("");
+  const [yearEnd, setYearEnd] = useState("");
+  const [yearActive, setYearActive] = useState(true);
+  const [savingYear, setSavingYear] = useState(false);
+
+  const [showPeriodForm, setShowPeriodForm] = useState(false);
+  const [editingPeriod, setEditingPeriod] = useState<Period | null>(null);
+  const [periodName, setPeriodName] = useState("");
+  const [periodOrder, setPeriodOrder] = useState(0);
+  const [savingPeriod, setSavingPeriod] = useState(false);
+
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
+
+  async function loadYears() {
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/academic-years`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      setYears(data.academic_years ?? []);
+      if (!selectedYearId && (data.academic_years?.length ?? 0) > 0) {
+        setSelectedYearId(data.academic_years[0].id);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    }
+  }
+
+  async function loadPeriods() {
+    if (!selectedYearId) {
+      setPeriods([]);
+      return;
+    }
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/periods?academic_year_id=${selectedYearId}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      setPeriods(data.periods ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    }
+  }
+
+  async function load() {
+    setLoading(true);
+    await loadYears();
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  useEffect(() => {
+    loadPeriods();
+  }, [selectedYearId]);
+
+  async function handleYearSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingYear(true);
+    setError("");
+    try {
+      const body = {
+        name: yearName.trim(),
+        start_date: yearStart || undefined,
+        end_date: yearEnd || undefined,
+        active: yearActive,
+      };
+      if (editingYear) {
+        const res = await fetchWithAuth(`${API_BASE}/academic-years/${editingYear.id}`, {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Erreur");
+      } else {
+        const res = await fetchWithAuth(`${API_BASE}/academic-years`, {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Erreur");
+      }
+      setShowYearForm(false);
+      setEditingYear(null);
+      setYearName("");
+      setYearStart("");
+      setYearEnd("");
+      setYearActive(true);
+      await loadYears();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setSavingYear(false);
+    }
+  }
+
+  async function handleYearDelete(id: string) {
+    if (!confirm("Supprimer cette annee scolaire et ses periodes ?")) return;
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/academic-years/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || "Erreur");
+      }
+      if (selectedYearId === id) setSelectedYearId("");
+      await loadYears();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    }
+  }
+
+  async function handlePeriodSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedYearId) return;
+    setSavingPeriod(true);
+    setError("");
+    try {
+      const body = editingPeriod
+        ? { name: periodName.trim(), order_index: periodOrder }
+        : { academic_year_id: selectedYearId, name: periodName.trim(), order_index: periodOrder };
+      if (editingPeriod) {
+        const res = await fetchWithAuth(`${API_BASE}/periods/${editingPeriod.id}`, {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Erreur");
+      } else {
+        const res = await fetchWithAuth(`${API_BASE}/periods`, {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Erreur");
+      }
+      setShowPeriodForm(false);
+      setEditingPeriod(null);
+      setPeriodName("");
+      setPeriodOrder(periods.length);
+      await loadPeriods();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setSavingPeriod(false);
+    }
+  }
+
+  async function handlePeriodDelete(id: string) {
+    if (!confirm("Supprimer cette periode ?")) return;
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/periods/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || "Erreur");
+      }
+      await loadPeriods();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    }
+  }
+
+  function openYearEdit(y: AcademicYear) {
+    setEditingYear(y);
+    setYearName(y.name);
+    setYearStart(y.start_date ?? "");
+    setYearEnd(y.end_date ?? "");
+    setYearActive(y.active);
+    setShowYearForm(true);
+  }
+
+  function openYearCreate() {
+    setEditingYear(null);
+    setYearName("");
+    setYearStart("");
+    setYearEnd("");
+    setYearActive(true);
+    setShowYearForm(true);
+  }
+
+  function openPeriodEdit(p: Period) {
+    setEditingPeriod(p);
+    setPeriodName(p.name);
+    setPeriodOrder(p.order_index);
+    setShowPeriodForm(true);
+  }
+
+  function openPeriodCreate() {
+    setEditingPeriod(null);
+    setPeriodName("");
+    setPeriodOrder(periods.length);
+    setShowPeriodForm(true);
+  }
+
+  if (loading) return <div className="animate-pulse text-slate-500">Chargement...</div>;
+
+  const selectedYear = years.find((y) => y.id === selectedYearId);
+
+  return (
+    <div className="space-y-8">
+      <h2 className="text-2xl font-bold text-slate-900">Années et périodes</h2>
+
+      {error && <div className="p-3 rounded-lg bg-red-50 text-red-600 text-sm">{error}</div>}
+
+      {/* Années scolaires */}
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <h3 className="text-lg font-semibold text-slate-900">Années scolaires</h3>
+          <button onClick={openYearCreate} className="app-btn-primary text-sm py-2">
+            Ajouter une année
+          </button>
+        </div>
+
+        {showYearForm && (
+          <form onSubmit={handleYearSubmit} className="p-5 rounded-xl border border-[var(--app-border)] bg-white space-y-4 max-w-lg">
+            <h4 className="font-semibold text-slate-900">{editingYear ? "Modifier" : "Nouvelle année"}</h4>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Nom</label>
+              <input
+                type="text"
+                value={yearName}
+                onChange={(e) => setYearName(e.target.value)}
+                placeholder="2024-2025"
+                className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40"
+                required
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Début</label>
+                <input
+                  type="date"
+                  value={yearStart}
+                  onChange={(e) => setYearStart(e.target.value)}
+                  className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Fin</label>
+                <input
+                  type="date"
+                  value={yearEnd}
+                  onChange={(e) => setYearEnd(e.target.value)}
+                  className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                id="yearActive"
+                type="checkbox"
+                checked={yearActive}
+                onChange={(e) => setYearActive(e.target.checked)}
+                className="rounded border-slate-300 text-[var(--school-accent-1)]"
+              />
+              <label htmlFor="yearActive" className="text-sm text-slate-700">Année active</label>
+            </div>
+            <div className="flex gap-3">
+              <button type="submit" disabled={savingYear} className="app-btn-primary disabled:opacity-60 text-sm py-2">
+                {savingYear ? "Enregistrement..." : "Enregistrer"}
+              </button>
+              <button type="button" onClick={() => { setShowYearForm(false); setEditingYear(null); }} className="app-btn-secondary text-sm py-2">Annuler</button>
+            </div>
+          </form>
+        )}
+
+        <div className="overflow-x-auto rounded-xl border border-[var(--app-border)]">
+          <table className="w-full text-left">
+            <thead className="bg-slate-50 border-b border-[var(--app-border)]">
+              <tr>
+                <th className="px-4 py-3 font-medium text-slate-900">Nom</th>
+                <th className="px-4 py-3 font-medium text-slate-900">Début</th>
+                <th className="px-4 py-3 font-medium text-slate-900">Fin</th>
+                <th className="px-4 py-3 font-medium text-slate-900">Statut</th>
+                <th className="px-4 py-3 font-medium text-slate-900 w-32">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {years.length === 0 ? (
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">Aucune année</td></tr>
+              ) : (
+                years.map((y) => (
+                  <tr
+                    key={y.id}
+                    className={`border-b border-[var(--app-border)] hover:bg-slate-50/50 cursor-pointer ${selectedYearId === y.id ? "bg-slate-50" : ""}`}
+                    onClick={() => setSelectedYearId(y.id)}
+                  >
+                    <td className="px-4 py-3 font-medium text-slate-900">{y.name}</td>
+                    <td className="px-4 py-3 text-slate-600">{y.start_date ?? "-"}</td>
+                    <td className="px-4 py-3 text-slate-600">{y.end_date ?? "-"}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${y.active ? "bg-green-100 text-green-800" : "bg-slate-100 text-slate-600"}`}>
+                        {y.active ? "Actif" : "Inactif"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 flex gap-2" onClick={(ev) => ev.stopPropagation()}>
+                      <button onClick={() => openYearEdit(y)} className="text-sm text-[var(--school-accent-1)] hover:underline">Modifier</button>
+                      <button onClick={() => handleYearDelete(y.id)} className="text-sm text-red-600 hover:underline">Supprimer</button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Périodes */}
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <h3 className="text-lg font-semibold text-slate-900">
+            Périodes {selectedYear ? `(${selectedYear.name})` : ""}
+          </h3>
+          {selectedYearId && (
+            <button onClick={openPeriodCreate} className="app-btn-primary text-sm py-2">
+              Ajouter une période
+            </button>
+          )}
+        </div>
+
+        {!selectedYearId ? (
+          <p className="text-slate-500 text-sm">Sélectionnez une année scolaire ci-dessus pour gérer ses périodes.</p>
+        ) : (
+          <>
+            {showPeriodForm && (
+              <form onSubmit={handlePeriodSubmit} className="p-5 rounded-xl border border-[var(--app-border)] bg-white space-y-4 max-w-md">
+                <h4 className="font-semibold text-slate-900">{editingPeriod ? "Modifier" : "Nouvelle période"}</h4>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Nom</label>
+                  <input
+                    type="text"
+                    value={periodName}
+                    onChange={(e) => setPeriodName(e.target.value)}
+                    placeholder="Trimestre 1"
+                    className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Ordre</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={periodOrder}
+                    onChange={(e) => setPeriodOrder(parseInt(e.target.value, 10) || 0)}
+                    className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40"
+                  />
+                </div>
+                <div className="flex gap-3">
+                  <button type="submit" disabled={savingPeriod} className="app-btn-primary disabled:opacity-60 text-sm py-2">
+                    {savingPeriod ? "Enregistrement..." : "Enregistrer"}
+                  </button>
+                  <button type="button" onClick={() => { setShowPeriodForm(false); setEditingPeriod(null); }} className="app-btn-secondary text-sm py-2">Annuler</button>
+                </div>
+              </form>
+            )}
+
+            <div className="overflow-x-auto rounded-xl border border-[var(--app-border)]">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50 border-b border-[var(--app-border)]">
+                  <tr>
+                    <th className="px-4 py-3 font-medium text-slate-900">Ordre</th>
+                    <th className="px-4 py-3 font-medium text-slate-900">Nom</th>
+                    <th className="px-4 py-3 font-medium text-slate-900 w-32">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {periods.length === 0 ? (
+                    <tr><td colSpan={3} className="px-4 py-8 text-center text-slate-500">Aucune période</td></tr>
+                  ) : (
+                    [...periods]
+                      .sort((a, b) => a.order_index - b.order_index)
+                      .map((p) => (
+                        <tr key={p.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
+                          <td className="px-4 py-3 text-slate-600">{p.order_index}</td>
+                          <td className="px-4 py-3 font-medium text-slate-900">{p.name}</td>
+                          <td className="px-4 py-3 flex gap-2">
+                            <button onClick={() => openPeriodEdit(p)} className="text-sm text-[var(--school-accent-1)] hover:underline">Modifier</button>
+                            <button onClick={() => handlePeriodDelete(p.id)} className="text-sm text-red-600 hover:underline">Supprimer</button>
+                          </td>
+                        </tr>
+                      ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </section>
+    </div>
+  );
+}

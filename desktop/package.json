@@ -1,0 +1,32 @@
+{
+  "name": "parallele-schoolmatrix-desktop",
+  "version": "1.0.0",
+  "description": "Application desktop Electron pour Parallele SchoolMatrix",
+  "main": "main.js",
+  "author": "Parallele SchoolMatrix",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win"
+  },
+  "build": {
+    "appId": "com.parallele.schoolmatrix",
+    "productName": "Parallele SchoolMatrix",
+    "directories": {
+      "output": "dist"
+    },
+    "files": ["main.js", "App logo.png", "package.json"],
+    "win": {
+      "target": "nsis",
+      "icon": "App logo.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "electron": "^28.3.3",
+    "electron-builder": "^25.0.0"
+  }
+}

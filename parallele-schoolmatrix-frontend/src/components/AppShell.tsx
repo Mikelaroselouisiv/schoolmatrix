@@ -1,0 +1,286 @@
+"use client";
+
+import { useEffect } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { useSchoolProfileOptional } from "@/src/contexts/SchoolProfileContext";
+import { getImageUrl } from "@/src/lib/api";
+import { getBreadcrumbSegments } from "@/src/lib/breadcrumb";
+import {
+  DASHBOARD_NAV,
+  canAccessPath,
+  canAccessSchoolProfile,
+  SCHOOL_NAV,
+  USERS_NAV,
+  ROLES_FULL,
+} from "@/src/lib/dashboardRoles";
+
+function canSeeNavItem(roleName: string, allowedRoles: string[]): boolean {
+  if (allowedRoles.length === 0) return true;
+  return allowedRoles.includes(roleName);
+}
+
+function getNavItemsByBlock(roleName: string) {
+  const config: typeof DASHBOARD_NAV[0][] = [];
+  const management: typeof DASHBOARD_NAV[0][] = [];
+  const fiche: typeof DASHBOARD_NAV[0][] = [];
+
+  for (const item of DASHBOARD_NAV) {
+    if (item.href === "/dashboard") continue;
+    if (!canSeeNavItem(roleName, item.allowedRoles)) continue;
+    if (item.block === "configuration") config.push(item);
+    else if (item.block === "management") management.push(item);
+    else if (item.block === "fiche") fiche.push(item);
+  }
+
+  const special: { href: string; label: string }[] = [];
+  if (ROLES_FULL.includes(roleName)) special.push(USERS_NAV);
+  if (canAccessSchoolProfile(roleName)) special.push(SCHOOL_NAV);
+
+  return { config, management, fiche, special };
+}
+export function AppShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const ctx = useSchoolProfileOptional();
+  const school = ctx?.school ?? null;
+  const user = ctx?.user ?? null;
+  const roleName = ctx?.roleName ?? "";
+  const segments = getBreadcrumbSegments(pathname);
+
+  const { config, management, fiche, special } = getNavItemsByBlock(roleName);
+  const allMainItems = [...config, ...management, ...fiche];
+
+  // Redirection si l’utilisateur accède à une URL non autorisée pour son rôle
+  useEffect(() => {
+    if (ctx?.loading || !roleName) return;
+    if (!canAccessPath(roleName, pathname)) {
+      router.replace("/dashboard?message=access_denied");
+    }
+  }, [ctx?.loading, roleName, pathname, router]);
+
+  return (
+    <div className="min-h-screen flex flex-col" style={{ background: "var(--app-bg-gradient)" }}>
+      {/* En-tête : logo + nom de l'école, dégradé pâle (uniquement les deux couleurs de l'école) */}
+      <header
+        className="app-shell-header border-b border-[var(--app-border)] shadow-sm"
+        style={{ background: "var(--app-bg-gradient)" }}
+      >
+        <div className="app-container flex items-center justify-between gap-4 py-4">
+          <div className="flex items-center gap-5">
+            <div className="app-header-logo flex-shrink-0">
+              {getImageUrl(school?.logo_url ?? undefined) ? (
+                <img
+                  src={getImageUrl(school?.logo_url ?? undefined)!}
+                  alt=""
+                  className="h-20 w-20 sm:h-24 sm:w-24 object-contain max-w-[theme(spacing.24)]"
+                />
+              ) : (
+                <div className="flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center rounded-xl text-3xl sm:text-4xl font-bold text-slate-600 bg-slate-100/80 text-slate-500">
+                  {school?.name?.charAt(0) ?? "É"}
+                </div>
+              )}
+            </div>
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 uppercase">
+                {school?.name ?? "Parallele SchoolMatrix"}
+              </h1>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            {user ? (
+              <>
+                <div className="text-right hidden sm:block">
+                  <div className="text-sm font-medium text-slate-900 leading-tight">
+                    {user.first_name?.trim() || "—"}
+                  </div>
+                  <div className="text-sm font-medium text-slate-900 uppercase leading-tight">
+                    {user.last_name?.trim() || "—"}
+                  </div>
+                </div>
+                <Link
+                  href="/"
+                  className="app-btn-secondary text-sm py-2"
+                >
+                  Accueil
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => {
+                    localStorage.removeItem("token");
+                    window.location.href = "/login";
+                  }}
+                  className="app-btn-secondary text-sm py-2"
+                >
+                  Déconnexion
+                </button>
+              </>
+            ) : (
+              <>
+                <Link href="/login" className="app-btn-secondary text-sm py-2">
+                  Connexion
+                </Link>
+                <Link href="/signup" className="app-btn-primary text-sm py-2">
+                  Créer un compte
+                </Link>
+              </>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* Barre de menu : blocs Configuration | Management | Fiche élève | Zone spéciale (Gestion) */}
+      <nav className="app-shell-nav border-b border-[var(--app-border)] bg-[var(--app-surface)]">
+        <div className="app-container flex items-stretch gap-0">
+          <div className="flex gap-0.5 overflow-x-auto scrollbar-thin py-0 min-w-0 flex-1">
+            {/* Bloc Configuration */}
+            {config.map((item) => {
+              const isActive =
+                pathname === item.href || pathname.startsWith(item.href + "/");
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`
+                    relative px-3 py-3.5 text-sm font-medium whitespace-nowrap transition-all duration-200
+                    ${isActive ? "text-slate-900" : "text-slate-600 hover:text-slate-900"}
+                  `}
+                >
+                  {item.label}
+                  {isActive && (
+                    <span
+                      className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full"
+                      style={{ backgroundColor: "var(--school-accent-1)" }}
+                    />
+                  )}
+                </Link>
+              );
+            })}
+            {config.length > 0 && management.length > 0 && (
+              <span className="flex-shrink-0 w-px self-center h-5 bg-slate-200 mx-1" aria-hidden />
+            )}
+            {/* Bloc Management (vie étudiante) */}
+            {management.map((item) => {
+              const isActive =
+                pathname === item.href || pathname.startsWith(item.href + "/");
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`
+                    relative px-3 py-3.5 text-sm font-medium whitespace-nowrap transition-all duration-200
+                    ${isActive ? "text-slate-900" : "text-slate-600 hover:text-slate-900"}
+                  `}
+                >
+                  {item.label}
+                  {isActive && (
+                    <span
+                      className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full"
+                      style={{ backgroundColor: "var(--school-accent-1)" }}
+                    />
+                  )}
+                </Link>
+              );
+            })}
+            {(config.length > 0 || management.length > 0) && fiche.length > 0 && (
+              <span className="flex-shrink-0 w-px self-center h-5 bg-slate-200 mx-1" aria-hidden />
+            )}
+            {/* Bloc Fiche élève - dominant */}
+            {fiche.map((item) => {
+              const isActive =
+                pathname === item.href || pathname.startsWith(item.href + "/");
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`
+                    relative px-4 py-3.5 text-sm font-semibold whitespace-nowrap transition-all duration-200
+                    rounded-lg
+                    ${isActive
+                      ? "text-slate-900 bg-slate-100"
+                      : "text-slate-700 hover:text-slate-900 hover:bg-slate-50"}
+                  `}
+                >
+                  {item.label}
+                  {isActive && (
+                    <span
+                      className="absolute bottom-1.5 left-2 right-2 h-0.5 rounded-full"
+                      style={{ backgroundColor: "var(--school-accent-1)" }}
+                    />
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+          {/* Zone spéciale : Gestion Utilisateurs + Gestion établissement */}
+          {special.length > 0 && (
+            <div
+              className="flex items-center gap-1 border-l-2 border-[var(--app-border)] pl-4 ml-2 flex-shrink-0 bg-slate-50/80 rounded-r-lg pr-2"
+              style={{ borderLeftColor: "var(--school-accent-1)" }}
+            >
+              {special.map((item) => {
+                const isActive =
+                  pathname === item.href || pathname.startsWith(item.href + "/");
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`
+                      relative px-4 py-3 text-sm font-medium whitespace-nowrap transition-all duration-200
+                      rounded-lg
+                      ${isActive
+                        ? "text-slate-900 bg-white shadow-sm"
+                        : "text-slate-700 hover:text-slate-900 hover:bg-white/80"}
+                    `}
+                  >
+                    {item.label}
+                    {isActive && (
+                      <span
+                        className="absolute bottom-1.5 left-2 right-2 h-0.5 rounded-full"
+                        style={{ backgroundColor: "var(--school-accent-1)" }}
+                      />
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </nav>
+
+      {/* Fil d'Ariane */}
+      {segments.length > 0 && (
+        <div className="app-breadcrumb border-b border-[var(--app-border)] bg-[var(--app-surface)]/80">
+          <div className="app-container py-2.5">
+            <ol className="flex flex-wrap items-center gap-1.5 text-sm text-slate-600">
+              {segments.map((seg, i) => (
+                <li key={seg.href} className="flex items-center gap-1.5">
+                  {i > 0 && (
+                    <span className="text-slate-400 select-none" aria-hidden>
+                      /
+                    </span>
+                  )}
+                  {i === segments.length - 1 ? (
+                    <span className="font-medium text-slate-900">{seg.label}</span>
+                  ) : (
+                    <Link
+                      href={seg.href}
+                      className="hover:text-slate-900 transition-colors"
+                    >
+                      {seg.label}
+                    </Link>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </div>
+        </div>
+      )}
+
+      {/* Zone de travail */}
+      <main className="flex-1 app-container py-6 sm:py-8">
+        {children}
+      </main>
+    </div>
+  );
+}

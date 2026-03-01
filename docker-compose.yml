@@ -1,0 +1,47 @@
+# PROD uniquement - Lancer : docker compose up -d
+# Port 5432, volume pgdata_prod (pas de conflit avec dev)
+services:
+  db:
+    image: postgres:16
+    container_name: schoolmatrix_db
+    environment:
+      POSTGRES_USER: schoolmatrix
+      POSTGRES_PASSWORD: schoolmatrix
+      POSTGRES_DB: schoolmatrix
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata_prod:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: ./parallele-schoolmatrix-backend
+    container_name: schoolmatrix_api
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://schoolmatrix:schoolmatrix@db:5432/schoolmatrix
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: schoolmatrix
+      DB_PASS: schoolmatrix
+      DB_NAME: schoolmatrix
+      JWT_SECRET: change_me
+    depends_on:
+      - db
+    ports:
+      - "3000:3000"
+
+  web:
+    build:
+      context: ./parallele-schoolmatrix-frontend
+    container_name: schoolmatrix_web
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:3000
+    depends_on:
+      - api
+    ports:
+      - "3001:3001"
+
+volumes:
+  pgdata_prod:

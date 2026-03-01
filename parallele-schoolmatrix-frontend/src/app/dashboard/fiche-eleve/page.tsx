@@ -1,0 +1,522 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
+import { fetchWithAuth, getImageUrl } from "@/src/lib/api";
+
+type Student = {
+  id: string;
+  order_number: string | null;
+  first_name: string;
+  last_name: string;
+  phone: string | null;
+  email: string | null;
+  photo_identity_student: string | null;
+  photo_identity_mother: string | null;
+  photo_identity_father: string | null;
+  photo_identity_responsible: string | null;
+  mother_name: string | null;
+  mother_phone: string | null;
+  father_name: string | null;
+  father_phone: string | null;
+  responsible_name: string | null;
+  responsible_phone: string | null;
+  class_id: string;
+  class_name: string;
+  is_preschool?: boolean;
+};
+
+type ClassItem = { id: string; name: string };
+
+type AcademicYear = { id: string; name: string };
+
+type DisciplineSummary = {
+  student_id: string;
+  student_name: string;
+  class_name: string;
+  disciplinary_points: number;
+  lateness_count: number;
+  absence_count: number;
+  latest_measure: { id: string; label: string; color?: string; reason?: string } | null;
+  points_history?: { date: string | null; points: number }[];
+};
+
+type PaymentByService = {
+  service_id: string;
+  service_name: string;
+  amount_due: number;
+  total_paid: number;
+  balance: number;
+};
+
+type PaymentStatus = {
+  academic_year: string;
+  by_service: PaymentByService[];
+  transactions?: { amount_due: number; amount_paid: number; payment_date: string }[];
+};
+
+type GradeSubject = {
+  subject_id: string;
+  subject_name: string;
+  periods: { period_id: string; period_name: string; order_index: number; coefficient: number; grade_value: number }[];
+};
+
+type ExamResults = {
+  academic_year_id: string;
+  academic_year_name: string | null;
+  periods: { id: string; name: string; order_index: number }[];
+  subjects: GradeSubject[];
+};
+
+type FormationStudent = {
+  id: string;
+  first_name: string;
+  last_name: string;
+  order_number: string | null;
+  decision: string | null;
+  average: number | null;
+  assignment_id: string | null;
+};
+
+const DECISION_LABELS: Record<string, string> = {
+  ADMIS: "Admis",
+  REDOUBLER: "Redoubler",
+  RENVOYE: "Renvoyé",
+  EXPELLED: "Exclu",
+};
+
+export default function FicheElevePage() {
+  const searchParams = useSearchParams();
+  const initialStudentId = searchParams.get("student_id") ?? "";
+
+  const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [students, setStudents] = useState<{ id: string; order_number: string | null; first_name: string; last_name: string; class_id: string }[]>([]);
+  const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
+  const [selectedClassId, setSelectedClassId] = useState("");
+  const [selectedStudentId, setSelectedStudentId] = useState(initialStudentId);
+  const [selectedYearId, setSelectedYearId] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [student, setStudent] = useState<Student | null>(null);
+  const [discipline, setDiscipline] = useState<DisciplineSummary | null>(null);
+  const [payment, setPayment] = useState<PaymentStatus | null>(null);
+  const [examResults, setExamResults] = useState<ExamResults | null>(null);
+  const [formationDecision, setFormationDecision] = useState<FormationStudent | null>(null);
+  const [error, setError] = useState("");
+
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
+
+  const loadClasses = useCallback(async () => {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/classes`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      setClasses(data.classes ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    }
+  }, [API_BASE]);
+
+  const loadAcademicYears = useCallback(async () => {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/academic-years`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      const years = data.academic_years ?? [];
+      setAcademicYears(years);
+      if (!selectedYearId && years.length > 0) setSelectedYearId(years[0].id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    }
+  }, [API_BASE, selectedYearId]);
+
+  const loadStudents = useCallback(async (classId: string) => {
+    if (!classId) {
+      setStudents([]);
+      return;
+    }
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/students?class_id=${classId}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      setStudents(data.students ?? []);
+      const list = data.students ?? [];
+      if (selectedStudentId && !list.some((s: { id: string }) => s.id === selectedStudentId)) {
+        setSelectedStudentId("");
+      }
+    } catch (e) {
+      setStudents([]);
+    }
+  }, [API_BASE, selectedStudentId]);
+
+  useEffect(() => {
+    async function init() {
+      setLoading(true);
+      await Promise.all([loadClasses(), loadAcademicYears()]);
+      setLoading(false);
+    }
+    init();
+  }, [loadClasses, loadAcademicYears]);
+
+  useEffect(() => {
+    loadStudents(selectedClassId);
+  }, [selectedClassId, loadStudents]);
+
+  useEffect(() => {
+    if (initialStudentId) {
+      setSelectedStudentId(initialStudentId);
+    }
+  }, [initialStudentId]);
+
+  const loadStudentData = useCallback(async (studentId: string) => {
+    if (!studentId) {
+      setStudent(null);
+      setDiscipline(null);
+      setPayment(null);
+      setExamResults(null);
+      setFormationDecision(null);
+      return;
+    }
+    setError("");
+    const yearName = selectedYearId ? academicYears.find((y) => y.id === selectedYearId)?.name : undefined;
+    const paymentUrl = yearName
+      ? `${API_BASE}/economat/student-payment-status/${studentId}?academic_year=${encodeURIComponent(yearName)}`
+      : `${API_BASE}/economat/student-payment-status/${studentId}`;
+    try {
+      const [studentRes, disciplineRes, paymentRes] = await Promise.all([
+        fetchWithAuth(`${API_BASE}/students/${studentId}`),
+        fetchWithAuth(`${API_BASE}/discipline/student-summary/${studentId}`),
+        fetchWithAuth(paymentUrl),
+      ]);
+      const studentData = await studentRes.json();
+      const disciplineData = await disciplineRes.json();
+      const paymentData = await paymentRes.json();
+
+      if (!studentRes.ok) throw new Error(studentData.message || "Erreur élève");
+      const sData = studentData.student;
+      setStudent(sData);
+      if (sData?.class_id) setSelectedClassId(sData.class_id);
+
+      if (disciplineRes.ok) setDiscipline(disciplineData);
+      else setDiscipline(null);
+
+      if (paymentRes.ok) setPayment({ academic_year: paymentData.academic_year, by_service: paymentData.by_service ?? [], transactions: paymentData.transactions });
+      else setPayment(null);
+
+      if (sData?.class_id && selectedYearId) {
+        const [examRes, formationRes] = await Promise.all([
+          fetchWithAuth(`${API_BASE}/grades/student-exam-results?student_id=${studentId}&academic_year_id=${selectedYearId}`),
+          fetchWithAuth(`${API_BASE}/formation-classe/students?academic_year_id=${selectedYearId}&class_id=${sData.class_id}`),
+        ]);
+        const examData = await examRes.json();
+        const formationData = await formationRes.json();
+        if (examRes.ok && examData.periods) setExamResults(examData);
+        else setExamResults(null);
+        const formationList = formationData.students ?? [];
+        const fs = formationList.find((f: FormationStudent) => f.id === studentId);
+        setFormationDecision(fs ?? null);
+      } else {
+        setExamResults(null);
+        setFormationDecision(null);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+      setStudent(null);
+      setDiscipline(null);
+      setPayment(null);
+      setExamResults(null);
+      setFormationDecision(null);
+    }
+  }, [API_BASE, selectedYearId, academicYears]);
+
+  useEffect(() => {
+    loadStudentData(selectedStudentId);
+  }, [selectedStudentId, loadStudentData]);
+
+  const handleYearChange = (yearId: string) => {
+    setSelectedYearId(yearId);
+    if (selectedStudentId && student?.class_id) {
+      Promise.all([
+        fetchWithAuth(`${API_BASE}/grades/student-exam-results?student_id=${selectedStudentId}&academic_year_id=${yearId}`),
+        fetchWithAuth(`${API_BASE}/formation-classe/students?academic_year_id=${yearId}&class_id=${student.class_id}`),
+      ]).then(async ([examRes, formationRes]) => {
+        const examData = await examRes.json();
+        const formationData = await formationRes.json();
+        if (examRes.ok && examData.periods) setExamResults(examData);
+        else setExamResults(null);
+        const fs = (formationData.students ?? []).find((f: FormationStudent) => f.id === selectedStudentId);
+        setFormationDecision(fs ?? null);
+      });
+      const yearName = academicYears.find((y) => y.id === yearId)?.name;
+      if (yearName) {
+        fetchWithAuth(`${API_BASE}/economat/student-payment-status/${selectedStudentId}?academic_year=${yearName}`)
+          .then((r) => r.json())
+          .then((d) => setPayment({ academic_year: d.academic_year ?? yearName, by_service: d.by_service ?? [], transactions: d.transactions }));
+      }
+    }
+  };
+
+  if (loading) {
+    return <div className="animate-pulse text-slate-500 p-8">Chargement...</div>;
+  }
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-slate-900">Fiche élève</h2>
+
+      {/* Sélecteur élève */}
+      <div className="flex flex-wrap gap-4 items-end p-4 rounded-xl border border-[var(--app-border)] bg-white">
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Classe</label>
+          <select
+            value={selectedClassId}
+            onChange={(e) => {
+              setSelectedClassId(e.target.value);
+              setSelectedStudentId("");
+            }}
+            className="border border-[var(--app-border)] rounded-lg px-3 py-2 min-w-[180px]"
+          >
+            <option value="">— Sélectionner —</option>
+            {classes.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Élève</label>
+          <select
+            value={selectedStudentId}
+            onChange={(e) => setSelectedStudentId(e.target.value)}
+            className="border border-[var(--app-border)] rounded-lg px-3 py-2 min-w-[220px]"
+          >
+            <option value="">— Sélectionner —</option>
+            {students.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.order_number ? `${s.order_number} — ` : ""}{s.first_name} {s.last_name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {error && <div className="p-3 rounded-lg bg-red-50 text-red-600 text-sm">{error}</div>}
+
+      {!student ? (
+        <div className="p-12 rounded-xl border border-[var(--app-border)] bg-slate-50/50 text-center text-slate-500">
+          Sélectionnez une classe puis un élève pour afficher sa fiche.
+        </div>
+      ) : (
+        <>
+          {/* En-tête : photo enfant, nom, téléphone */}
+          <div className="flex flex-wrap gap-6 p-6 rounded-xl border border-[var(--app-border)] bg-white">
+            <div className="flex items-center gap-4">
+              <div className="w-24 h-24 rounded-xl overflow-hidden bg-slate-100 border border-[var(--app-border)] flex-shrink-0">
+                {getImageUrl(student.photo_identity_student) ? (
+                  <img src={getImageUrl(student.photo_identity_student)!} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-3xl text-slate-400">👤</div>
+                )}
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-slate-900">
+                  {student.first_name} {student.last_name}
+                </h3>
+                <p className="text-slate-600 font-mono text-sm">{student.order_number ?? "—"}</p>
+                <p className="text-slate-700 mt-1">
+                  <span className="font-medium">Tél. :</span> {student.phone ?? student.email ?? "—"}
+                </p>
+                <p className="text-slate-500 text-sm">{student.class_name}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Parents : minimal (photo, nom, tél) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {[
+              { label: "Mère", name: student.mother_name, phone: student.mother_phone, photo: student.photo_identity_mother },
+              { label: "Père", name: student.father_name, phone: student.father_phone, photo: student.photo_identity_father },
+              { label: "Responsable", name: student.responsible_name, phone: student.responsible_phone, photo: student.photo_identity_responsible },
+            ].map((p) => (
+              <div key={p.label} className="flex items-center gap-3 p-4 rounded-xl border border-[var(--app-border)] bg-slate-50/50">
+                <div className="w-12 h-12 rounded-lg overflow-hidden bg-slate-200 flex-shrink-0">
+                  {getImageUrl(p.photo) ? (
+                    <img src={getImageUrl(p.photo)!} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-lg text-slate-400">👤</div>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs text-slate-500 font-medium">{p.label}</p>
+                  <p className="font-medium text-slate-900 truncate">{p.name ?? "—"}</p>
+                  <p className="text-sm text-slate-600 truncate">{p.phone ?? "—"}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Blocs moniteurs : Discipline + Paiement */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Situation disciplinaire */}
+            <div className="rounded-xl border border-[var(--app-border)] bg-white overflow-hidden">
+              <div className="px-4 py-3 bg-slate-50 border-b border-[var(--app-border)] font-semibold text-slate-900">
+                Situation disciplinaire
+              </div>
+              <div className="p-4">
+                {discipline ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-4">
+                      <div className="text-3xl font-bold text-slate-900">{discipline.disciplinary_points}</div>
+                      <span className="text-slate-600">points</span>
+                    </div>
+                    <div className="flex flex-wrap gap-4 text-sm">
+                      <span className="text-slate-600">Retards : <strong>{discipline.lateness_count}</strong></span>
+                      <span className="text-slate-600">Absences : <strong>{discipline.absence_count}</strong></span>
+                    </div>
+                    {discipline.latest_measure && (
+                      <div
+                        className="inline-block px-3 py-1.5 rounded-lg text-sm font-medium"
+                        style={{ backgroundColor: discipline.latest_measure.color ? `${discipline.latest_measure.color}20` : "rgb(241 245 249)", color: discipline.latest_measure.color ?? "#64748b" }}
+                      >
+                        {discipline.latest_measure.label}
+                        {discipline.latest_measure.reason && ` — ${discipline.latest_measure.reason}`}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-slate-500 text-sm">Aucune donnée disciplinaire.</p>
+                )}
+              </div>
+            </div>
+
+            {/* Situation de paiement */}
+            <div className="rounded-xl border border-[var(--app-border)] bg-white overflow-hidden">
+              <div className="px-4 py-3 bg-slate-50 border-b border-[var(--app-border)] font-semibold text-slate-900 flex items-center justify-between">
+                <span>Situation de paiement</span>
+                {academicYears.length > 0 && (
+                  <select
+                    value={selectedYearId || academicYears[0]?.id}
+                    onChange={(e) => handleYearChange(e.target.value)}
+                    className="text-sm border border-[var(--app-border)] rounded px-2 py-1"
+                  >
+                    {academicYears.map((y) => (
+                      <option key={y.id} value={y.id}>{y.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              <div className="p-4">
+                {payment && payment.by_service?.length > 0 ? (
+                  <div className="space-y-3">
+                    {payment.by_service.map((svc) => (
+                      <div key={svc.service_id} className="flex justify-between items-center text-sm">
+                        <span className="font-medium text-slate-700">{svc.service_name}</span>
+                        <div className="text-right">
+                          <span className="text-slate-600">Dû : {svc.amount_due}</span>
+                          <span className="mx-2 text-slate-400">|</span>
+                          <span className="text-slate-600">Payé : {svc.total_paid}</span>
+                          <span className={`ml-2 font-semibold ${svc.balance > 0 ? "text-amber-600" : "text-green-600"}`}>
+                            Solde : {svc.balance}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-slate-500 text-sm">Aucune donnée de paiement pour cette année.</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Carnet de notes : périodes, matières, moyennes, décisions */}
+          <div className="rounded-xl border border-[var(--app-border)] bg-white overflow-hidden">
+            <div className="px-4 py-3 bg-slate-50 border-b border-[var(--app-border)] font-semibold text-slate-900 flex flex-wrap items-center justify-between gap-3">
+              <span>Carnet de notes</span>
+              <select
+                value={selectedYearId || academicYears[0]?.id}
+                onChange={(e) => handleYearChange(e.target.value)}
+                className="text-sm border border-[var(--app-border)] rounded-lg px-3 py-2"
+              >
+                {academicYears.map((y) => (
+                  <option key={y.id} value={y.id}>{y.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="p-4 overflow-x-auto">
+              {examResults && examResults.subjects?.length > 0 ? (
+                <div className="space-y-4">
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr>
+                        <th className="text-left py-2 px-2 font-medium text-slate-700 border-b border-[var(--app-border)]">Matière</th>
+                        {examResults.periods?.map((p) => (
+                          <th key={p.id} className="py-2 px-2 font-medium text-slate-700 border-b border-[var(--app-border)] text-center">
+                            {p.name}
+                          </th>
+                        ))}
+                        <th className="py-2 px-2 font-medium text-slate-700 border-b border-[var(--app-border)] text-center">Moy. mat.</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {examResults.subjects.map((subj) => {
+                        const grades = subj.periods || [];
+                        const totalCoef = grades.reduce((s, g) => s + g.coefficient, 0);
+                        const weightedSum = grades.reduce((s, g) => s + (g.grade_value || 0) * g.coefficient, 0);
+                        const moyMat = totalCoef > 0 ? Math.round((weightedSum / totalCoef) * 100) / 100 : null;
+                        return (
+                          <tr key={subj.subject_id} className="border-b border-[var(--app-border)] last:border-b-0">
+                            <td className="py-2 px-2 font-medium text-slate-900">{subj.subject_name}</td>
+                            {examResults.periods?.map((p) => {
+                              const g = grades.find((gr) => gr.period_id === p.id);
+                              return (
+                                <td key={p.id} className="py-2 px-2 text-center">
+                                  {g?.grade_value != null ? g.grade_value : "—"}
+                                </td>
+                              );
+                            })}
+                            <td className="py-2 px-2 text-center font-medium">
+                              {moyMat != null ? moyMat.toFixed(2) : "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+
+                  {/* Moyenne générale + Décision fin d'année */}
+                  <div className="flex flex-wrap gap-6 mt-6 pt-4 border-t border-[var(--app-border)]">
+                    {formationDecision?.average != null && (
+                      <div>
+                        <span className="text-slate-600 text-sm">Moyenne générale : </span>
+                        <span className="font-bold text-lg text-slate-900">{Number(formationDecision.average).toFixed(2)}</span>
+                      </div>
+                    )}
+                    {formationDecision?.decision && (
+                      <div>
+                        <span className="text-slate-600 text-sm">Décision : </span>
+                        <span
+                          className={`inline-block px-3 py-1 rounded-lg font-semibold text-sm ${
+                            formationDecision.decision === "ADMIS"
+                              ? "bg-green-100 text-green-800"
+                              : formationDecision.decision === "REDOUBLER"
+                                ? "bg-amber-100 text-amber-800"
+                                : formationDecision.decision === "RENVOYE" || formationDecision.decision === "EXPELLED"
+                                  ? "bg-red-100 text-red-800"
+                                  : "bg-slate-100 text-slate-700"
+                          }`}
+                        >
+                          {DECISION_LABELS[formationDecision.decision] ?? formationDecision.decision}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-slate-500 text-sm">Aucune note pour cette année. Sélectionnez une autre année ou assurez-vous que les notes sont saisies.</p>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

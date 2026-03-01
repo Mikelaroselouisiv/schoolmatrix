@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+:root {
+  --app-bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  --app-surface: #ffffff;
+  --app-border: #e2e8f0;
+  --school-accent-1: #0f766e;
+  --school-accent-2: #0d9488;
+}
+
+.app-container {
+  max-width: 80rem;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+.app-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: white;
+  background-color: var(--school-accent-1);
+}
+
+.app-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #334155;
+  background-color: white;
+  border: 1px solid #cbd5e1;
+}

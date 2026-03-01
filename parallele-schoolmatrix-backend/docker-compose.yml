@@ -1,0 +1,15 @@
+# DEV - PostgreSQL uniquement
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: schoolmatrix-db-dev
+    environment:
+      POSTGRES_USER: schooluser
+      POSTGRES_PASSWORD: e2d17435cfee
+      POSTGRES_DB: schoolmatrix
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+volumes:
+  pgdata_dev:

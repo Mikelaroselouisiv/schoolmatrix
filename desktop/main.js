@@ -9,6 +9,9 @@ const CHECK_INTERVAL_MS = 2000;
 const MAX_WAIT_MS = 120000; // 2 minutes
 const APP_LOGO = path.join(__dirname, 'App logo.png');
 
+// Conteneurs à démarrer automatiquement (ceux affichés dans Docker Desktop pour SchoolMatrix)
+const CONTAINER_NAMES = ['schoolmatrix-db-dev', 'schoolmatrix-api', 'schoolmatrix-web'];
+
 const DEV_MODE_FLAG = process.argv.includes('--dev') || process.argv.includes('-d');
 
 function getConfigPath() {
@@ -81,7 +84,7 @@ async function askDevModeFirstTime() {
     type: 'question',
     title: 'Mode de fonctionnement',
     message: 'Utilisez-vous le frontend de développement (npm run dev) ?',
-    detail: 'Mode développement : le frontend doit déjà tourner localement. Docker ne sera pas lancé.\nMode production : Docker sera lancé si le frontend n\'est pas disponible.',
+    detail: 'Mode développement : le frontend doit déjà tourner localement (npm run dev).\nMode production : les conteneurs schoolmatrix-db-dev, schoolmatrix-api et schoolmatrix-web seront démarrés automatiquement au lancement.',
     buttons: ['Mode développement', 'Mode production (Docker)'],
     defaultId: 1,
   });
@@ -105,7 +108,7 @@ function waitForFrontend(frontendUrl, startTime = Date.now()) {
   return checkFrontendAvailable(frontendUrl).then((ok) => {
     if (ok) return true;
     if (Date.now() - startTime > MAX_WAIT_MS) {
-      throw new Error('Délai dépassé : le frontend Docker n\'est pas disponible.');
+      throw new Error('Délai dépassé : le frontend n\'est pas disponible. Vérifiez que les conteneurs schoolmatrix-web, schoolmatrix-api et schoolmatrix-db-dev tournent.');
     }
     return new Promise((r) => setTimeout(r, CHECK_INTERVAL_MS)).then(() =>
       waitForFrontend(frontendUrl, startTime)
@@ -113,19 +116,22 @@ function waitForFrontend(frontendUrl, startTime = Date.now()) {
   });
 }
 
-function startDockerCompose(projectRoot) {
+/**
+ * Démarre les conteneurs SchoolMatrix (schoolmatrix-db-dev, schoolmatrix-api, schoolmatrix-web)
+ * avant le lancement de l'app pour que le frontend soit disponible.
+ */
+function startContainers() {
   return new Promise((resolve, reject) => {
     const cmd = process.platform === 'win32' ? 'docker' : 'docker';
-    const args = ['compose', '--profile', 'prod', 'up', '-d', '--build'];
-    const env = { ...process.env, CACHEBUST: String(Date.now()) };
+    const args = ['start', ...CONTAINER_NAMES];
     const proc = spawn(cmd, args, {
-      cwd: projectRoot,
       shell: true,
-      env,
+      env: process.env,
     });
     proc.on('close', (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`docker compose a échoué (code ${code})`));
+      // 0 = tous démarrés, déjà running = 0 aussi
+      if (code === 0) return resolve();
+      reject(new Error(`Démarrage des conteneurs échoué (code ${code}). Vérifiez que ${CONTAINER_NAMES.join(', ')} existent dans Docker.`));
     });
     proc.on('error', (err) => reject(err));
   });
@@ -233,10 +239,12 @@ app.whenReady().then(async () => {
   const splash = createSplashWindow();
 
   try {
-    let ok = await checkFrontendAvailable(frontendUrl);
-
     if (cfg.devMode) {
-      // Mode développement : jamais lancer Docker
+      // Mode développement : pas de démarrage Docker, le frontend tourne en local
+      splash.webContents.executeJavaScript(
+        "document.getElementById('msg').textContent = 'Connexion au frontend local…';"
+      );
+      const ok = await checkFrontendAvailable(frontendUrl);
       if (!ok) {
         dialog.showErrorBox(
           'Frontend non disponible',
@@ -245,21 +253,17 @@ app.whenReady().then(async () => {
         app.quit();
         return;
       }
-      splash.webContents.executeJavaScript(
-        "document.getElementById('msg').textContent = 'Connexion au frontend local…';"
-      );
     } else {
-      // Mode production : lancer Docker si frontend non disponible
-      if (!ok) {
-        splash.webContents.executeJavaScript(
-          "document.getElementById('msg').textContent = 'Démarrage de Docker Compose…';"
-        );
-        await startDockerCompose(projectRoot);
-        splash.webContents.executeJavaScript(
-          "document.getElementById('msg').textContent = 'En attente du frontend…';"
-        );
-        await waitForFrontend(frontendUrl);
-      }
+      // Mode production : démarrer les conteneurs (schoolmatrix-db-dev, api, web) AVANT tout
+      splash.webContents.executeJavaScript(
+        "document.getElementById('msg').textContent = 'Démarrage des conteneurs SchoolMatrix…';"
+      );
+      await startContainers();
+      splash.webContents.executeJavaScript(
+        "document.getElementById('msg').textContent = 'En attente du frontend…';"
+      );
+      let ok = await checkFrontendAvailable(frontendUrl);
+      if (!ok) await waitForFrontend(frontendUrl);
     }
     createWindow(splash, frontendUrl);
   } catch (err) {

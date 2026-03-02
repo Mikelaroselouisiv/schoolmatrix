@@ -116,10 +116,12 @@ function waitForFrontend(frontendUrl, startTime = Date.now()) {
 function startDockerCompose(projectRoot) {
   return new Promise((resolve, reject) => {
     const cmd = process.platform === 'win32' ? 'docker' : 'docker';
-    const args = ['compose', 'up', '-d'];
+    const args = ['compose', '--profile', 'prod', 'up', '-d', '--build'];
+    const env = { ...process.env, CACHEBUST: String(Date.now()) };
     const proc = spawn(cmd, args, {
       cwd: projectRoot,
       shell: true,
+      env,
     });
     proc.on('close', (code) => {
       if (code === 0) resolve();

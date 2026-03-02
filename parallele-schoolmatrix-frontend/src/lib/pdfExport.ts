@@ -26,18 +26,10 @@ export type PdfSection = {
   table?: { columns: PdfColumn[]; rows: Record<string, string | number | null | undefined>[] };
 };
 
-/**
- * Exporte un tableau vers un fichier PDF (téléchargement).
- * @param config titre, sous-titre, colonnes, lignes
- * @param filename nom du fichier sans .pdf
- */
-export async function exportTableToPdf(
-  config: PdfTableConfig,
-  filename: string
-): Promise<void> {
+/** Construit le doc pour un tableau (partagé entre export et blob). */
+function buildTablePdfDoc(config: PdfTableConfig): jsPDF {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   let y = 15;
-
   if (config.title) {
     doc.setFontSize(16);
     doc.setFont("helvetica", "bold");
@@ -50,7 +42,6 @@ export async function exportTableToPdf(
     doc.text(config.subtitle, 14, y);
     y += 8;
   }
-
   const headers = config.columns.map((c) => c.header);
   const body = config.rows.map((row) =>
     config.columns.map((col) => {
@@ -58,7 +49,6 @@ export async function exportTableToPdf(
       return v === null || v === undefined ? "—" : String(v);
     })
   );
-
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (autoTable as (doc: any, options: any) => void)(doc, {
     startY: y,
@@ -70,30 +60,39 @@ export async function exportTableToPdf(
     margin: { left: 14, right: 14 },
     tableWidth: "auto",
   });
-
-  doc.save(`${filename.replace(/\.pdf$/i, "")}.pdf`);
+  return doc;
 }
 
 /**
- * Exporte plusieurs sections (titres, lignes de texte, tableaux) dans un même PDF.
- * Utile pour des rapports (ex. fiche élève : identité + paiement + notes).
+ * Exporte un tableau vers un fichier PDF (téléchargement).
+ * @param config titre, sous-titre, colonnes, lignes
+ * @param filename nom du fichier sans .pdf
  */
-export async function exportSectionsToPdf(
-  sections: PdfSection[],
-  filename: string,
-  mainTitle?: string
+export async function exportTableToPdf(
+  config: PdfTableConfig,
+  filename: string
 ): Promise<void> {
-  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-  const pageHeight = doc.getPageHeight();
-  let y = 15;
+  const doc = buildTablePdfDoc(config);
+  doc.save(`${filename.replace(/\.pdf$/i, "")}.pdf`);
+}
 
+/** Retourne le PDF (tableau) sous forme de Blob pour affichage dans un modal. */
+export async function getTablePdfBlob(config: PdfTableConfig): Promise<Blob> {
+  const doc = buildTablePdfDoc(config);
+  return doc.output("blob");
+}
+
+/** Construit le doc pour les sections (partagé entre export et blob). */
+function buildSectionsPdfDoc(sections: PdfSection[], mainTitle?: string): jsPDF {
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const pageHeight = 297; // A4 portrait height in mm
+  let y = 15;
   if (mainTitle) {
     doc.setFontSize(14);
     doc.setFont("helvetica", "bold");
     doc.text(mainTitle, 14, y);
     y += 10;
   }
-
   for (const section of sections) {
     if (y > pageHeight - 40) {
       doc.addPage();
@@ -141,6 +140,27 @@ export async function exportSectionsToPdf(
       y += 10;
     }
   }
+  return doc;
+}
 
+/**
+ * Exporte plusieurs sections (titres, lignes de texte, tableaux) dans un même PDF.
+ * Utile pour des rapports (ex. fiche élève : identité + paiement + notes).
+ */
+export async function exportSectionsToPdf(
+  sections: PdfSection[],
+  filename: string,
+  mainTitle?: string
+): Promise<void> {
+  const doc = buildSectionsPdfDoc(sections, mainTitle);
   doc.save(`${filename.replace(/\.pdf$/i, "")}.pdf`);
+}
+
+/** Retourne le PDF (sections) sous forme de Blob pour affichage dans un modal. */
+export async function getSectionsPdfBlob(
+  sections: PdfSection[],
+  mainTitle?: string
+): Promise<Blob> {
+  const doc = buildSectionsPdfDoc(sections, mainTitle);
+  return doc.output("blob");
 }

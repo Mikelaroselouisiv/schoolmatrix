@@ -1,5 +1,11 @@
-# PROD uniquement - Lancer : docker compose up -d
-# Port 5432, volume pgdata_prod (pas de conflit avec dev)
+# Une seule base, un seul volume.
+# En dev : utiliser ta base existante (schoolmatrix-db-dev sur port 5433). Ne pas lancer ce compose pour la base.
+#
+# PROD : pour que les conteneurs s'affichent et tournent dans Docker, il faut les DÉMARRER (pas seulement build).
+#   Build = crée les images. Up = crée et démarre les conteneurs (ils apparaissent dans Docker Desktop).
+#   Commande tout-en-un (build + démarrage) :
+#     docker compose --profile prod up -d --build
+#   Ou depuis PowerShell à la racine : .\start-prod.ps1
 services:
   db:
     image: postgres:16
@@ -11,15 +17,20 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - pgdata_prod:/var/lib/postgresql/data
+      - schoolmatrix_pgdata:/var/lib/postgresql/data
 
   api:
+    image: schoolmatrix-api
     build:
       context: ./parallele-schoolmatrix-backend
+      args:
+        - CACHEBUST=${CACHEBUST:-0}
     container_name: schoolmatrix_api
+    restart: unless-stopped
+    profiles:
+      - prod
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://schoolmatrix:schoolmatrix@db:5432/schoolmatrix
       DB_HOST: db
       DB_PORT: "5432"
       DB_USER: schoolmatrix
@@ -32,9 +43,15 @@ services:
       - "3000:3000"
 
   web:
+    image: schoolmatrix-web
     build:
       context: ./parallele-schoolmatrix-frontend
+      args:
+        - CACHEBUST=${CACHEBUST:-0}
     container_name: schoolmatrix_web
+    restart: unless-stopped
+    profiles:
+      - prod
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_URL: http://127.0.0.1:3000
@@ -44,4 +61,5 @@ services:
       - "3001:3001"
 
 volumes:
-  pgdata_prod:
+  # Pour réutiliser les données de l'ancien volume pgdata_prod, remplacer par: pgdata_prod:
+  schoolmatrix_pgdata:

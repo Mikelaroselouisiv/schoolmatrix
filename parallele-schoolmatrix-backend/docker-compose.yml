@@ -1,15 +1,4 @@
-# DEV - PostgreSQL uniquement
-services:
-  db:
-    image: postgres:16-alpine
-    container_name: schoolmatrix-db-dev
-    environment:
-      POSTGRES_USER: schooluser
-      POSTGRES_PASSWORD: e2d17435cfee
-      POSTGRES_DB: schoolmatrix
-    ports:
-      - "5433:5432"
-    volumes:
-      - pgdata_dev:/var/lib/postgresql/data
-volumes:
-  pgdata_dev:
+# La base PostgreSQL est dans le docker-compose à la racine du projet.
+# Dev  : à la racine, lancer  docker compose up -d           (uniquement la base, port 5432)
+# Prod : à la racine, lancer  docker compose --profile prod up -d
+# Ce fichier ne définit plus de service pour éviter toute confusion.

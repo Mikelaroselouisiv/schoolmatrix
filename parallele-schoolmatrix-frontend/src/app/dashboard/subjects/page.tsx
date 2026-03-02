@@ -73,7 +73,7 @@ export default function SubjectsPage() {
     }
   }
 
-  async function handleDelete(id: number) {
+  async function handleDelete(id: string) {
     if (!confirm("Supprimer cette matière ?")) return;
     setError("");
     try {

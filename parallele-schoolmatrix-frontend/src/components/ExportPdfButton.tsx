@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import type { PdfTableConfig, PdfSection } from "@/src/lib/pdfExport";
-import { exportTableToPdf, exportSectionsToPdf } from "@/src/lib/pdfExport";
+import { getTablePdfBlob, getSectionsPdfBlob } from "@/src/lib/pdfExport";
+import { PdfPreviewModal } from "@/src/components/PdfPreviewModal";
 
 type ExportPdfButtonProps = {
   /** Export simple : un seul tableau */
@@ -17,8 +18,7 @@ type ExportPdfButtonProps = {
 };
 
 /**
- * Bouton global "Exporter en PDF". Utilisable sur toute page (listes, tableaux, situations).
- * Passez soit `table` (un tableau) soit `sections` + optionnel `mainTitle` pour un rapport.
+ * Bouton "Exporter en PDF" : ouvre un modal avec aperçu du PDF, téléchargement et impression.
  */
 export function ExportPdfButton({
   table,
@@ -30,18 +30,24 @@ export function ExportPdfButton({
   disabled = false,
 }: ExportPdfButtonProps) {
   const [loading, setLoading] = useState(false);
+  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
 
   const canExport = Boolean(table || (sections && sections.length > 0));
 
   async function handleClick() {
     if (loading || disabled || !canExport) return;
     setLoading(true);
+    setPdfBlob(null);
     try {
+      let blob: Blob;
       if (table) {
-        await exportTableToPdf(table, filename);
+        blob = await getTablePdfBlob(table);
       } else if (sections?.length) {
-        await exportSectionsToPdf(sections, filename, mainTitle);
+        blob = await getSectionsPdfBlob(sections, mainTitle);
+      } else {
+        return;
       }
+      setPdfBlob(blob);
     } catch (e) {
       console.error("Export PDF failed", e);
     } finally {
@@ -49,18 +55,25 @@ export function ExportPdfButton({
     }
   }
 
+  const safeFilename = filename.replace(/\.pdf$/i, "") + ".pdf";
+
   return (
-    <button
-      type="button"
-      onClick={handleClick}
-      disabled={disabled || loading || !canExport}
-      className={className || "inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"}
-    >
-      {loading ? (
-        "Génération..."
-      ) : (
-        <>{label}</>
+    <>
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={disabled || loading || !canExport}
+        className={className || "inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"}
+      >
+        {loading ? "Génération..." : label}
+      </button>
+      {pdfBlob && (
+        <PdfPreviewModal
+          blob={pdfBlob}
+          filename={safeFilename}
+          onClose={() => setPdfBlob(null)}
+        />
       )}
-    </button>
+    </>
   );
 }

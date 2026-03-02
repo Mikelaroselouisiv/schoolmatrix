@@ -28,6 +28,13 @@ export class SchoolProfileController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get('current-context')
+  async getCurrentContext() {
+    const ctx = await this.schoolProfileService.getCurrentContext();
+    return { ok: true, ...ctx };
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Patch('profile')
   async updateProfile(
     @Body()
@@ -39,6 +46,8 @@ export class SchoolProfileController {
       primary_color?: string;
       secondary_color?: string;
       active?: boolean;
+      current_academic_year_id?: string | null;
+      current_period_id?: string | null;
     },
   ) {
     const profile = await this.schoolProfileService.updateProfile(body);
@@ -53,6 +62,8 @@ export class SchoolProfileController {
         primary_color: profile.primary_color,
         secondary_color: profile.secondary_color,
         active: profile.active,
+        current_academic_year_id: profile.current_academic_year_id ?? null,
+        current_period_id: profile.current_period_id ?? null,
       },
     };
   }

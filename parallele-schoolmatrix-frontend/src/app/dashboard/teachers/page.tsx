@@ -231,9 +231,7 @@ export default function TeachersPage() {
         </div>
       </div>
 
-      <p className="text-slate-600 text-sm">
-        Un professeur est un utilisateur avec le rôle TEACHER. Assignez des matières et des classes à chaque professeur. L&apos;horaire précis sera défini plus tard.
-      </p>
+      
 
       {error && <div className="p-3 rounded-lg bg-red-50 text-red-600 text-sm">{error}</div>}
 

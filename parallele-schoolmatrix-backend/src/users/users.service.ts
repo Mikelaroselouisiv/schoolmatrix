@@ -3,15 +3,21 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User } from './user.entity';
+import { UserLinkedStudent } from './user-linked-student.entity';
 import { Role } from '../roles/role.entity';
+import { Student } from '../students/student.entity';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly usersRepo: Repository<User>,
+    @InjectRepository(UserLinkedStudent)
+    private readonly linkedStudentRepo: Repository<UserLinkedStudent>,
     @InjectRepository(Role)
     private readonly rolesRepo: Repository<Role>,
+    @InjectRepository(Student)
+    private readonly studentRepo: Repository<Student>,
   ) {}
 
   async findByEmail(email: string): Promise<User | null> {
@@ -57,6 +63,8 @@ export class UsersService {
     roleName?: string;
     profile_photo_url?: string;
     cover_photo_url?: string;
+    order_number?: string;
+    linked_student_ids?: string[];
   }): Promise<User> {
     const email = params.email.toLowerCase().trim();
     const first_name = params.first_name?.trim() || '—';
@@ -80,11 +88,23 @@ export class UsersService {
       whatsapp: params.whatsapp?.trim(),
       profile_photo_url: params.profile_photo_url?.trim(),
       cover_photo_url: params.cover_photo_url?.trim(),
+      order_number: params.order_number?.trim() || undefined,
       password_hash,
       role,
       active: true,
     });
-    return this.usersRepo.save(user);
+    const saved = await this.usersRepo.save(user);
+    if (params.linked_student_ids?.length) {
+      const uniqueIds = [...new Set(params.linked_student_ids.filter(Boolean))];
+      for (const studentId of uniqueIds) {
+        const student = await this.studentRepo.findOne({ where: { id: studentId } });
+        if (student) {
+          const link = this.linkedStudentRepo.create({ user: { id: saved.id } as User, student: { id: studentId } as Student });
+          await this.linkedStudentRepo.save(link);
+        }
+      }
+    }
+    return saved;
   }
 
   async setUserRole(userId: number, roleName: string): Promise<User> {
@@ -106,7 +126,9 @@ export class UsersService {
     active: boolean;
     profile_photo_url: string;
     cover_photo_url: string;
+    order_number: string;
     password: string;
+    linked_student_ids: string[];
   }>): Promise<User> {
     const user = await this.usersRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
@@ -124,10 +146,45 @@ export class UsersService {
     if (params.active !== undefined) user.active = params.active;
     if (params.profile_photo_url !== undefined) user.profile_photo_url = params.profile_photo_url.trim() || undefined;
     if (params.cover_photo_url !== undefined) user.cover_photo_url = params.cover_photo_url.trim() || undefined;
+    if (params.order_number !== undefined) user.order_number = params.order_number.trim() || null;
     if (params.password !== undefined && params.password.length > 0) {
       user.password_hash = await bcrypt.hash(params.password, 10);
     }
+    if (params.linked_student_ids !== undefined) {
+      await this.linkedStudentRepo.delete({ user: { id: userId } });
+      const uniqueIds = [...new Set(params.linked_student_ids.filter(Boolean))];
+      for (const studentId of uniqueIds) {
+        const student = await this.studentRepo.findOne({ where: { id: studentId } });
+        if (student) {
+          const link = this.linkedStudentRepo.create({ user: { id: userId } as User, student: { id: studentId } as Student });
+          await this.linkedStudentRepo.save(link);
+        }
+      }
+    }
     return this.usersRepo.save(user);
+  }
+
+  async getLinkedStudentIds(userId: number): Promise<string[]> {
+    const links = await this.linkedStudentRepo.find({
+      where: { user: { id: userId } },
+      relations: ['student'],
+    });
+    return links.map((l) => l.student.id);
+  }
+
+  async getLinkedStudentsForFiche(userId: number): Promise<{ id: string; order_number: string | null; first_name: string; last_name: string; class_id: string; class_name: string }[]> {
+    const links = await this.linkedStudentRepo.find({
+      where: { user: { id: userId } },
+      relations: ['student', 'student.class'],
+    });
+    return links.map((l) => ({
+      id: l.student.id,
+      order_number: l.student.order_number ?? null,
+      first_name: l.student.first_name,
+      last_name: l.student.last_name,
+      class_id: l.student.class?.id ?? '',
+      class_name: l.student.class?.name ?? '—',
+    }));
   }
 
   async deleteUser(userId: number): Promise<{ deleted: boolean }> {

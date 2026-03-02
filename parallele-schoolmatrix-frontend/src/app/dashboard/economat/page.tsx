@@ -100,23 +100,33 @@ export default function EconomatPage() {
   async function loadBaseData() {
     setError("");
     try {
-      const [yearsRes, classesRes, servicesRes, currentRes] = await Promise.all([
+      const [yearsRes, classesRes, servicesRes, currentRes, ctxRes] = await Promise.all([
         fetchWithAuth(`${API_BASE}/academic-years`),
         fetchWithAuth(`${API_BASE}/classes`),
         fetchWithAuth(`${API_BASE}/economat/fee-services`),
         fetchWithAuth(`${API_BASE}/economat/current-year`),
+        fetchWithAuth(`${API_BASE}/school/current-context`),
       ]);
       const yearsData = await yearsRes.json();
       const classesData = await classesRes.json();
       const servicesData = await servicesRes.json();
       const currentData = await currentRes.json();
+      const ctxData = await ctxRes.json();
       if (!yearsRes.ok) throw new Error(yearsData.message || "Erreur années");
       if (!classesRes.ok) throw new Error(classesData.message || "Erreur classes");
       if (!servicesRes.ok) throw new Error(servicesData.message || "Erreur services");
       setAcademicYears(yearsData.academic_years ?? []);
       setClasses(classesData.classes ?? []);
       setFeeServices(servicesData.fee_services ?? []);
-      setCurrentYearLabel((currentData.academic_year as string) || "");
+      const defaultYearName = ctxRes.ok && ctxData.current_academic_year_name
+        ? ctxData.current_academic_year_name
+        : (currentData.academic_year as string) || "";
+      setCurrentYearLabel(defaultYearName);
+      setFilterYear((prev) => (prev === "" && defaultYearName ? defaultYearName : prev));
+      setExemptionFilterYear((prev) => (prev === "" && defaultYearName ? defaultYearName : prev));
+      if (defaultYearName) {
+        setPaymentForm((prev) => (prev.academic_year ? prev : { ...prev, academic_year: defaultYearName }));
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur chargement");
     }

@@ -75,7 +75,13 @@ export default function DisciplinePage() {
   const [deductions, setDeductions] = useState<DeductionItem[]>([]);
   const [deductionFilterClass, setDeductionFilterClass] = useState("");
   const [deductionFilterStudent, setDeductionFilterStudent] = useState("");
-  const [deductionForm, setDeductionForm] = useState({ class_id: "", student_id: "", points_deducted: "10", reason: "" });
+  const [deductionForm, setDeductionForm] = useState({
+    class_id: "",
+    student_id: "",
+    action: "RETIRER" as "AJOUTER" | "RETIRER",
+    points: "10",
+    reason: "",
+  });
   const [allStudents, setAllStudents] = useState<{ id: string; first_name: string; last_name: string; class_id: string; class_name: string }[]>([]);
   const [deductionSaving, setDeductionSaving] = useState(false);
 
@@ -269,11 +275,12 @@ export default function DisciplinePage() {
 
   async function handleAddDeduction(e: React.FormEvent) {
     e.preventDefault();
-    const points = parseInt(deductionForm.points_deducted, 10);
+    const points = parseInt(deductionForm.points, 10);
     if (!deductionForm.student_id || isNaN(points) || points < 1 || points > 100) {
       setError("Sélectionnez une classe, un élève et un nombre de points (1–100).");
       return;
     }
+    const pointsDeducted = deductionForm.action === "RETIRER" ? points : -points;
     setDeductionSaving(true);
     setError("");
     try {
@@ -281,13 +288,14 @@ export default function DisciplinePage() {
         method: "POST",
         body: JSON.stringify({
           student_id: deductionForm.student_id,
-          points_deducted: points,
+          points_deducted: pointsDeducted,
           reason: deductionForm.reason.trim() || undefined,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Erreur");
       setDeductionForm((f) => ({ ...f, student_id: "", reason: "" }));
+      loadDeductions();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
     } finally {
@@ -570,9 +578,9 @@ export default function DisciplinePage() {
       {/* Points disciplinaires */}
       {tab === "points" && (
         <div className="space-y-6">
-          <p className="text-sm text-slate-600">Base 100 points. Chaque déduction enlève des points (1–100).</p>
+          <p className="text-sm text-slate-600">Base 100 points. Vous pouvez retirer des points (sanction) ou en ajouter (bonification).</p>
           <form onSubmit={handleAddDeduction} className="p-4 rounded-xl border border-[var(--app-border)] bg-white max-w-lg space-y-3">
-            <h3 className="font-semibold text-slate-900">Ajouter une déduction de points</h3>
+            <h3 className="font-semibold text-slate-900">Modifier les points disciplinaires</h3>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Classe</label>
               <select
@@ -602,30 +610,41 @@ export default function DisciplinePage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Points déduits (1–100)</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Action</label>
+                <select
+                  value={deductionForm.action}
+                  onChange={(e) => setDeductionForm((f) => ({ ...f, action: e.target.value as "AJOUTER" | "RETIRER" }))}
+                  className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
+                >
+                  <option value="RETIRER">Retirer des points</option>
+                  <option value="AJOUTER">Ajouter des points</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Points (1–100)</label>
                 <input
                   type="number"
                   min={1}
                   max={100}
-                  value={deductionForm.points_deducted}
-                  onChange={(e) => setDeductionForm((f) => ({ ...f, points_deducted: e.target.value }))}
+                  value={deductionForm.points}
+                  onChange={(e) => setDeductionForm((f) => ({ ...f, points: e.target.value }))}
                   className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
                   required
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Motif (optionnel)</label>
-                <input
-                  type="text"
-                  value={deductionForm.reason}
-                  onChange={(e) => setDeductionForm((f) => ({ ...f, reason: e.target.value }))}
-                  placeholder="Ex: retard répété"
-                  className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
-                />
-              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Motif (optionnel)</label>
+              <input
+                type="text"
+                value={deductionForm.reason}
+                onChange={(e) => setDeductionForm((f) => ({ ...f, reason: e.target.value }))}
+                placeholder="Ex: retard répété, comportement exemplaire"
+                className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
+              />
             </div>
             <button type="submit" disabled={deductionSaving} className="app-btn-primary disabled:opacity-60">
-              {deductionSaving ? "Ajout..." : "Ajouter la déduction"}
+              {deductionSaving ? "Enregistrement..." : deductionForm.action === "RETIRER" ? "Retirer les points" : "Ajouter les points"}
             </button>
           </form>
           <div>
@@ -663,7 +682,7 @@ export default function DisciplinePage() {
                 <thead className="bg-slate-50 border-b border-[var(--app-border)]">
                   <tr>
                     <th className="px-4 py-3 font-medium text-slate-900">Élève</th>
-                    <th className="px-4 py-3 font-medium text-slate-900">Points déduits</th>
+                    <th className="px-4 py-3 font-medium text-slate-900">Variation</th>
                     <th className="px-4 py-3 font-medium text-slate-900">Motif</th>
                     <th className="px-4 py-3 font-medium text-slate-900">Date</th>
                     <th className="px-4 py-3 font-medium text-slate-900 w-20">Actions</th>
@@ -676,7 +695,11 @@ export default function DisciplinePage() {
                     deductions.map((d) => (
                       <tr key={d.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
                         <td className="px-4 py-3 font-medium text-slate-900">{d.student_name ?? "—"}</td>
-                        <td className="px-4 py-3 text-slate-600">{d.points_deducted}</td>
+                        <td className="px-4 py-3">
+                          <span className={d.points_deducted < 0 ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
+                            {d.points_deducted < 0 ? "+" : "-"}{Math.abs(d.points_deducted)}
+                          </span>
+                        </td>
                         <td className="px-4 py-3 text-slate-600">{d.reason ?? "—"}</td>
                         <td className="px-4 py-3 text-slate-600">{typeof d.created_at === "string" ? d.created_at.slice(0, 10) : d.created_at}</td>
                         <td className="px-4 py-3">

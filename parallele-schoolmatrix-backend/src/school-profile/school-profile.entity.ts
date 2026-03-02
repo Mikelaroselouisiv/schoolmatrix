@@ -32,6 +32,12 @@ export class SchoolProfile {
   @Column({ default: true })
   active: boolean;
 
+  @Column({ type: 'uuid', nullable: true })
+  current_academic_year_id: string | null = null;
+
+  @Column({ type: 'uuid', nullable: true })
+  current_period_id: string | null = null;
+
   @CreateDateColumn()
   created_at: Date;
 

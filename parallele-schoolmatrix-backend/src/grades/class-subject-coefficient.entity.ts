@@ -6,13 +6,14 @@ import {
   JoinColumn,
   CreateDateColumn,
   UpdateDateColumn,
+  Unique,
 } from 'typeorm';
 import { Class } from '../classes/class.entity';
 import { Subject } from '../subjects/subject.entity';
-import { Period } from '../period/period.entity';
 import { AcademicYear } from '../academic-year/academic-year.entity';
 
 @Entity('class_subject_coefficient')
+@Unique(['academic_year', 'class', 'subject'])
 export class ClassSubjectCoefficient {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -28,10 +29,6 @@ export class ClassSubjectCoefficient {
   @ManyToOne(() => Subject, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'subject_id' })
   subject: Subject;
-
-  @ManyToOne(() => Period, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'period_id' })
-  period: Period;
 
   @Column({ type: 'decimal', precision: 6, scale: 2 })
   coefficient: string;

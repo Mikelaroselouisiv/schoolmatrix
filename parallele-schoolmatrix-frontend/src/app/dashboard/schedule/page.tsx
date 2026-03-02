@@ -52,6 +52,7 @@ type Subject = { id: string; name: string };
 type Teacher = { id: number; first_name: string | null; last_name: string | null; email: string };
 type Room = { id: string; name: string };
 type AcademicYear = { id: string; name: string };
+type Period = { id: string; name: string };
 
 export default function SchedulePage() {
   const [tab, setTab] = useState<"cours" | "examens" | "parascolaires">("cours");
@@ -68,9 +69,16 @@ export default function SchedulePage() {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
+  const [periods, setPeriods] = useState<Period[]>([]);
+  const [classSubjects, setClassSubjects] = useState<Subject[]>([]);
 
   const [academicYearFilter, setAcademicYearFilter] = useState("");
   const [classFilter, setClassFilter] = useState("");
+
+  const [defaultYearId, setDefaultYearId] = useState("");
+  const [defaultYearName, setDefaultYearName] = useState("");
+  const [defaultPeriodId, setDefaultPeriodId] = useState("");
+  const [defaultPeriodName, setDefaultPeriodName] = useState("");
 
   const [showSlotForm, setShowSlotForm] = useState(false);
   const [slotForm, setSlotForm] = useState({
@@ -86,6 +94,7 @@ export default function SchedulePage() {
 
   const [showExamForm, setShowExamForm] = useState(false);
   const [examForm, setExamForm] = useState({
+    academic_year_id: "",
     class_id: "",
     subject_id: "",
     period: "",
@@ -132,11 +141,40 @@ export default function SchedulePage() {
     }
   }
 
-  async function loadSlots() {
+  async function loadPeriods(academicYearId: string) {
+    if (!academicYearId) {
+      setPeriods([]);
+      return;
+    }
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/periods?academic_year_id=${academicYearId}`);
+      const data = await res.json();
+      setPeriods(data.periods ?? []);
+    } catch {
+      setPeriods([]);
+    }
+  }
+
+  async function loadClassSubjects(classId: string) {
+    if (!classId) {
+      setClassSubjects([]);
+      return;
+    }
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/classes/${classId}/subjects`);
+      const data = await res.json();
+      setClassSubjects(data.subjects ?? []);
+    } catch {
+      setClassSubjects([]);
+    }
+  }
+
+  async function loadSlots(overrideYearId?: string) {
     setError("");
     try {
       const params = new URLSearchParams();
-      const yearName = academicYears.find((ay) => ay.id === academicYearFilter)?.name;
+      const yearId = overrideYearId ?? academicYearFilter;
+      const yearName = academicYears.find((ay) => ay.id === yearId)?.name;
       if (yearName) params.set("academic_year", yearName);
       if (classFilter) params.set("class_id", classFilter);
       const res = await fetchWithAuth(`${API_BASE}/schedule-slots?${params}`);
@@ -162,11 +200,12 @@ export default function SchedulePage() {
     }
   }
 
-  async function loadActivities() {
+  async function loadActivities(overrideYearId?: string) {
     setError("");
     try {
       const params = new URLSearchParams();
-      if (academicYearFilter) params.set("academic_year_id", academicYearFilter);
+      const yearId = overrideYearId ?? academicYearFilter;
+      if (yearId) params.set("academic_year_id", yearId);
       if (classFilter) params.set("class_id", classFilter);
       const res = await fetchWithAuth(`${API_BASE}/extracurricular-activities?${params}`);
       const data = await res.json();
@@ -180,7 +219,22 @@ export default function SchedulePage() {
   async function load() {
     setLoading(true);
     await loadRefs();
-    await Promise.all([loadSlots(), loadExams(), loadActivities()]);
+    let defaultYearId: string | undefined;
+    try {
+      const ctxRes = await fetchWithAuth(`${API_BASE}/school/current-context`);
+      const ctxData = await ctxRes.json();
+      if (ctxRes.ok && ctxData.current_academic_year_id) {
+        defaultYearId = ctxData.current_academic_year_id;
+        setDefaultYearId(ctxData.current_academic_year_id);
+        setDefaultYearName(ctxData.current_academic_year_name ?? "");
+        setDefaultPeriodId(ctxData.current_period_id ?? "");
+        setDefaultPeriodName(ctxData.current_period_name ?? "");
+        setAcademicYearFilter((prev) => (prev === "" ? defaultYearId! : prev));
+      }
+    } catch {
+      /* ignore */
+    }
+    await Promise.all([loadSlots(defaultYearId), loadExams(), loadActivities(defaultYearId)]);
     setLoading(false);
   }
 
@@ -195,6 +249,14 @@ export default function SchedulePage() {
       loadActivities();
     }
   }, [academicYearFilter, classFilter]);
+
+  useEffect(() => {
+    loadPeriods(examForm.academic_year_id);
+  }, [examForm.academic_year_id]);
+
+  useEffect(() => {
+    loadClassSubjects(examForm.class_id);
+  }, [examForm.class_id]);
 
   async function handleAddSlot(e: React.FormEvent) {
     e.preventDefault();
@@ -252,7 +314,7 @@ export default function SchedulePage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Erreur");
       setShowExamForm(false);
-      setExamForm({ class_id: "", subject_id: "", period: "", exam_date: "", start_time: "08:00", end_time: "09:00" });
+      setExamForm({ academic_year_id: "", class_id: "", subject_id: "", period: "", exam_date: "", start_time: "08:00", end_time: "09:00" });
       loadExams();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
@@ -378,7 +440,7 @@ export default function SchedulePage() {
         <section className="space-y-4">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold text-slate-900">Créneaux de cours</h3>
-            <button onClick={() => setShowSlotForm(true)} className="app-btn-primary text-sm py-2">Ajouter un créneau</button>
+            <button onClick={() => { setSlotForm((f) => ({ ...f, academic_year: defaultYearName })); setShowSlotForm(true); }} className="app-btn-primary text-sm py-2">Ajouter un créneau</button>
           </div>
           {showSlotForm && (
             <form onSubmit={handleAddSlot} className="p-5 rounded-xl border border-[var(--app-border)] bg-white space-y-4 max-w-2xl">
@@ -482,29 +544,39 @@ export default function SchedulePage() {
         <section className="space-y-4">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold text-slate-900">Examens</h3>
-            <button onClick={() => setShowExamForm(true)} className="app-btn-primary text-sm py-2">Ajouter un examen</button>
+            <button onClick={() => { setExamForm((f) => ({ ...f, academic_year_id: defaultYearId, period: defaultPeriodName })); setShowExamForm(true); }} className="app-btn-primary text-sm py-2">Ajouter un examen</button>
           </div>
           {showExamForm && (
             <form onSubmit={handleAddExam} className="p-5 rounded-xl border border-[var(--app-border)] bg-white space-y-4 max-w-xl">
               <h4 className="font-semibold text-slate-900">Nouvel examen</h4>
               <div className="grid grid-cols-2 gap-4">
                 <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Année scolaire *</label>
+                  <select value={examForm.academic_year_id} onChange={(e) => setExamForm((f) => ({ ...f, academic_year_id: e.target.value, period: "" }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm" required>
+                    <option value="">Sélectionner</option>
+                    {academicYears.map((ay) => <option key={ay.id} value={ay.id}>{ay.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Période *</label>
+                  <select value={examForm.period} onChange={(e) => setExamForm((f) => ({ ...f, period: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm" required>
+                    <option value="">Sélectionner</option>
+                    {periods.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+                  </select>
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Classe *</label>
-                  <select value={examForm.class_id} onChange={(e) => setExamForm((f) => ({ ...f, class_id: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm" required>
+                  <select value={examForm.class_id} onChange={(e) => setExamForm((f) => ({ ...f, class_id: e.target.value, subject_id: "" }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm" required>
                     <option value="">Sélectionner</option>
                     {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Matière *</label>
-                  <select value={examForm.subject_id} onChange={(e) => setExamForm((f) => ({ ...f, subject_id: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm" required>
-                    <option value="">Sélectionner</option>
-                    {subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  <select value={examForm.subject_id} onChange={(e) => setExamForm((f) => ({ ...f, subject_id: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm" required disabled={!examForm.class_id}>
+                    <option value="">{examForm.class_id ? "Sélectionner" : "Choisir une classe d'abord"}</option>
+                    {classSubjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Période *</label>
-                  <input type="text" value={examForm.period} onChange={(e) => setExamForm((f) => ({ ...f, period: e.target.value }))} placeholder="Trimestre 1" className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm" required />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Date *</label>
@@ -563,7 +635,7 @@ export default function SchedulePage() {
         <section className="space-y-4">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold text-slate-900">Activités parascolaires</h3>
-            <button onClick={() => setShowActivityForm(true)} className="app-btn-primary text-sm py-2">Ajouter une activité</button>
+            <button onClick={() => { setActivityForm((f) => ({ ...f, academic_year_id: defaultYearId })); setShowActivityForm(true); }} className="app-btn-primary text-sm py-2">Ajouter une activité</button>
           </div>
           {showActivityForm && (
             <form onSubmit={handleAddActivity} className="p-5 rounded-xl border border-[var(--app-border)] bg-white space-y-4 max-w-xl">

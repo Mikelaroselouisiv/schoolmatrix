@@ -24,12 +24,10 @@ export class GradesController {
   async listCoefficients(
     @Query('academic_year_id') academicYearId?: string,
     @Query('class_id') classId?: string,
-    @Query('period_id') periodId?: string,
   ) {
     const list = await this.gradesService.findAllCoefficients({
       academic_year_id: academicYearId,
       class_id: classId,
-      period_id: periodId,
     });
     return { ok: true, coefficients: list };
   }
@@ -39,7 +37,6 @@ export class GradesController {
     academic_year_id: string;
     class_id: string;
     subject_id: string;
-    period_id: string;
     coefficient: number;
   }) {
     const c = await this.gradesService.setCoefficient(body);

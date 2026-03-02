@@ -40,7 +40,63 @@ export default function AcademicYearsPage() {
   const [periodOrder, setPeriodOrder] = useState(0);
   const [savingPeriod, setSavingPeriod] = useState(false);
 
+  const [currentYearId, setCurrentYearId] = useState<string | null>(null);
+  const [currentPeriodId, setCurrentPeriodId] = useState<string | null>(null);
+  const [savingCurrent, setSavingCurrent] = useState(false);
+
   const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
+
+  async function loadCurrentContext(): Promise<{ current_academic_year_id: string | null; current_period_id: string | null } | null> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/school/current-context`);
+      const data = await res.json();
+      if (res.ok) {
+        const yearId = data.current_academic_year_id ?? null;
+        const periodId = data.current_period_id ?? null;
+        setCurrentYearId(yearId);
+        setCurrentPeriodId(periodId);
+        return { current_academic_year_id: yearId, current_period_id: periodId };
+      }
+    } catch {
+      setCurrentYearId(null);
+      setCurrentPeriodId(null);
+    }
+    return null;
+  }
+
+  async function setAsCurrentYear(yearId: string) {
+    setSavingCurrent(true);
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/school/profile`, {
+        method: "PATCH",
+        body: JSON.stringify({ current_academic_year_id: yearId }),
+      });
+      if (!res.ok) throw new Error((await res.json()).message || "Erreur");
+      setCurrentYearId(yearId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setSavingCurrent(false);
+    }
+  }
+
+  async function setAsCurrentPeriod(periodId: string) {
+    setSavingCurrent(true);
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/school/profile`, {
+        method: "PATCH",
+        body: JSON.stringify({ current_period_id: periodId }),
+      });
+      if (!res.ok) throw new Error((await res.json()).message || "Erreur");
+      setCurrentPeriodId(periodId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setSavingCurrent(false);
+    }
+  }
 
   async function loadYears() {
     setError("");
@@ -49,9 +105,6 @@ export default function AcademicYearsPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Erreur");
       setYears(data.academic_years ?? []);
-      if (!selectedYearId && (data.academic_years?.length ?? 0) > 0) {
-        setSelectedYearId(data.academic_years[0].id);
-      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
     }
@@ -75,8 +128,32 @@ export default function AcademicYearsPage() {
 
   async function load() {
     setLoading(true);
-    await loadYears();
-    setLoading(false);
+    setError("");
+    try {
+      const [yearsRes, ctxRes] = await Promise.all([
+        fetchWithAuth(`${API_BASE}/academic-years`),
+        fetchWithAuth(`${API_BASE}/school/current-context`),
+      ]);
+      const yearsData = await yearsRes.json();
+      const ctxData = await ctxRes.json();
+      if (!yearsRes.ok) throw new Error(yearsData.message || "Erreur");
+      const years = yearsData.academic_years ?? [];
+      setYears(years);
+      const yearId = ctxRes.ok ? (ctxData.current_academic_year_id ?? null) : null;
+      const periodId = ctxRes.ok ? (ctxData.current_period_id ?? null) : null;
+      setCurrentYearId(yearId);
+      setCurrentPeriodId(periodId);
+      if (years.length > 0) {
+        const defaultYearId = yearId && years.some((y: AcademicYear) => y.id === yearId)
+          ? yearId
+          : years[0].id;
+        setSelectedYearId(defaultYearId);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -306,12 +383,13 @@ export default function AcademicYearsPage() {
                 <th className="px-4 py-3 font-medium text-slate-900">Début</th>
                 <th className="px-4 py-3 font-medium text-slate-900">Fin</th>
                 <th className="px-4 py-3 font-medium text-slate-900">Statut</th>
-                <th className="px-4 py-3 font-medium text-slate-900 w-32">Actions</th>
+                <th className="px-4 py-3 font-medium text-slate-900">Année en cours</th>
+                <th className="px-4 py-3 font-medium text-slate-900 w-40">Actions</th>
               </tr>
             </thead>
             <tbody>
               {years.length === 0 ? (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">Aucune année</td></tr>
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">Aucune année</td></tr>
               ) : (
                 years.map((y) => (
                   <tr
@@ -326,6 +404,15 @@ export default function AcademicYearsPage() {
                       <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${y.active ? "bg-green-100 text-green-800" : "bg-slate-100 text-slate-600"}`}>
                         {y.active ? "Actif" : "Inactif"}
                       </span>
+                    </td>
+                    <td className="px-4 py-3" onClick={(ev) => ev.stopPropagation()}>
+                      {currentYearId === y.id ? (
+                        <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">Par défaut</span>
+                      ) : (
+                        <button type="button" onClick={() => setAsCurrentYear(y.id)} disabled={savingCurrent} className="text-sm text-[var(--school-accent-1)] hover:underline disabled:opacity-50">
+                          Définir par défaut
+                        </button>
+                      )}
                     </td>
                     <td className="px-4 py-3 flex gap-2" onClick={(ev) => ev.stopPropagation()}>
                       <button onClick={() => openYearEdit(y)} className="text-sm text-[var(--school-accent-1)] hover:underline">Modifier</button>
@@ -395,12 +482,13 @@ export default function AcademicYearsPage() {
                   <tr>
                     <th className="px-4 py-3 font-medium text-slate-900">Ordre</th>
                     <th className="px-4 py-3 font-medium text-slate-900">Nom</th>
-                    <th className="px-4 py-3 font-medium text-slate-900 w-32">Actions</th>
+                    <th className="px-4 py-3 font-medium text-slate-900">Période en cours</th>
+                    <th className="px-4 py-3 font-medium text-slate-900 w-36">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {periods.length === 0 ? (
-                    <tr><td colSpan={3} className="px-4 py-8 text-center text-slate-500">Aucune période</td></tr>
+                    <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-500">Aucune période</td></tr>
                   ) : (
                     [...periods]
                       .sort((a, b) => a.order_index - b.order_index)
@@ -408,6 +496,15 @@ export default function AcademicYearsPage() {
                         <tr key={p.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
                           <td className="px-4 py-3 text-slate-600">{p.order_index}</td>
                           <td className="px-4 py-3 font-medium text-slate-900">{p.name}</td>
+                          <td className="px-4 py-3">
+                            {currentPeriodId === p.id ? (
+                              <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">Par défaut</span>
+                            ) : (
+                              <button type="button" onClick={() => setAsCurrentPeriod(p.id)} disabled={savingCurrent} className="text-sm text-[var(--school-accent-1)] hover:underline disabled:opacity-50">
+                                Définir par défaut
+                              </button>
+                            )}
+                          </td>
                           <td className="px-4 py-3 flex gap-2">
                             <button onClick={() => openPeriodEdit(p)} className="text-sm text-[var(--school-accent-1)] hover:underline">Modifier</button>
                             <button onClick={() => handlePeriodDelete(p.id)} className="text-sm text-red-600 hover:underline">Supprimer</button>

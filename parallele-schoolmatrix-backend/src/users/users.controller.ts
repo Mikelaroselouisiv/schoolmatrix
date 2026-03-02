@@ -8,8 +8,8 @@ import { User } from './user.entity';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  private toUserResponse(u: User) {
-    return {
+  private toUserResponse(u: User, linkedStudentIds?: string[]) {
+    const base = {
       id: u.id,
       first_name: u.first_name,
       last_name: u.last_name,
@@ -19,11 +19,14 @@ export class UsersController {
       whatsapp: u.whatsapp,
       profile_photo_url: u.profile_photo_url,
       cover_photo_url: u.cover_photo_url,
+      order_number: u.order_number ?? null,
       role: u.role?.name,
       active: u.active,
       created_at: u.created_at,
       updated_at: u.updated_at,
     };
+    if (linkedStudentIds !== undefined) return { ...base, linked_student_ids: linkedStudentIds };
+    return base;
   }
 
   @Get('me')
@@ -34,6 +37,14 @@ export class UsersController {
     return { ok: true, user: this.toUserResponse(user) };
   }
 
+  @Get('me/linked-students')
+  async myLinkedStudents(@Req() req: { user?: { userId?: number; sub?: number; id?: number } }) {
+    const userId = req.user?.userId ?? req.user?.sub ?? req.user?.id;
+    if (!userId) return { ok: true, linked_students: [] };
+    const list = await this.usersService.getLinkedStudentsForFiche(userId as number);
+    return { ok: true, linked_students: list };
+  }
+
   @Get('admin-only')
   adminOnly() {
     return { ok: true, message: 'Admin access' };
@@ -42,10 +53,20 @@ export class UsersController {
   @Get()
   async listUsers() {
     const users = await this.usersService.findAll();
-    return {
-      ok: true,
-      users: users.map((u) => this.toUserResponse(u)),
-    };
+    const withLinks = await Promise.all(
+      users.map(async (u) => {
+        const ids = await this.usersService.getLinkedStudentIds(u.id);
+        return this.toUserResponse(u, ids);
+      }),
+    );
+    return { ok: true, users: withLinks };
+  }
+
+  @Get(':id')
+  async one(@Param('id', ParseIntPipe) id: number) {
+    const user = await this.usersService.findOne(id);
+    const linkedStudentIds = await this.usersService.getLinkedStudentIds(id);
+    return { ok: true, user: this.toUserResponse(user, linkedStudentIds) };
   }
 
   @Post()
@@ -60,6 +81,8 @@ export class UsersController {
     roleName?: string;
     profile_photo_url?: string;
     cover_photo_url?: string;
+    order_number?: string;
+    linked_student_ids?: string[];
   }) {
     const user = await this.usersService.createUser({
       first_name: body.first_name,
@@ -72,8 +95,11 @@ export class UsersController {
       roleName: body.roleName ?? 'PARENT',
       profile_photo_url: body.profile_photo_url,
       cover_photo_url: body.cover_photo_url,
+      order_number: body.order_number,
+      linked_student_ids: body.linked_student_ids,
     });
-    return { ok: true, user: this.toUserResponse(user) };
+    const linkedStudentIds = await this.usersService.getLinkedStudentIds(user.id);
+    return { ok: true, user: this.toUserResponse(user, linkedStudentIds) };
   }
 
   @Patch(':id/role')
@@ -107,11 +133,14 @@ export class UsersController {
       active: boolean;
       profile_photo_url: string;
       cover_photo_url: string;
+      order_number: string;
       password: string;
+      linked_student_ids: string[];
     }>,
   ) {
     const user = await this.usersService.updateUser(id, body);
-    return { ok: true, user: this.toUserResponse(user) };
+    const linkedStudentIds = await this.usersService.getLinkedStudentIds(id);
+    return { ok: true, user: this.toUserResponse(user, linkedStudentIds) };
   }
 
   @Delete(':id')

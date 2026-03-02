@@ -48,15 +48,17 @@ export class FormationClasseController {
       class_id: string;
       academic_year_id: string;
       min_average_admis: number;
+      min_average_admis_ailleurs: number;
       min_average_redoubler: number;
+      min_average_ajourne: number;
     },
   ) {
-    const t = await this.formationClasseService.saveThreshold(
-      body.class_id,
-      body.academic_year_id,
-      body.min_average_admis,
-      body.min_average_redoubler,
-    );
+    const t = await this.formationClasseService.saveThreshold(body.class_id, body.academic_year_id, {
+      min_average_admis: body.min_average_admis,
+      min_average_admis_ailleurs: body.min_average_admis_ailleurs,
+      min_average_redoubler: body.min_average_redoubler,
+      min_average_ajourne: body.min_average_ajourne,
+    });
     return {
       ok: true,
       threshold: {
@@ -64,7 +66,9 @@ export class FormationClasseController {
         class_id: t.class?.id,
         academic_year_id: t.academic_year?.id,
         min_average_admis: Number(t.min_average_admis),
+        min_average_admis_ailleurs: Number(t.min_average_admis_ailleurs),
         min_average_redoubler: Number(t.min_average_redoubler),
+        min_average_ajourne: Number(t.min_average_ajourne),
       },
     };
   }

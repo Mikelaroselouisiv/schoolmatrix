@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { fetchWithAuth } from "@/src/lib/api";
+import { fetchWithAuth, getImageUrl } from "@/src/lib/api";
 import { PasswordInput } from "@/src/components/PasswordInput";
+import { ImageUpload } from "@/src/components/ImageUpload";
 
 type User = {
   id: number;
@@ -12,9 +13,14 @@ type User = {
   phone: string | null;
   role: string | null;
   active: boolean;
+  profile_photo_url?: string | null;
+  order_number?: string | null;
+  linked_student_ids?: string[];
 };
 
 type Role = { id: number; name: string };
+
+type StudentOption = { id: string; order_number: string | null; first_name: string; last_name: string; class_name: string };
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -29,26 +35,41 @@ export default function UsersPage() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [roleName, setRoleName] = useState("PARENT");
+  const [profile_photo_url, setProfile_photo_url] = useState<string | null>(null);
+  const [linked_student_ids, setLinked_student_ids] = useState<string[]>([]);
+  const [academicYears, setAcademicYears] = useState<{ id: string; name: string }[]>([]);
+  const [classes, setClasses] = useState<{ id: string; name: string }[]>([]);
+  const [studentFilterYear, setStudentFilterYear] = useState("");
+  const [studentFilterClass, setStudentFilterClass] = useState("");
+  const [students, setStudents] = useState<StudentOption[]>([]);
+  const [studentsLoading, setStudentsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [resetPwdUser, setResetPwdUser] = useState<User | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [resettingPwd, setResettingPwd] = useState(false);
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
   async function load() {
     setLoading(true);
     setError("");
     try {
-      const [usersRes, rolesRes] = await Promise.all([
+      const [usersRes, rolesRes, yearsRes, classesRes] = await Promise.all([
         fetchWithAuth(`${API_BASE}/users`),
         fetchWithAuth(`${API_BASE}/roles`),
+        fetchWithAuth(`${API_BASE}/academic-years`),
+        fetchWithAuth(`${API_BASE}/classes`),
       ]);
       const usersData = await usersRes.json();
       const rolesData = await rolesRes.json();
+      const yearsData = await yearsRes.json();
+      const classesData = await classesRes.json();
       if (!usersRes.ok) throw new Error(usersData.message || "Erreur");
       setUsers(usersData.users ?? []);
       setRoles(rolesData.roles ?? []);
+      setAcademicYears((yearsData.academic_years ?? []).map((y: { id: string; name: string }) => ({ id: y.id, name: y.name })));
+      setClasses((classesData.classes ?? []).map((c: { id: string; name: string }) => ({ id: c.id, name: c.name })));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur de chargement");
     } finally {
@@ -56,9 +77,39 @@ export default function UsersPage() {
     }
   }
 
+  async function loadFilteredStudents() {
+    if (!studentFilterYear || !studentFilterClass) {
+      setStudents([]);
+      return;
+    }
+    setStudentsLoading(true);
+    try {
+      const res = await fetchWithAuth(
+        `${API_BASE}/formation-classe/students?academic_year_id=${studentFilterYear}&class_id=${studentFilterClass}`
+      );
+      const data = await res.json();
+      const list = (data.students ?? []).map((s: { id: string; order_number: string | null; first_name: string; last_name: string }) => ({
+        id: s.id,
+        order_number: s.order_number ?? null,
+        first_name: s.first_name,
+        last_name: s.last_name,
+        class_name: classes.find((c) => c.id === studentFilterClass)?.name ?? "—",
+      }));
+      setStudents(list);
+    } catch {
+      setStudents([]);
+    } finally {
+      setStudentsLoading(false);
+    }
+  }
+
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    loadFilteredStudents();
+  }, [studentFilterYear, studentFilterClass, classes]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -66,7 +117,14 @@ export default function UsersPage() {
     setError("");
     try {
       if (editing) {
-        const body: Record<string, unknown> = { first_name: first_name.trim() || undefined, last_name: last_name.trim() || undefined, email: email.trim(), phone: phone.trim() || undefined };
+        const body: Record<string, unknown> = {
+          first_name: first_name.trim() || undefined,
+          last_name: last_name.trim() || undefined,
+          email: email.trim(),
+          phone: phone.trim() || undefined,
+          profile_photo_url: profile_photo_url || undefined,
+          linked_student_ids,
+        };
         if (password) body.password = password;
         const res = await fetchWithAuth(`${API_BASE}/users/${editing.id}`, { method: "PATCH", body: JSON.stringify(body) });
         const data = await res.json();
@@ -74,7 +132,16 @@ export default function UsersPage() {
       } else {
         const res = await fetchWithAuth(`${API_BASE}/users`, {
           method: "POST",
-          body: JSON.stringify({ first_name: first_name.trim() || undefined, last_name: last_name.trim() || undefined, email: email.trim(), phone: phone.trim() || undefined, password, roleName }),
+          body: JSON.stringify({
+            first_name: first_name.trim() || undefined,
+            last_name: last_name.trim() || undefined,
+            email: email.trim(),
+            phone: phone.trim() || undefined,
+            password,
+            roleName,
+            profile_photo_url: profile_photo_url || undefined,
+            linked_student_ids: linked_student_ids.length ? linked_student_ids : undefined,
+          }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || "Erreur");
@@ -87,6 +154,8 @@ export default function UsersPage() {
       setPhone("");
       setPassword("");
       setRoleName("PARENT");
+      setProfile_photo_url(null);
+      setLinked_student_ids([]);
       load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
@@ -154,6 +223,8 @@ export default function UsersPage() {
     setPhone(u.phone ?? "");
     setPassword("");
     setRoleName(u.role ?? "PARENT");
+    setProfile_photo_url(u.profile_photo_url ?? null);
+    setLinked_student_ids(u.linked_student_ids ?? []);
     setShowForm(true);
   }
 
@@ -165,7 +236,15 @@ export default function UsersPage() {
     setPhone("");
     setPassword("");
     setRoleName("PARENT");
+    setProfile_photo_url(null);
+    setLinked_student_ids([]);
     setShowForm(true);
+  }
+
+  function toggleLinkedStudent(id: string) {
+    setLinked_student_ids((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
   }
 
   if (loading) return <div className="animate-pulse text-slate-500">Chargement...</div>;
@@ -195,9 +274,67 @@ export default function UsersPage() {
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={!!editing} className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40 disabled:bg-slate-50 disabled:text-slate-500" required />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Telephone</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Téléphone</label>
             <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40" />
           </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Photo de profil</label>
+            <ImageUpload value={profile_photo_url} onChange={(url) => setProfile_photo_url(url)} label="" token={token} previewClassName="w-20 h-20 rounded-lg object-cover border border-slate-200" />
+          </div>
+          <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Dossiers élèves liés</label>
+              <div className="flex flex-wrap gap-3 mb-3">
+                <div>
+                  <label className="block text-xs text-slate-500 mb-0.5">Année académique</label>
+                  <select
+                    value={studentFilterYear}
+                    onChange={(e) => { setStudentFilterYear(e.target.value); setStudentFilterClass(""); }}
+                    className="text-sm border border-[var(--app-border)] rounded-lg px-3 py-2 min-w-[140px]"
+                  >
+                    <option value="">— Sélectionner —</option>
+                    {academicYears.map((y) => (
+                      <option key={y.id} value={y.id}>{y.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-0.5">Classe</label>
+                  <select
+                    value={studentFilterClass}
+                    onChange={(e) => setStudentFilterClass(e.target.value)}
+                    disabled={!studentFilterYear}
+                    className="text-sm border border-[var(--app-border)] rounded-lg px-3 py-2 min-w-[140px] disabled:opacity-50"
+                  >
+                    <option value="">— Sélectionner —</option>
+                    {classes.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {linked_student_ids.length > 0 && (
+                <p className="text-xs text-slate-600 mb-2">{linked_student_ids.length} élève(s) sélectionné(s)</p>
+              )}
+              <div className="max-h-48 overflow-y-auto border border-[var(--app-border)] rounded-lg p-2 space-y-1">
+                {!studentFilterYear || !studentFilterClass ? (
+                  <p className="text-sm text-slate-500">Sélectionnez une année académique et une classe pour afficher les élèves.</p>
+                ) : studentsLoading ? (
+                  <p className="text-sm text-slate-500">Chargement...</p>
+                ) : students.length === 0 ? (
+                  <p className="text-sm text-slate-500">Aucun élève dans cette classe pour cette année.</p>
+                ) : (
+                  students.map((s) => (
+                    <label key={s.id} className="flex items-center gap-2 py-1 cursor-pointer hover:bg-slate-50 rounded px-2">
+                      <input type="checkbox" checked={linked_student_ids.includes(s.id)} onChange={() => toggleLinkedStudent(s.id)} className="rounded border-slate-300 text-[var(--school-accent-1)]" />
+                      <span className="text-sm">
+                        {s.order_number ? `${s.order_number} — ` : ""}{s.first_name} {s.last_name}
+                        <span className="text-slate-500 ml-1">({s.class_name})</span>
+                      </span>
+                    </label>
+                  ))
+                )}
+              </div>
+            </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Mot de passe {editing && "(vide = ne pas changer)"} {!editing && "(min. 6 caractères)"}</label>
             <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} required={!editing} minLength={editing ? undefined : 6} autoComplete="new-password" />
@@ -240,22 +377,30 @@ export default function UsersPage() {
         <table className="w-full text-left">
           <thead className="bg-slate-50 border-b border-[var(--app-border)]">
             <tr>
+              <th className="px-4 py-3 font-medium text-slate-900 w-14">Photo</th>
               <th className="px-4 py-3 font-medium text-slate-900">Nom</th>
               <th className="px-4 py-3 font-medium text-slate-900">Email</th>
-              <th className="px-4 py-3 font-medium text-slate-900">Telephone</th>
-              <th className="px-4 py-3 font-medium text-slate-900">Role</th>
+              <th className="px-4 py-3 font-medium text-slate-900">Téléphone</th>
+              <th className="px-4 py-3 font-medium text-slate-900">Rôle</th>
               <th className="px-4 py-3 font-medium text-slate-900 w-48">Actions</th>
             </tr>
           </thead>
           <tbody>
             {users.length === 0 ? (
-              <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">Aucun utilisateur</td></tr>
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">Aucun utilisateur</td></tr>
             ) : (
               users.map((u) => (
                 <tr key={u.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
+                  <td className="px-4 py-3">
+                    {getImageUrl(u.profile_photo_url ?? undefined) ? (
+                      <img src={getImageUrl(u.profile_photo_url ?? undefined)!} alt="" className="w-10 h-10 rounded-full object-cover border border-slate-200" />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 text-sm">👤</div>
+                    )}
+                  </td>
                   <td className="px-4 py-3 font-medium text-slate-900">{(u.first_name || "") + " " + (u.last_name || "").trim() || "-"}</td>
                   <td className="px-4 py-3 text-slate-600">{u.email}</td>
-                  <td className="px-4 py-3 text-slate-600">{u.phone ?? "-"}</td>
+                  <td className="px-4 py-3 text-slate-600">{u.phone ?? "—"}</td>
                   <td className="px-4 py-3">
                     <select value={u.role ?? ""} onChange={(e) => handleSetRole(u.id, e.target.value)} className="text-sm border border-[var(--app-border)] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[var(--school-accent-1)]">
                       {roles.map((r) => <option key={r.id} value={r.name}>{r.name}</option>)}

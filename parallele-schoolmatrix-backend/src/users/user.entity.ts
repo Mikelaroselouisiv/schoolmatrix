@@ -38,6 +38,9 @@ export class User {
   @Column({ nullable: true })
   cover_photo_url: string | null;
 
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  order_number: string | null;
+
   @Column()
   password_hash: string;
 

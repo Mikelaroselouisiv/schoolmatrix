@@ -35,20 +35,17 @@ export class GradesService {
     };
   }
 
-  async findAllCoefficients(filters: { academic_year_id?: string; class_id?: string; period_id?: string }): Promise<any[]> {
+  async findAllCoefficients(filters: { academic_year_id?: string; class_id?: string }): Promise<any[]> {
     const qb = this.coefRepo
       .createQueryBuilder('c')
       .leftJoinAndSelect('c.academic_year', 'ay')
       .leftJoinAndSelect('c.class', 'class')
       .leftJoinAndSelect('c.subject', 'subject')
-      .leftJoinAndSelect('c.period', 'period')
       .orderBy('ay.name', 'DESC')
       .addOrderBy('class.name', 'ASC')
-      .addOrderBy('subject.name', 'ASC')
-      .addOrderBy('period.order_index', 'ASC');
+      .addOrderBy('subject.name', 'ASC');
     if (filters.academic_year_id) qb.andWhere('c.academic_year_id = :ay', { ay: filters.academic_year_id });
     if (filters.class_id) qb.andWhere('c.class_id = :c', { c: filters.class_id });
-    if (filters.period_id) qb.andWhere('c.period_id = :p', { p: filters.period_id });
     const list = await qb.getMany();
     return list.map((c) => ({
       id: c.id,
@@ -58,20 +55,17 @@ export class GradesService {
       class_name: c.class?.name,
       subject_id: c.subject?.id,
       subject_name: c.subject?.name,
-      period_id: c.period?.id,
-      period_name: c.period?.name,
       coefficient: Number(c.coefficient),
       created_at: c.created_at,
     }));
   }
 
-  async getCoefficient(academicYearId: string, classId: string, subjectId: string, periodId: string): Promise<number | null> {
+  async getCoefficient(academicYearId: string, classId: string, subjectId: string, _periodId?: string): Promise<number | null> {
     const c = await this.coefRepo.findOne({
       where: {
         academic_year: { id: academicYearId },
         class: { id: classId },
         subject: { id: subjectId },
-        period: { id: periodId },
       },
     });
     return c ? Number(c.coefficient) : null;
@@ -81,7 +75,6 @@ export class GradesService {
     academic_year_id: string;
     class_id: string;
     subject_id: string;
-    period_id: string;
     coefficient: number;
   }): Promise<ClassSubjectCoefficient> {
     let c = await this.coefRepo.findOne({
@@ -89,9 +82,8 @@ export class GradesService {
         academic_year: { id: params.academic_year_id },
         class: { id: params.class_id },
         subject: { id: params.subject_id },
-        period: { id: params.period_id },
       },
-      relations: ['academic_year', 'class', 'subject', 'period'],
+      relations: ['academic_year', 'class', 'subject'],
     });
     if (c) {
       c.coefficient = String(params.coefficient);
@@ -101,7 +93,6 @@ export class GradesService {
       academic_year: { id: params.academic_year_id },
       class: { id: params.class_id },
       subject: { id: params.subject_id },
-      period: { id: params.period_id },
       coefficient: String(params.coefficient),
     });
     return this.coefRepo.save(c);
@@ -258,7 +249,7 @@ export class GradesService {
       }),
       this.coefRepo.find({
         where: { academic_year: { id: academicYearId }, class: { id: classId } },
-        relations: ['subject', 'period'],
+        relations: ['subject'],
       }),
       this.gradeRepo.find({
         where: { student: { id: studentId }, academic_year: { id: academicYearId } },
@@ -271,20 +262,28 @@ export class GradesService {
       const pid = g.period?.id ?? (g as any).period_id;
       if (sid && pid) gradeMap.set(`${sid}:${pid}`, Number(g.grade_value));
     }
-    const subjectMap = new Map<string, any>();
+    const coefBySubject = new Map<string, { subjectName: string; coefficient: number }>();
     for (const c of coefficients) {
       const sid = c.subject?.id ?? (c as any).subject_id;
       const subjName = c.subject?.name ?? '—';
-      const pid = c.period?.id ?? (c as any).period_id;
-      const pName = c.period?.name ?? '—';
-      const orderIndex = c.period?.order_index ?? 0;
-      const coef = Number(c.coefficient);
-      const gradeVal = gradeMap.get(`${sid}:${pid}`) ?? 0;
-      if (!subjectMap.has(sid)) {
-        subjectMap.set(sid, { subject_id: sid, subject_name: subjName, periods: [] });
+      coefBySubject.set(sid, { subjectName: subjName, coefficient: Number(c.coefficient) });
+    }
+    const subjectMap = new Map<string, any>();
+    for (const p of periods) {
+      for (const [sid, { subjectName, coefficient }] of coefBySubject) {
+        const gradeVal = gradeMap.get(`${sid}:${p.id}`) ?? 0;
+        if (!subjectMap.has(sid)) {
+          subjectMap.set(sid, { subject_id: sid, subject_name: subjectName, periods: [] });
+        }
+        const sub = subjectMap.get(sid);
+        sub.periods.push({
+          period_id: p.id,
+          period_name: p.name ?? '—',
+          order_index: p.order_index ?? 0,
+          coefficient,
+          grade_value: gradeVal,
+        });
       }
-      const sub = subjectMap.get(sid);
-      sub.periods.push({ period_id: pid, period_name: pName, order_index: orderIndex, coefficient: coef, grade_value: gradeVal });
     }
     const periodList = periods.map((p) => ({ id: p.id, name: p.name, order_index: p.order_index ?? 0 }));
     const subjectList = Array.from(subjectMap.values()).map((s) => ({

@@ -1,14 +1,17 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Student } from './student.entity';
 import { Class } from '../classes/class.entity';
+import { FormationClasseService } from '../formation-classe/formation-classe.service';
 
 @Injectable()
 export class StudentsService {
   constructor(
     @InjectRepository(Student)
     private readonly studentRepo: Repository<Student>,
+    @Inject(forwardRef(() => FormationClasseService))
+    private readonly formationClasseService: FormationClasseService,
   ) {}
 
   private randomLetter(): string {
@@ -60,6 +63,7 @@ export class StudentsService {
     first_name: string;
     last_name: string;
     class_id: string;
+    academic_year_id?: string;
     email?: string;
     phone?: string;
     address?: string;
@@ -102,7 +106,15 @@ export class StudentsService {
       class: { id: params.class_id },
       active: true,
     });
-    return this.studentRepo.save(student);
+    const saved = await this.studentRepo.save(student);
+    if (params.academic_year_id) {
+      await this.formationClasseService.addStudentToClass(
+        saved.id,
+        params.academic_year_id,
+        params.class_id,
+      );
+    }
+    return saved;
   }
 
   async update(

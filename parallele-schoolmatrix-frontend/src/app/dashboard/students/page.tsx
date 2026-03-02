@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { fetchWithAuth } from "@/src/lib/api";
 import { ImageUpload } from "@/src/components/ImageUpload";
 import { useSchoolProfile } from "@/src/contexts/SchoolProfileContext";
@@ -32,11 +33,16 @@ type Student = {
 };
 
 type ClassItem = { id: string; name: string };
+type AcademicYearItem = { id: string; name: string };
 
 export default function StudentsPage() {
+  const searchParams = useSearchParams();
+  const editIdFromUrl = searchParams.get("edit_id");
+  const handledEditId = useRef<string | null>(null);
   const { roleName } = useSchoolProfile() ?? { roleName: "" };
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [academicYears, setAcademicYears] = useState<AcademicYearItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [classFilter, setClassFilter] = useState("");
@@ -49,6 +55,7 @@ export default function StudentsPage() {
     first_name: "",
     last_name: "",
     class_id: "",
+    academic_year_id: "",
     email: "",
     phone: "",
     address: "",
@@ -75,15 +82,19 @@ export default function StudentsPage() {
     setError("");
     try {
       const params = classFilter ? `?class_id=${classFilter}` : "";
-      const [studentsRes, classesRes] = await Promise.all([
+      const [studentsRes, classesRes, yearsRes] = await Promise.all([
         fetchWithAuth(`${API_BASE}/students${params}`),
         fetchWithAuth(`${API_BASE}/classes`),
+        fetchWithAuth(`${API_BASE}/academic-years`),
       ]);
       const studentsData = await studentsRes.json();
       const classesData = await classesRes.json();
+      const yearsData = await yearsRes.json();
       if (!studentsRes.ok) throw new Error(studentsData.message || "Erreur");
       setStudents(studentsData.students ?? []);
       setClasses(classesData.classes ?? []);
+      const years = yearsData.academic_years ?? [];
+      setAcademicYears(years);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur de chargement");
     } finally {
@@ -95,9 +106,27 @@ export default function StudentsPage() {
     load();
   }, [classFilter]);
 
+  useEffect(() => {
+    if (!editIdFromUrl || !classes.length || handledEditId.current === editIdFromUrl) return;
+    (async () => {
+      try {
+        const res = await fetchWithAuth(`${API_BASE}/students/${editIdFromUrl}`);
+        const data = await res.json();
+        if (!res.ok || !data.student) return;
+        const s = data.student as Student;
+        handledEditId.current = editIdFromUrl;
+        setClassFilter(s.class_id ?? "");
+        openEdit(s);
+      } catch {
+        // ignore
+      }
+    })();
+  }, [editIdFromUrl, classes.length]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.first_name.trim() || !form.last_name.trim() || !form.class_id) return;
+    if (!editing && !form.academic_year_id) return;
     setSaving(true);
     setError("");
     setCreatedOrderNumber(null);
@@ -106,6 +135,7 @@ export default function StudentsPage() {
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
         class_id: form.class_id,
+        ...(form.academic_year_id ? { academic_year_id: form.academic_year_id } : {}),
         email: form.email.trim() || undefined,
         phone: form.phone.trim() || undefined,
         address: form.address.trim() || undefined,
@@ -145,7 +175,7 @@ export default function StudentsPage() {
         if (!res.ok) throw new Error(data.message || "Erreur");
         const orderNum = data.student?.order_number;
         setCreatedOrderNumber(orderNum ?? null);
-        setForm({ first_name: "", last_name: "", class_id: "", email: "", phone: "", address: "", birth_date: "", birth_place: "", gender: "", photo_identity_student: "", photo_identity_mother: "", photo_identity_father: "", photo_identity_responsible: "", mother_name: "", mother_phone: "", father_name: "", father_phone: "", responsible_name: "", responsible_phone: "" });
+        setForm({ first_name: "", last_name: "", class_id: "", academic_year_id: academicYears[0]?.id ?? "", email: "", phone: "", address: "", birth_date: "", birth_place: "", gender: "", photo_identity_student: "", photo_identity_mother: "", photo_identity_father: "", photo_identity_responsible: "", mother_name: "", mother_phone: "", father_name: "", father_phone: "", responsible_name: "", responsible_phone: "" });
         load();
       }
     } catch (e) {
@@ -188,6 +218,7 @@ export default function StudentsPage() {
   function openEdit(s: Student) {
     setEditing(s);
     setForm({
+      academic_year_id: "",
       first_name: s.first_name ?? "",
       last_name: s.last_name ?? "",
       class_id: s.class_id ?? "",
@@ -214,7 +245,8 @@ export default function StudentsPage() {
 
   function openCreate() {
     setEditing(null);
-    setForm({ first_name: "", last_name: "", class_id: "", email: "", phone: "", address: "", birth_date: "", birth_place: "", gender: "", photo_identity_student: "", photo_identity_mother: "", photo_identity_father: "", photo_identity_responsible: "", mother_name: "", mother_phone: "", father_name: "", father_phone: "", responsible_name: "", responsible_phone: "" });
+    const defaultYearId = academicYears.length > 0 ? academicYears[0].id : "";
+    setForm({ first_name: "", last_name: "", class_id: "", academic_year_id: defaultYearId, email: "", phone: "", address: "", birth_date: "", birth_place: "", gender: "", photo_identity_student: "", photo_identity_mother: "", photo_identity_father: "", photo_identity_responsible: "", mother_name: "", mother_phone: "", father_name: "", father_phone: "", responsible_name: "", responsible_phone: "" });
     setShowForm(true);
     setCreatedOrderNumber(null);
   }
@@ -227,10 +259,6 @@ export default function StudentsPage() {
         <h2 className="text-2xl font-bold text-slate-900">Inscription des élèves</h2>
         <button onClick={openCreate} className="app-btn-primary">Inscrire un élève</button>
       </div>
-
-      <p className="text-slate-600 text-sm">
-        Chaque élève reçoit un numéro d&apos;ordre unique (ex: 6A-001) à la création. Ce numéro sera utilisé pour associer les parents au dossier de leur enfant.
-      </p>
 
       {createdOrderNumber && (
         <div className="p-4 rounded-xl bg-green-50 border border-green-200">
@@ -273,6 +301,15 @@ export default function StudentsPage() {
             </div>
           </div>
 
+          {!editing && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Année académique *</label>
+              <select value={form.academic_year_id} onChange={(e) => setForm((f) => ({ ...f, academic_year_id: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2" required>
+                <option value="">Sélectionner</option>
+                {academicYears.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
+              </select>
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Classe *</label>
             <select value={form.class_id} onChange={(e) => setForm((f) => ({ ...f, class_id: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2" required>

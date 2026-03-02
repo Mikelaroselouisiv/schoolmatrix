@@ -13,8 +13,11 @@ import { Class } from '../classes/class.entity';
 import { AcademicYear } from '../academic-year/academic-year.entity';
 
 export const DECISION_ADMIS = 'ADMIS';
+export const DECISION_ADMIS_AILLEURS = 'ADMIS_AILLEURS';
 export const DECISION_REDOUBLER = 'REDOUBLER';
+export const DECISION_AJOURNE = 'AJOURNE';
 export const DECISION_RENVOYE = 'RENVOYE';
+export const DECISION_RENVOYE_DEFINITIVEMENT = 'RENVOYE_DEFINITIVEMENT';
 export const DECISION_EXPELLED = 'EXPELLED';
 
 @Entity('student_class_assignment')

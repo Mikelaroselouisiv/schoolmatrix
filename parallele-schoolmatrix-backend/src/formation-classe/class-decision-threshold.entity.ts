@@ -30,9 +30,17 @@ export class ClassDecisionThreshold {
   @Column({ type: 'decimal', precision: 6, scale: 2, default: '10' })
   min_average_admis: string;
 
-  /** Moyenne minimale pour REDOUBLER (ex: 5). En dessous = RENVOYE pour moyennes */
-  @Column({ type: 'decimal', precision: 6, scale: 2, default: '5' })
+  /** Moyenne minimale pour ADMIS_AILLEURS (ex: 8) */
+  @Column({ type: 'decimal', precision: 6, scale: 2, default: '8' })
+  min_average_admis_ailleurs: string;
+
+  /** Moyenne minimale pour REDOUBLER (ex: 6) */
+  @Column({ type: 'decimal', precision: 6, scale: 2, default: '6' })
   min_average_redoubler: string;
+
+  /** Moyenne minimale pour AJOURNE (ex: 4). En dessous = RENVOYE_DEFINITIVEMENT */
+  @Column({ type: 'decimal', precision: 6, scale: 2, default: '4' })
+  min_average_ajourne: string;
 
   @CreateDateColumn()
   created_at: Date;

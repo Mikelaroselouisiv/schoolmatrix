@@ -2,7 +2,11 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { fetchWithAuth, getImageUrl } from "@/src/lib/api";
+import { useSchoolProfile } from "@/src/contexts/SchoolProfileContext";
+import { ROLES_FULL } from "@/src/lib/dashboardRoles";
+import { ExportPdfButton } from "@/src/components/ExportPdfButton";
 
 type Student = {
   id: string;
@@ -80,17 +84,25 @@ type FormationStudent = {
 
 const DECISION_LABELS: Record<string, string> = {
   ADMIS: "Admis",
+  ADMIS_AILLEURS: "Admis ailleurs",
   REDOUBLER: "Redoubler",
+  AJOURNE: "Ajourné",
   RENVOYE: "Renvoyé",
+  RENVOYE_DEFINITIVEMENT: "Renvoyé définitivement",
   EXPELLED: "Exclu",
 };
+
+type LinkedStudent = { id: string; order_number: string | null; first_name: string; last_name: string; class_id: string; class_name: string };
 
 export default function FicheElevePage() {
   const searchParams = useSearchParams();
   const initialStudentId = searchParams.get("student_id") ?? "";
+  const { roleName } = useSchoolProfile() ?? { roleName: "" };
 
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [students, setStudents] = useState<{ id: string; order_number: string | null; first_name: string; last_name: string; class_id: string }[]>([]);
+  const [linkedStudents, setLinkedStudents] = useState<LinkedStudent[]>([]);
+  const [restrictToLinkedStudents, setRestrictToLinkedStudents] = useState(false);
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [selectedClassId, setSelectedClassId] = useState("");
   const [selectedStudentId, setSelectedStudentId] = useState(initialStudentId);
@@ -118,16 +130,25 @@ export default function FicheElevePage() {
 
   const loadAcademicYears = useCallback(async () => {
     try {
-      const res = await fetchWithAuth(`${API_BASE}/academic-years`);
+      const [res, ctxRes] = await Promise.all([
+        fetchWithAuth(`${API_BASE}/academic-years`),
+        fetchWithAuth(`${API_BASE}/school/current-context`),
+      ]);
       const data = await res.json();
+      const ctxData = await ctxRes.json();
       if (!res.ok) throw new Error(data.message || "Erreur");
       const years = data.academic_years ?? [];
       setAcademicYears(years);
-      if (!selectedYearId && years.length > 0) setSelectedYearId(years[0].id);
+      if (years.length > 0) {
+        const defaultId = ctxRes.ok && ctxData.current_academic_year_id && years.some((y: { id: string }) => y.id === ctxData.current_academic_year_id)
+          ? ctxData.current_academic_year_id
+          : years[0].id;
+        setSelectedYearId((prev) => (prev === "" ? defaultId : prev));
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
     }
-  }, [API_BASE, selectedYearId]);
+  }, [API_BASE]);
 
   const loadStudents = useCallback(async (classId: string) => {
     if (!classId) {
@@ -151,15 +172,33 @@ export default function FicheElevePage() {
   useEffect(() => {
     async function init() {
       setLoading(true);
-      await Promise.all([loadClasses(), loadAcademicYears()]);
+      const isParentOrTeacher = roleName === "PARENT" || roleName === "TEACHER";
+      const [_, __, linkedRes] = await Promise.all([
+        loadClasses(),
+        loadAcademicYears(),
+        isParentOrTeacher ? fetchWithAuth(`${API_BASE}/users/me/linked-students`) : Promise.resolve(null),
+      ]);
+      if (isParentOrTeacher && linkedRes) {
+        const linkedData = await linkedRes.json();
+        const list: LinkedStudent[] = linkedData.linked_students ?? [];
+        if (list.length > 0) {
+          setLinkedStudents(list);
+          setRestrictToLinkedStudents(true);
+          setStudents(list.map((s: LinkedStudent) => ({ id: s.id, order_number: s.order_number, first_name: s.first_name, last_name: s.last_name, class_id: s.class_id })));
+          const toSelect = initialStudentId && list.some((x) => x.id === initialStudentId) ? initialStudentId : list[0].id;
+          const sel = list.find((x) => x.id === toSelect) ?? list[0];
+          setSelectedStudentId(toSelect);
+          setSelectedClassId(sel.class_id);
+        }
+      }
       setLoading(false);
     }
     init();
-  }, [loadClasses, loadAcademicYears]);
+  }, [loadClasses, loadAcademicYears, roleName]);
 
   useEffect(() => {
-    loadStudents(selectedClassId);
-  }, [selectedClassId, loadStudents]);
+    if (!restrictToLinkedStudents) loadStudents(selectedClassId);
+  }, [selectedClassId, loadStudents, restrictToLinkedStudents]);
 
   useEffect(() => {
     if (initialStudentId) {
@@ -265,33 +304,43 @@ export default function FicheElevePage() {
 
       {/* Sélecteur élève */}
       <div className="flex flex-wrap gap-4 items-end p-4 rounded-xl border border-[var(--app-border)] bg-white">
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Classe</label>
-          <select
-            value={selectedClassId}
-            onChange={(e) => {
-              setSelectedClassId(e.target.value);
-              setSelectedStudentId("");
-            }}
-            className="border border-[var(--app-border)] rounded-lg px-3 py-2 min-w-[180px]"
-          >
-            <option value="">— Sélectionner —</option>
-            {classes.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-        </div>
+        {!restrictToLinkedStudents && (
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Classe</label>
+            <select
+              value={selectedClassId}
+              onChange={(e) => {
+                setSelectedClassId(e.target.value);
+                setSelectedStudentId("");
+              }}
+              className="border border-[var(--app-border)] rounded-lg px-3 py-2 min-w-[180px]"
+            >
+              <option value="">— Sélectionner —</option>
+              {classes.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Élève</label>
           <select
             value={selectedStudentId}
-            onChange={(e) => setSelectedStudentId(e.target.value)}
+            onChange={(e) => {
+              const id = e.target.value;
+              setSelectedStudentId(id);
+              if (restrictToLinkedStudents) {
+                const s = linkedStudents.find((x) => x.id === id);
+                if (s) setSelectedClassId(s.class_id);
+              }
+            }}
             className="border border-[var(--app-border)] rounded-lg px-3 py-2 min-w-[220px]"
           >
             <option value="">— Sélectionner —</option>
-            {students.map((s) => (
+            {(restrictToLinkedStudents ? linkedStudents : students).map((s) => (
               <option key={s.id} value={s.id}>
                 {s.order_number ? `${s.order_number} — ` : ""}{s.first_name} {s.last_name}
+                {restrictToLinkedStudents && "class_name" in s ? ` (${(s as LinkedStudent).class_name})` : ""}
               </option>
             ))}
           </select>
@@ -307,7 +356,7 @@ export default function FicheElevePage() {
       ) : (
         <>
           {/* En-tête : photo enfant, nom, téléphone */}
-          <div className="flex flex-wrap gap-6 p-6 rounded-xl border border-[var(--app-border)] bg-white">
+          <div className="flex flex-wrap gap-6 p-6 rounded-xl border border-[var(--app-border)] bg-white items-start justify-between">
             <div className="flex items-center gap-4">
               <div className="w-24 h-24 rounded-xl overflow-hidden bg-slate-100 border border-[var(--app-border)] flex-shrink-0">
                 {getImageUrl(student.photo_identity_student) ? (
@@ -327,6 +376,14 @@ export default function FicheElevePage() {
                 <p className="text-slate-500 text-sm">{student.class_name}</p>
               </div>
             </div>
+            {ROLES_FULL.includes(roleName) && (
+              <Link
+                href={`/dashboard/students?edit_id=${student.id}`}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--school-accent-1)] text-[var(--school-accent-1)] hover:bg-[var(--school-accent-1)]/10 font-medium text-sm transition-colors"
+              >
+                Modifier l&apos;élève
+              </Link>
+            )}
           </div>
 
           {/* Parents : minimal (photo, nom, tél) */}
@@ -363,9 +420,30 @@ export default function FicheElevePage() {
               <div className="p-4">
                 {discipline ? (
                   <div className="space-y-3">
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-4 flex-wrap">
                       <div className="text-3xl font-bold text-slate-900">{discipline.disciplinary_points}</div>
-                      <span className="text-slate-600">points</span>
+                      <span className="text-slate-600">/ 100 points</span>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="h-4 rounded-full overflow-hidden bg-slate-200">
+                        <div
+                          className="h-full rounded-full transition-all duration-500"
+                          style={{
+                            width: `${Math.min(100, Math.max(0, discipline.disciplinary_points))}%`,
+                            backgroundColor:
+                              discipline.disciplinary_points >= 80 ? "#22c55e" :
+                              discipline.disciplinary_points >= 60 ? "#eab308" :
+                              discipline.disciplinary_points >= 40 ? "#f97316" :
+                              "#ef4444",
+                          }}
+                        />
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        {discipline.disciplinary_points >= 80 && "Très bien"}
+                        {discipline.disciplinary_points >= 60 && discipline.disciplinary_points < 80 && "Correct"}
+                        {discipline.disciplinary_points >= 40 && discipline.disciplinary_points < 60 && "Attention"}
+                        {discipline.disciplinary_points < 40 && "Critique"}
+                      </p>
                     </div>
                     <div className="flex flex-wrap gap-4 text-sm">
                       <span className="text-slate-600">Retards : <strong>{discipline.lateness_count}</strong></span>
@@ -389,8 +467,32 @@ export default function FicheElevePage() {
 
             {/* Situation de paiement */}
             <div className="rounded-xl border border-[var(--app-border)] bg-white overflow-hidden">
-              <div className="px-4 py-3 bg-slate-50 border-b border-[var(--app-border)] font-semibold text-slate-900 flex items-center justify-between">
+              <div className="px-4 py-3 bg-slate-50 border-b border-[var(--app-border)] font-semibold text-slate-900 flex items-center justify-between flex-wrap gap-2">
                 <span>Situation de paiement</span>
+                <div className="flex items-center gap-2">
+                {payment && payment.by_service?.length > 0 && (
+                  <ExportPdfButton
+                    table={{
+                      title: `Situation de paiement — ${student.first_name} ${student.last_name}`,
+                      subtitle: payment.academic_year,
+                      columns: [
+                        { header: "Service", key: "service_name" },
+                        { header: "Dû", key: "amount_due" },
+                        { header: "Payé", key: "total_paid" },
+                        { header: "Solde", key: "balance" },
+                      ],
+                      rows: payment.by_service.map((svc) => ({
+                        service_name: svc.service_name,
+                        amount_due: String(svc.amount_due),
+                        total_paid: String(svc.total_paid),
+                        balance: String(svc.balance),
+                      })),
+                    }}
+                    filename={`paiement-${student.first_name}-${student.last_name}-${payment.academic_year}.pdf`}
+                    label="Exporter en PDF"
+                    className="text-sm px-2 py-1.5 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                  />
+                )}
                 {academicYears.length > 0 && (
                   <select
                     value={selectedYearId || academicYears[0]?.id}
@@ -402,6 +504,7 @@ export default function FicheElevePage() {
                     ))}
                   </select>
                 )}
+                </div>
               </div>
               <div className="p-4">
                 {payment && payment.by_service?.length > 0 ? (
@@ -431,6 +534,57 @@ export default function FicheElevePage() {
           <div className="rounded-xl border border-[var(--app-border)] bg-white overflow-hidden">
             <div className="px-4 py-3 bg-slate-50 border-b border-[var(--app-border)] font-semibold text-slate-900 flex flex-wrap items-center justify-between gap-3">
               <span>Carnet de notes</span>
+              <div className="flex items-center gap-2">
+              {examResults && examResults.subjects?.length > 0 && examResults.periods && (
+                <ExportPdfButton
+                  sections={[
+                    {
+                      title: "Carnet de notes",
+                      table: {
+                        columns: [
+                          { header: "Matière", key: "subject_name" },
+                          ...(examResults.periods.map((p, i) => ({ header: p.name, key: `period_${i}` }))),
+                          { header: "Moy. mat.", key: "moy_mat" },
+                        ],
+                        rows: examResults.subjects.map((subj) => {
+                          const grades = subj.periods || [];
+                          const totalCoef = grades.reduce((s, g) => s + g.coefficient, 0);
+                          const weightedSum = grades.reduce((s, g) => s + (g.grade_value || 0) * g.coefficient, 0);
+                          const moyMat = totalCoef > 0 ? Math.round((weightedSum / totalCoef) * 100) / 100 : null;
+                          const row: Record<string, string | number> = {
+                            subject_name: subj.subject_name,
+                            moy_mat: moyMat != null ? moyMat.toFixed(2) : "—",
+                          };
+                          examResults.periods?.forEach((p, i) => {
+                            const g = grades.find((gr) => gr.period_id === p.id);
+                            row[`period_${i}`] = g?.grade_value != null ? g.grade_value : "—";
+                          });
+                          return row;
+                        }),
+                      },
+                    },
+                    ...(formationDecision?.average != null || formationDecision?.decision
+                      ? [
+                          {
+                            title: "Résultat",
+                            lines: [
+                              ...(formationDecision?.average != null
+                                ? [`Moyenne générale : ${Number(formationDecision.average).toFixed(2)}`]
+                                : []),
+                              ...(formationDecision?.decision
+                                ? [`Décision : ${DECISION_LABELS[formationDecision.decision] ?? formationDecision.decision}`]
+                                : []),
+                            ],
+                          },
+                        ]
+                      : []),
+                  ]}
+                  mainTitle={`Carnet de notes — ${student.first_name} ${student.last_name} (${examResults.academic_year_name ?? ""})`}
+                  filename={`notes-${student.first_name}-${student.last_name}-${examResults.academic_year_name ?? "annee"}.pdf`}
+                  label="Exporter en PDF"
+                  className="text-sm px-2 py-1.5 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                />
+              )}
               <select
                 value={selectedYearId || academicYears[0]?.id}
                 onChange={(e) => handleYearChange(e.target.value)}
@@ -440,6 +594,7 @@ export default function FicheElevePage() {
                   <option key={y.id} value={y.id}>{y.name}</option>
                 ))}
               </select>
+              </div>
             </div>
             <div className="p-4 overflow-x-auto">
               {examResults && examResults.subjects?.length > 0 ? (
@@ -497,11 +652,15 @@ export default function FicheElevePage() {
                           className={`inline-block px-3 py-1 rounded-lg font-semibold text-sm ${
                             formationDecision.decision === "ADMIS"
                               ? "bg-green-100 text-green-800"
-                              : formationDecision.decision === "REDOUBLER"
-                                ? "bg-amber-100 text-amber-800"
-                                : formationDecision.decision === "RENVOYE" || formationDecision.decision === "EXPELLED"
-                                  ? "bg-red-100 text-red-800"
-                                  : "bg-slate-100 text-slate-700"
+                              : formationDecision.decision === "ADMIS_AILLEURS"
+                                ? "bg-emerald-100 text-emerald-800"
+                                : formationDecision.decision === "REDOUBLER"
+                                  ? "bg-amber-100 text-amber-800"
+                                  : formationDecision.decision === "AJOURNE"
+                                    ? "bg-orange-100 text-orange-800"
+                                    : formationDecision.decision === "RENVOYE_DEFINITIVEMENT" || formationDecision.decision === "RENVOYE" || formationDecision.decision === "EXPELLED"
+                                      ? "bg-red-100 text-red-800"
+                                      : "bg-slate-100 text-slate-700"
                           }`}
                         >
                           {DECISION_LABELS[formationDecision.decision] ?? formationDecision.decision}

@@ -151,8 +151,8 @@ export class DisciplineService {
   }
 
   async addDeduction(studentId: string, pointsDeducted: number, reason?: string): Promise<any> {
-    if (pointsDeducted <= 0 || pointsDeducted > 100) {
-      throw new BadRequestException('points_deducted must be between 1 and 100');
+    if (pointsDeducted === 0 || pointsDeducted < -100 || pointsDeducted > 100) {
+      throw new BadRequestException('points_deducted must be between -100 and 100 (negative = ajouter, positif = retirer)');
     }
     const student = await this.studentRepo.findOne({ where: { id: studentId } });
     if (!student) throw new NotFoundException('Student not found');
@@ -182,8 +182,8 @@ export class DisciplineService {
       .select('COALESCE(SUM(d.points_deducted), 0)', 'sum')
       .where('d.student_id = :id', { id: studentId })
       .getRawOne();
-    const deducted = parseInt(result?.sum ?? '0', 10);
-    return Math.max(0, DISCIPLINARY_BASE_POINTS - deducted);
+    const netDeducted = parseInt(result?.sum ?? '0', 10);
+    return Math.min(100, Math.max(0, DISCIPLINARY_BASE_POINTS - netDeducted));
   }
 
   async listDeductions(studentId?: string): Promise<any> {
@@ -307,7 +307,7 @@ export class DisciplineService {
     let cumulative = DISCIPLINARY_BASE_POINTS;
     const points_history: { date: string | null; points: number }[] = [{ date: null, points: cumulative }];
     for (const d of deductions) {
-      cumulative = Math.max(0, cumulative - d.points_deducted);
+      cumulative = Math.min(100, Math.max(0, cumulative - d.points_deducted));
       points_history.push({
         date: d.created_at.toISOString().slice(0, 10),
         points: cumulative,

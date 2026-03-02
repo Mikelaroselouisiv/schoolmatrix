@@ -9,10 +9,13 @@ import { AcademicYear } from '../academic-year/academic-year.entity';
 import { Grade } from '../grades/grade.entity';
 import { ClassSubjectCoefficient } from '../grades/class-subject-coefficient.entity';
 import { DisciplinaryMeasure } from '../discipline/disciplinary-measure.entity';
+import { isPreschoolClass } from '../utils/preschool';
 import {
   DECISION_ADMIS,
+  DECISION_ADMIS_AILLEURS,
   DECISION_REDOUBLER,
-  DECISION_RENVOYE,
+  DECISION_AJOURNE,
+  DECISION_RENVOYE_DEFINITIVEMENT,
   DECISION_EXPELLED,
 } from './student-class-assignment.entity';
 
@@ -105,7 +108,9 @@ export class FormationClasseService {
         class: { id: classId },
         academic_year: { id: academicYearId },
         min_average_admis: '10',
-        min_average_redoubler: '5',
+        min_average_admis_ailleurs: '8',
+        min_average_redoubler: '6',
+        min_average_ajourne: '4',
       });
       t = await this.thresholdRepo.save(t);
     }
@@ -115,12 +120,18 @@ export class FormationClasseService {
   async saveThreshold(
     classId: string,
     academicYearId: string,
-    minAverageAdmis: number,
-    minAverageRedoubler: number,
+    thresholds: {
+      min_average_admis: number;
+      min_average_admis_ailleurs: number;
+      min_average_redoubler: number;
+      min_average_ajourne: number;
+    },
   ): Promise<ClassDecisionThreshold> {
     const t = await this.getOrCreateThreshold(classId, academicYearId);
-    t.min_average_admis = String(minAverageAdmis);
-    t.min_average_redoubler = String(minAverageRedoubler);
+    t.min_average_admis = String(thresholds.min_average_admis);
+    t.min_average_admis_ailleurs = String(thresholds.min_average_admis_ailleurs);
+    t.min_average_redoubler = String(thresholds.min_average_redoubler);
+    t.min_average_ajourne = String(thresholds.min_average_ajourne);
     return this.thresholdRepo.save(t);
   }
 
@@ -141,7 +152,9 @@ export class FormationClasseService {
       academic_year_id: t.academic_year?.id,
       academic_year_name: t.academic_year?.name,
       min_average_admis: Number(t.min_average_admis),
+      min_average_admis_ailleurs: Number(t.min_average_admis_ailleurs),
       min_average_redoubler: Number(t.min_average_redoubler),
+      min_average_ajourne: Number(t.min_average_ajourne),
     }));
   }
 
@@ -174,9 +187,19 @@ export class FormationClasseService {
   }
 
   async computeAndSetDecisions(academicYearId: string, classId: string): Promise<{ updated: number }> {
+    const cls = await this.classRepo.findOne({
+      where: { id: classId },
+      select: ['id', 'description', 'level'],
+    });
+    if (cls && isPreschoolClass(cls.description, cls.level)) {
+      return { updated: 0 };
+    }
+
     const threshold = await this.getOrCreateThreshold(classId, academicYearId);
     const minAdmis = Number(threshold.min_average_admis);
+    const minAdmisAilleurs = Number(threshold.min_average_admis_ailleurs);
     const minRedoubler = Number(threshold.min_average_redoubler);
+    const minAjourne = Number(threshold.min_average_ajourne);
 
     const assignments = await this.assignmentRepo.find({
       where: { academic_year: { id: academicYearId }, class: { id: classId } },
@@ -204,10 +227,14 @@ export class FormationClasseService {
         a.decision = null;
       } else if (avg >= minAdmis) {
         a.decision = DECISION_ADMIS;
+      } else if (avg >= minAdmisAilleurs) {
+        a.decision = DECISION_ADMIS_AILLEURS;
       } else if (avg >= minRedoubler) {
         a.decision = DECISION_REDOUBLER;
+      } else if (avg >= minAjourne) {
+        a.decision = DECISION_AJOURNE;
       } else {
-        a.decision = DECISION_RENVOYE;
+        a.decision = DECISION_RENVOYE_DEFINITIVEMENT;
       }
       await this.assignmentRepo.save(a);
       updated++;
@@ -278,13 +305,12 @@ export class FormationClasseService {
       if (existingNext) continue;
 
       let nextClassId: string;
-      if (a.decision === DECISION_ADMIS) {
+      const promotes = [DECISION_ADMIS, DECISION_ADMIS_AILLEURS];
+      if (a.decision && promotes.includes(a.decision)) {
         const currentClass = a.class;
         const nextClass = this.findNextLevelClass(currentClass, classes);
         nextClassId = nextClass?.id ?? currentClass?.id;
         promoted++;
-      } else if (a.decision === DECISION_REDOUBLER || a.decision === DECISION_RENVOYE || a.decision === DECISION_EXPELLED) {
-        nextClassId = a.class?.id;
       } else {
         nextClassId = a.class?.id;
       }

@@ -94,6 +94,50 @@ const DECISION_LABELS: Record<string, string> = {
 
 type LinkedStudent = { id: string; order_number: string | null; first_name: string; last_name: string; class_id: string; class_name: string };
 
+const DAYS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
+
+type ScheduleSlot = {
+  id: string;
+  academic_year: string | null;
+  class_id: string;
+  class_name: string;
+  subject_id: string;
+  subject_name: string;
+  teacher_id: number;
+  teacher_name: string | null;
+  room_id: string | null;
+  room_name: string | null;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+};
+
+type ExamScheduleItem = {
+  id: string;
+  class_id: string;
+  class_name: string;
+  subject_id: string;
+  subject_name: string;
+  period: string;
+  exam_date: string;
+  start_time: string;
+  end_time: string;
+};
+
+type ExtracurricularActivityItem = {
+  id: string;
+  academic_year_id: string;
+  academic_year_name: string;
+  activity_date: string;
+  start_time: string;
+  end_time: string;
+  class_id: string;
+  class_name: string;
+  occasion: string;
+  participation_fee: string | null;
+  dress_code: string | null;
+};
+
 export default function FicheElevePage() {
   const searchParams = useSearchParams();
   const initialStudentId = searchParams.get("student_id") ?? "";
@@ -113,6 +157,10 @@ export default function FicheElevePage() {
   const [payment, setPayment] = useState<PaymentStatus | null>(null);
   const [examResults, setExamResults] = useState<ExamResults | null>(null);
   const [formationDecision, setFormationDecision] = useState<FormationStudent | null>(null);
+  const [scheduleTab, setScheduleTab] = useState<"cours" | "examens" | "parascolaires">("cours");
+  const [scheduleSlots, setScheduleSlots] = useState<ScheduleSlot[]>([]);
+  const [examSchedules, setExamSchedules] = useState<ExamScheduleItem[]>([]);
+  const [extracurricularActivities, setExtracurricularActivities] = useState<ExtracurricularActivityItem[]>([]);
   const [error, setError] = useState("");
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
@@ -213,6 +261,9 @@ export default function FicheElevePage() {
       setPayment(null);
       setExamResults(null);
       setFormationDecision(null);
+      setScheduleSlots([]);
+      setExamSchedules([]);
+      setExtracurricularActivities([]);
       return;
     }
     setError("");
@@ -242,20 +293,47 @@ export default function FicheElevePage() {
       else setPayment(null);
 
       if (sData?.class_id && selectedYearId) {
-        const [examRes, formationRes] = await Promise.all([
+        const yearName = academicYears.find((y) => y.id === selectedYearId)?.name;
+        const [examRes, formationRes, slotsRes, examSchedRes, activitiesRes] = await Promise.all([
           fetchWithAuth(`${API_BASE}/grades/student-exam-results?student_id=${studentId}&academic_year_id=${selectedYearId}`),
           fetchWithAuth(`${API_BASE}/formation-classe/students?academic_year_id=${selectedYearId}&class_id=${sData.class_id}`),
+          fetchWithAuth(`${API_BASE}/schedule-slots?class_id=${sData.class_id}${yearName ? `&academic_year=${encodeURIComponent(yearName)}` : ""}`),
+          fetchWithAuth(`${API_BASE}/exam-schedules?class_id=${sData.class_id}`),
+          fetchWithAuth(`${API_BASE}/extracurricular-activities?class_id=${sData.class_id}&academic_year_id=${selectedYearId}`),
         ]);
         const examData = await examRes.json();
         const formationData = await formationRes.json();
+        const slotsData = await slotsRes.json();
+        const examSchedData = await examSchedRes.json();
+        const activitiesData = await activitiesRes.json();
         if (examRes.ok && examData.periods) setExamResults(examData);
         else setExamResults(null);
         const formationList = formationData.students ?? [];
         const fs = formationList.find((f: FormationStudent) => f.id === studentId);
         setFormationDecision(fs ?? null);
+        setScheduleSlots(slotsRes.ok ? (slotsData.schedule_slots ?? []) : []);
+        setExamSchedules(examSchedRes.ok ? (examSchedData.exam_schedules ?? []) : []);
+        setExtracurricularActivities(activitiesRes.ok ? (activitiesData.extracurricular_activities ?? []) : []);
       } else {
         setExamResults(null);
         setFormationDecision(null);
+        if (sData?.class_id) {
+          const [slotsRes, examSchedRes, activitiesRes] = await Promise.all([
+            fetchWithAuth(`${API_BASE}/schedule-slots?class_id=${sData.class_id}`),
+            fetchWithAuth(`${API_BASE}/exam-schedules?class_id=${sData.class_id}`),
+            fetchWithAuth(`${API_BASE}/extracurricular-activities?class_id=${sData.class_id}`),
+          ]);
+          const slotsData = await slotsRes.json();
+          const examSchedData = await examSchedRes.json();
+          const activitiesData = await activitiesRes.json();
+          setScheduleSlots(slotsRes.ok ? (slotsData.schedule_slots ?? []) : []);
+          setExamSchedules(examSchedRes.ok ? (examSchedData.exam_schedules ?? []) : []);
+          setExtracurricularActivities(activitiesRes.ok ? (activitiesData.extracurricular_activities ?? []) : []);
+        } else {
+          setScheduleSlots([]);
+          setExamSchedules([]);
+          setExtracurricularActivities([]);
+        }
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
@@ -264,6 +342,9 @@ export default function FicheElevePage() {
       setPayment(null);
       setExamResults(null);
       setFormationDecision(null);
+      setScheduleSlots([]);
+      setExamSchedules([]);
+      setExtracurricularActivities([]);
     }
   }, [API_BASE, selectedYearId, academicYears]);
 
@@ -527,6 +608,132 @@ export default function FicheElevePage() {
                   <p className="text-slate-500 text-sm">Aucune donnée de paiement pour cette année.</p>
                 )}
               </div>
+            </div>
+          </div>
+
+          {/* Emploi du temps : cours, examens, activités parascolaires */}
+          <div className="rounded-xl border border-[var(--app-border)] bg-white overflow-hidden">
+            <div className="px-4 py-3 bg-slate-50 border-b border-[var(--app-border)] font-semibold text-slate-900 flex flex-wrap items-center justify-between gap-2">
+              <span>Emploi du temps</span>
+              {academicYears.length > 0 && (
+                <select
+                  value={selectedYearId || academicYears[0]?.id}
+                  onChange={(e) => handleYearChange(e.target.value)}
+                  className="text-sm border border-[var(--app-border)] rounded-lg px-3 py-2"
+                >
+                  {academicYears.map((y) => (
+                    <option key={y.id} value={y.id}>{y.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <div className="p-4">
+              <div className="flex gap-1 border-b border-[var(--app-border)] mb-4">
+                {(["cours", "examens", "parascolaires"] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setScheduleTab(t)}
+                    className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+                      scheduleTab === t
+                        ? "bg-white border border-[var(--app-border)] border-b-0 text-slate-900 -mb-px"
+                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                    }`}
+                  >
+                    {t === "cours" && "Horaire des cours"}
+                    {t === "examens" && "Horaire des examens"}
+                    {t === "parascolaires" && "Activités parascolaires"}
+                  </button>
+                ))}
+              </div>
+              {scheduleTab === "cours" && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 border-b border-[var(--app-border)]">
+                      <tr>
+                        <th className="px-4 py-2 font-medium text-slate-900">Jour</th>
+                        <th className="px-4 py-2 font-medium text-slate-900">Horaire</th>
+                        <th className="px-4 py-2 font-medium text-slate-900">Matière</th>
+                        <th className="px-4 py-2 font-medium text-slate-900">Professeur</th>
+                        <th className="px-4 py-2 font-medium text-slate-900">Salle</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {scheduleSlots.length === 0 ? (
+                        <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">Aucun créneau de cours pour cette classe.</td></tr>
+                      ) : (
+                        scheduleSlots.map((s) => (
+                          <tr key={s.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
+                            <td className="px-4 py-2 text-slate-700">{DAYS[s.day_of_week] ?? s.day_of_week}</td>
+                            <td className="px-4 py-2 text-slate-600">{s.start_time} – {s.end_time}</td>
+                            <td className="px-4 py-2 font-medium text-slate-900">{s.subject_name}</td>
+                            <td className="px-4 py-2 text-slate-700">{s.teacher_name ?? "—"}</td>
+                            <td className="px-4 py-2 text-slate-600">{s.room_name ?? "—"}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {scheduleTab === "examens" && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 border-b border-[var(--app-border)]">
+                      <tr>
+                        <th className="px-4 py-2 font-medium text-slate-900">Date</th>
+                        <th className="px-4 py-2 font-medium text-slate-900">Horaire</th>
+                        <th className="px-4 py-2 font-medium text-slate-900">Matière</th>
+                        <th className="px-4 py-2 font-medium text-slate-900">Période</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {examSchedules.length === 0 ? (
+                        <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">Aucun examen planifié pour cette classe.</td></tr>
+                      ) : (
+                        examSchedules.map((e) => (
+                          <tr key={e.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
+                            <td className="px-4 py-2 text-slate-600">{e.exam_date}</td>
+                            <td className="px-4 py-2 text-slate-600">{e.start_time} – {e.end_time}</td>
+                            <td className="px-4 py-2 font-medium text-slate-900">{e.subject_name}</td>
+                            <td className="px-4 py-2 text-slate-600">{e.period}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {scheduleTab === "parascolaires" && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 border-b border-[var(--app-border)]">
+                      <tr>
+                        <th className="px-4 py-2 font-medium text-slate-900">Date</th>
+                        <th className="px-4 py-2 font-medium text-slate-900">Horaire</th>
+                        <th className="px-4 py-2 font-medium text-slate-900">Occasion</th>
+                        <th className="px-4 py-2 font-medium text-slate-900">Frais</th>
+                        <th className="px-4 py-2 font-medium text-slate-900">Tenue</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {extracurricularActivities.length === 0 ? (
+                        <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">Aucune activité parascolaire pour cette classe.</td></tr>
+                      ) : (
+                        extracurricularActivities.map((a) => (
+                          <tr key={a.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
+                            <td className="px-4 py-2 text-slate-600">{a.activity_date}</td>
+                            <td className="px-4 py-2 text-slate-600">{a.start_time} – {a.end_time}</td>
+                            <td className="px-4 py-2 font-medium text-slate-900">{a.occasion}</td>
+                            <td className="px-4 py-2 text-slate-600">{a.participation_fee ?? "—"}</td>
+                            <td className="px-4 py-2 text-slate-600">{a.dress_code ?? "—"}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
 

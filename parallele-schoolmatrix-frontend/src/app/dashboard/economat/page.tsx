@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { fetchWithAuth } from "@/src/lib/api";
 import { useSchoolProfile } from "@/src/contexts/SchoolProfileContext";
 import { ROLES_FULL } from "@/src/lib/dashboardRoles";
+import { formatDateJJMMAAAA, getTodayLocalYYYYMMDD } from "@/src/lib/format";
+import { DateInputJJMMAAAA } from "@/src/components/DateInputJJMMAAAA";
 
 const ROLES_SERVICES_ET_EXONERATIONS = ROLES_FULL; // DIRECTEUR_GENERAL, SCHOOL_ADMIN, SUPER_ADMIN
 
@@ -70,7 +72,7 @@ export default function EconomatPage() {
     academic_year: "",
     service_id: "",
     amount_paid: "",
-    payment_date: new Date().toISOString().slice(0, 10),
+    payment_date: getTodayLocalYYYYMMDD(),
   });
   const [savingPayment, setSavingPayment] = useState(false);
   const [filterYear, setFilterYear] = useState("");
@@ -488,10 +490,9 @@ export default function EconomatPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Date du paiement</label>
-              <input
-                type="date"
+              <DateInputJJMMAAAA
                 value={paymentForm.payment_date}
-                onChange={(e) => setPaymentForm((f) => ({ ...f, payment_date: e.target.value }))}
+                onChange={(payment_date) => setPaymentForm((f) => ({ ...f, payment_date }))}
                 className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
                 required
               />
@@ -543,7 +544,7 @@ export default function EconomatPage() {
                   ) : (
                     transactions.map((t) => (
                       <tr key={t.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
-                        <td className="px-4 py-3 text-slate-600">{t.payment_date}</td>
+                        <td className="px-4 py-3 text-slate-600">{formatDateJJMMAAAA(t.payment_date)}</td>
                         <td className="px-4 py-3 font-medium text-slate-900">{t.student_name ?? "—"}</td>
                         <td className="px-4 py-3 text-slate-600">{t.class_name ?? "—"}</td>
                         <td className="px-4 py-3 text-slate-600">{t.academic_year}</td>

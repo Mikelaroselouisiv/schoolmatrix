@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { fetchWithAuth } from "@/src/lib/api";
+import { formatDateJJMMAAAA } from "@/src/lib/format";
+import { DateInputJJMMAAAA } from "@/src/components/DateInputJJMMAAAA";
 
 const DAYS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
 
@@ -580,7 +582,7 @@ export default function SchedulePage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Date *</label>
-                  <input type="date" value={examForm.exam_date} onChange={(e) => setExamForm((f) => ({ ...f, exam_date: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm" required />
+                  <DateInputJJMMAAAA value={examForm.exam_date} onChange={(exam_date) => setExamForm((f) => ({ ...f, exam_date }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm" required />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Début *</label>
@@ -615,7 +617,7 @@ export default function SchedulePage() {
                 ) : (
                   exams.map((e) => (
                     <tr key={e.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
-                      <td className="px-4 py-2 text-slate-600">{e.exam_date}</td>
+                      <td className="px-4 py-2 text-slate-600">{formatDateJJMMAAAA(e.exam_date)}</td>
                       <td className="px-4 py-2 text-slate-600">{e.start_time} - {e.end_time}</td>
                       <td className="px-4 py-2 font-medium text-slate-900">{e.class_name}</td>
                       <td className="px-4 py-2 text-slate-700">{e.subject_name}</td>
@@ -661,7 +663,7 @@ export default function SchedulePage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Date *</label>
-                  <input type="date" value={activityForm.activity_date} onChange={(e) => setActivityForm((f) => ({ ...f, activity_date: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm" required />
+                  <DateInputJJMMAAAA value={activityForm.activity_date} onChange={(activity_date) => setActivityForm((f) => ({ ...f, activity_date }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm" required />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Horaire</label>
@@ -704,7 +706,7 @@ export default function SchedulePage() {
                 ) : (
                   activities.map((a) => (
                     <tr key={a.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
-                      <td className="px-4 py-2 text-slate-600">{a.activity_date}</td>
+                      <td className="px-4 py-2 text-slate-600">{formatDateJJMMAAAA(a.activity_date)}</td>
                       <td className="px-4 py-2 text-slate-600">{a.start_time} - {a.end_time}</td>
                       <td className="px-4 py-2 font-medium text-slate-900">{a.class_name}</td>
                       <td className="px-4 py-2 text-slate-700">{a.occasion}</td>

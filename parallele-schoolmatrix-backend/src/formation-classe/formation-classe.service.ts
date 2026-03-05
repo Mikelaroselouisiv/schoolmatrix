@@ -158,6 +158,11 @@ export class FormationClasseService {
     }));
   }
 
+  /**
+   * Logique Haïti : points avec coefficients (100, 200, 300…).
+   * Par période : moyenne période = (points obtenus / points possibles) * 10.
+   * Moyenne générale = moyenne des moyennes des périodes (sur 10).
+   */
   async computeStudentAverage(studentId: string, academicYearId: string, classId: string): Promise<number | null> {
     const grades = await this.gradeRepo.find({
       where: {
@@ -168,15 +173,26 @@ export class FormationClasseService {
       relations: ['subject', 'period'],
     });
     if (grades.length === 0) return null;
-    let sum = 0;
-    let totalCoef = 0;
+    const byPeriod = new Map<string, { obtained: number; possible: number }>();
     for (const g of grades) {
-      const coef = Number(g.coefficient) || 1;
-      sum += Number(g.grade_value) * coef;
-      totalCoef += coef;
+      const pid = g.period?.id ?? (g as any).period_id;
+      if (!pid) continue;
+      const coef = Number(g.coefficient) || 0;
+      const points = Number(g.grade_value) || 0;
+      const cur = byPeriod.get(pid) ?? { obtained: 0, possible: 0 };
+      cur.obtained += points;
+      cur.possible += coef;
+      byPeriod.set(pid, cur);
     }
-    if (totalCoef === 0) return null;
-    return Math.round((sum / totalCoef) * 100) / 100;
+    const periodAverages: number[] = [];
+    for (const { obtained, possible } of byPeriod.values()) {
+      if (possible > 0) {
+        periodAverages.push((obtained / possible) * 10);
+      }
+    }
+    if (periodAverages.length === 0) return null;
+    const general = periodAverages.reduce((a, b) => a + b, 0) / periodAverages.length;
+    return Math.round(general * 100) / 100;
   }
 
   async hasExpelledMeasure(studentId: string): Promise<boolean> {

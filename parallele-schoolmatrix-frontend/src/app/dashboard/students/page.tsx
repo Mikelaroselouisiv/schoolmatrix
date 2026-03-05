@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { fetchWithAuth } from "@/src/lib/api";
 import { ImageUpload } from "@/src/components/ImageUpload";
 import { useSchoolProfile } from "@/src/contexts/SchoolProfileContext";
+import { DateInputJJMMAAAA } from "@/src/components/DateInputJJMMAAAA";
 
 type Student = {
   id: string;
@@ -321,7 +322,7 @@ export default function StudentsPage() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Date de naissance</label>
-              <input type="date" value={form.birth_date} onChange={(e) => setForm((f) => ({ ...f, birth_date: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2" />
+              <DateInputJJMMAAAA value={form.birth_date} onChange={(birth_date) => setForm((f) => ({ ...f, birth_date }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2" />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Lieu de naissance</label>

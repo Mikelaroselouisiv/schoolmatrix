@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, UseGuards, Req, ForbiddenException } from '@nestjs/common';
 import { GradesService } from './grades.service';
 import { PreschoolGradesService } from './preschool-grades.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -45,6 +45,7 @@ export class GradesController {
 
   @Get('form-data')
   async getFormData(
+    @Req() req: { user?: { role?: string } },
     @Query('academic_year_id') academicYearId?: string,
     @Query('class_id') classId?: string,
     @Query('subject_id') subjectId?: string,
@@ -56,17 +57,34 @@ export class GradesController {
       subject_id: subjectId!,
       period_id: periodId!,
     });
-    return { ok: true, ...data };
+    const role = req.user?.role;
+    const hasExisting = (data.rows?.length && data.rows.some((r: { grade_id?: string | null }) => r.grade_id)) ?? false;
+    const can_edit = role !== 'TEACHER' || !hasExisting;
+    return { ok: true, ...data, can_edit: !!can_edit };
   }
 
   @Post('save')
-  async saveGrades(@Body() body: {
-    academic_year_id: string;
-    class_id: string;
-    subject_id: string;
-    period_id: string;
-    grades: { student_id: string; coefficient: number; grade_value: number | null; detail?: string }[];
-  }) {
+  async saveGrades(
+    @Req() req: { user?: { role?: string } },
+    @Body() body: {
+      academic_year_id: string;
+      class_id: string;
+      subject_id: string;
+      period_id: string;
+      grades: { student_id: string; coefficient: number; grade_value: number | null; detail?: string }[];
+    },
+  ) {
+    if (req.user?.role === 'TEACHER') {
+      const hasExisting = await this.gradesService.hasExistingGrades({
+        academic_year_id: body.academic_year_id,
+        class_id: body.class_id,
+        subject_id: body.subject_id,
+        period_id: body.period_id,
+      });
+      if (hasExisting) {
+        throw new ForbiddenException('Les notes ont déjà été enregistrées. Seul le directeur général peut les modifier.');
+      }
+    }
     await this.gradesService.saveGrades(body);
     return { ok: true };
   }
@@ -82,6 +100,7 @@ export class GradesController {
 
   @Get('preschool/form-data')
   async getPreschoolFormData(
+    @Req() req: { user?: { role?: string } },
     @Query('academic_year_id') academicYearId?: string,
     @Query('class_id') classId?: string,
     @Query('subject_id') subjectId?: string,
@@ -93,17 +112,34 @@ export class GradesController {
       subject_id: subjectId!,
       period_id: periodId!,
     });
-    return { ok: true, ...data };
+    const role = req.user?.role;
+    const hasExisting = (data.rows?.length && data.rows.some((r: { grade_id?: string | null }) => r.grade_id)) ?? false;
+    const can_edit = role !== 'TEACHER' || !hasExisting;
+    return { ok: true, ...data, can_edit: !!can_edit };
   }
 
   @Post('preschool/save')
-  async savePreschoolGrades(@Body() body: {
-    academic_year_id: string;
-    class_id: string;
-    subject_id: string;
-    period_id: string;
-    grades: { student_id: string; level?: string; frequency?: string; observation?: string }[];
-  }) {
+  async savePreschoolGrades(
+    @Req() req: { user?: { role?: string } },
+    @Body() body: {
+      academic_year_id: string;
+      class_id: string;
+      subject_id: string;
+      period_id: string;
+      grades: { student_id: string; level?: string; frequency?: string; observation?: string }[];
+    },
+  ) {
+    if (req.user?.role === 'TEACHER') {
+      const hasExisting = await this.preschoolGradesService.hasExistingPreschoolGrades({
+        academic_year_id: body.academic_year_id,
+        class_id: body.class_id,
+        subject_id: body.subject_id,
+        period_id: body.period_id,
+      });
+      if (hasExisting) {
+        throw new ForbiddenException('Les notes ont déjà été enregistrées. Seul le directeur général peut les modifier.');
+      }
+    }
     await this.preschoolGradesService.savePreschoolGrades(body);
     return { ok: true };
   }

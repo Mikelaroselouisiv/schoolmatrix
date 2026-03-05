@@ -66,6 +66,23 @@ export class PreschoolGradesService {
     return { teacher, rows };
   }
 
+  async hasExistingPreschoolGrades(params: {
+    academic_year_id: string;
+    class_id: string;
+    subject_id: string;
+    period_id: string;
+  }): Promise<boolean> {
+    const count = await this.preschoolGradeRepo.count({
+      where: {
+        academic_year: { id: params.academic_year_id },
+        class: { id: params.class_id },
+        subject: { id: params.subject_id },
+        period: { id: params.period_id },
+      },
+    });
+    return count > 0;
+  }
+
   async savePreschoolGrades(params: {
     academic_year_id: string;
     class_id: string;

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Put, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { DisciplineService } from './discipline.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
@@ -63,13 +63,39 @@ export class DisciplineController {
   }
 
   @Post('measures')
-  async addMeasure(@Body() body: { student_id: string; measure_type: string; reason?: string }) {
-    return this.disciplineService.addMeasure(body.student_id, body.measure_type, body.reason);
+  async addMeasure(
+    @Body()
+    body: {
+      student_id: string;
+      measure_type: string;
+      reason?: string;
+      duration_days?: number;
+    },
+  ) {
+    return this.disciplineService.addMeasure(
+      body.student_id,
+      body.measure_type,
+      body.reason,
+      body.duration_days,
+    );
   }
 
   @Get('measures')
   async listMeasures(@Query('student_id') studentId?: string) {
     return this.disciplineService.listMeasures(studentId);
+  }
+
+  @Delete('measures/:id')
+  async deleteMeasure(@Param('id') id: string) {
+    return this.disciplineService.deleteMeasure(id);
+  }
+
+  @Put('measures/:id')
+  async updateMeasure(
+    @Param('id') id: string,
+    @Body() body: { reason?: string; duration_days?: number },
+  ) {
+    return this.disciplineService.updateMeasure(id, body);
   }
 
   @Get('student-summary/:studentId')

@@ -92,31 +92,47 @@ export default function GradesPage() {
   const [thresholdSaving, setThresholdSaving] = useState(false);
   const [thresholdLoading, setThresholdLoading] = useState(false);
 
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
+  const [teacherClasses, setTeacherClasses] = useState<ClassItem[]>([]);
+  const [teacherSubjectsInClass, setTeacherSubjectsInClass] = useState<Subject[]>([]);
+  const [canEditGrades, setCanEditGrades] = useState(true);
+
   async function loadAcademicYearsAndClasses() {
     setError("");
     try {
-      const [yearsRes, classesRes, subjectsRes, ctxRes] = await Promise.all([
+      const [yearsRes, classesRes, subjectsRes, ctxRes, meRes] = await Promise.all([
         fetchWithAuth(`${API_BASE}/academic-years`),
         fetchWithAuth(`${API_BASE}/classes`),
         fetchWithAuth(`${API_BASE}/subjects`),
         fetchWithAuth(`${API_BASE}/school/current-context`),
+        fetchWithAuth(`${API_BASE}/users/me`),
       ]);
       const yearsData = await yearsRes.json();
       const classesData = await classesRes.json();
       const subjectsData = await subjectsRes.json();
       const ctxData = await ctxRes.json();
+      const meData = meRes.ok ? await meRes.json() : {};
       if (!yearsRes.ok) throw new Error(yearsData.message || "Erreur années");
       if (!classesRes.ok) throw new Error(classesData.message || "Erreur classes");
       if (!subjectsRes.ok) throw new Error(subjectsData.message || "Erreur matières");
       setAcademicYears(yearsData.academic_years ?? []);
       setClasses(classesData.classes ?? []);
       setSubjects(subjectsData.subjects ?? []);
+      setCurrentUserRole(meData.user?.role ?? null);
       const years = yearsData.academic_years ?? [];
       if (years.length > 0) {
         const defaultYearId = ctxRes.ok && ctxData.current_academic_year_id && years.some((y: AcademicYear) => y.id === ctxData.current_academic_year_id)
           ? ctxData.current_academic_year_id
           : years[0].id;
         setAcademicYearId((prev) => (prev === "" ? defaultYearId : prev));
+      }
+      if (meData.user?.role === "TEACHER") {
+        const tcRes = await fetchWithAuth(`${API_BASE}/teachers/me/classes`);
+        const tcData = tcRes.ok ? await tcRes.json() : {};
+        const tClasses = (tcData.classes ?? []).map((c: { id: string; name: string }) => ({ id: c.id, name: c.name, is_preschool: false }));
+        setTeacherClasses(tClasses);
+      } else {
+        setTeacherClasses([]);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur chargement");
@@ -327,6 +343,21 @@ export default function GradesPage() {
   }, [classId, classes]);
 
   useEffect(() => {
+    if (currentUserRole !== "TEACHER" || !classId) {
+      setTeacherSubjectsInClass([]);
+      return;
+    }
+    fetchWithAuth(`${API_BASE}/teachers/me/classes/${classId}/subjects`)
+      .then((r) => r.json())
+      .then((data) => {
+        const list = data.subjects ?? [];
+        setTeacherSubjectsInClass(list);
+        setSubjectId((prev) => (list.some((s: Subject) => s.id === prev) ? prev : ""));
+      })
+      .catch(() => setTeacherSubjectsInClass([]));
+  }, [currentUserRole, classId]);
+
+  useEffect(() => {
     if (!academicYearId || !classId || !subjectId || !periodId) {
       setTeacher(null);
       setDefaultCoefficient(null);
@@ -345,6 +376,7 @@ export default function GradesPage() {
       .then((data) => {
         if (data.message && !data.teacher && !data.rows) throw new Error(data.message);
         setTeacher(data.teacher ?? null);
+        setCanEditGrades(data.can_edit !== false);
         if (!isPreschool) {
           setDefaultCoefficient(data.default_coefficient ?? null);
           setRows(data.rows ?? []);
@@ -365,7 +397,7 @@ export default function GradesPage() {
 
   async function handleSaveGrades(e: React.FormEvent) {
     e.preventDefault();
-    if (!academicYearId || !classId || !subjectId || !periodId) return;
+    if (!canEditGrades || !academicYearId || !classId || !subjectId || !periodId) return;
     const isPreschool = selectedClass?.is_preschool ?? false;
     setSaving(true);
     setError("");
@@ -409,7 +441,10 @@ export default function GradesPage() {
 
   const isPreschool = selectedClass?.is_preschool ?? false;
   const canLoadForm = academicYearId && classId && subjectId && periodId;
-  const subjectName = subjects.find((s) => s.id === subjectId)?.name ?? "";
+  const isTeacher = currentUserRole === "TEACHER";
+  const classesForSaisie = isTeacher ? teacherClasses : classes;
+  const subjectsForSaisie = isTeacher ? teacherSubjectsInClass : subjects;
+  const subjectName = subjectsForSaisie.find((s) => s.id === subjectId)?.name ?? subjects.find((s) => s.id === subjectId)?.name ?? "";
   const periodName = periods.find((p) => p.id === periodId)?.name ?? "";
 
   if (loading) {
@@ -424,6 +459,9 @@ export default function GradesPage() {
 
       <div className="p-5 rounded-xl border border-[var(--app-border)] bg-white">
         <h3 className="font-semibold text-slate-900 mb-4">Sélection</h3>
+        {isTeacher && (
+          <p className="text-sm text-slate-600 mb-3">Vous ne voyez que les classes et matières qui vous sont assignées.</p>
+        )}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Année scolaire</label>
@@ -446,9 +484,9 @@ export default function GradesPage() {
               className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
             >
               <option value="">Sélectionner</option>
-              {classes.map((c) => (
+              {classesForSaisie.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name}{c.is_preschool ? " (préscolaire)" : ""}
+                  {c.name}{"is_preschool" in c && c.is_preschool ? " (préscolaire)" : ""}
                 </option>
               ))}
             </select>
@@ -459,11 +497,16 @@ export default function GradesPage() {
               value={subjectId}
               onChange={(e) => setSubjectId(e.target.value)}
               className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
+              disabled={isTeacher && !classId}
             >
               <option value="">Sélectionner</option>
-              {subjects.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
+              {isTeacher && classId && teacherSubjectsInClass.length === 0 ? (
+                <option value="" disabled>Aucune matière dans cette classe</option>
+              ) : (
+                subjectsForSaisie.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))
+              )}
             </select>
           </div>
           <div>
@@ -481,6 +524,147 @@ export default function GradesPage() {
           </div>
         </div>
       </div>
+
+      {canLoadForm && (
+        <>
+          {formLoading ? (
+            <div className="p-8 text-center text-slate-500">Chargement des élèves et des notes...</div>
+          ) : (
+            <form onSubmit={handleSaveGrades} className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-slate-600">
+                  {subjectName} — {periodName}
+                  {teacher && <span className="ml-2">(Enseignant : {teacher.name})</span>}
+                  {isPreschool && <span className="ml-2 font-medium text-amber-700">— Évaluation préscolaire</span>}
+                </p>
+                {canEditGrades ? (
+                  <button type="submit" disabled={saving} className="app-btn-primary disabled:opacity-60">
+                    {saving ? "Enregistrement..." : "Enregistrer les notes"}
+                  </button>
+                ) : (
+                  <p className="text-sm text-amber-700 font-medium">Les notes ont été enregistrées. Seul le directeur général peut les modifier.</p>
+                )}
+              </div>
+
+              {isPreschool ? (
+                <div className="overflow-x-auto rounded-xl border border-[var(--app-border)]">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 border-b border-[var(--app-border)]">
+                      <tr>
+                        <th className="px-4 py-3 font-medium text-slate-900">Élève</th>
+                        <th className="px-4 py-3 font-medium text-slate-900 w-32">Niveau</th>
+                        <th className="px-4 py-3 font-medium text-slate-900 w-32">Fréquence</th>
+                        <th className="px-4 py-3 font-medium text-slate-900">Observation</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {preschoolRows.length === 0 ? (
+                        <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-500">Aucun élève dans cette classe</td></tr>
+                      ) : (
+                        preschoolRows.map((r) => (
+                          <tr key={r.student_id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
+                            <td className="px-4 py-3 font-medium text-slate-900">{r.student_name}</td>
+                            <td className="px-4 py-2">
+                              <input
+                                type="text"
+                                value={r.level ?? ""}
+                                onChange={(e) => setPreschoolRows((prev) => prev.map((row) => row.student_id === r.student_id ? { ...row, level: e.target.value || null } : row))}
+                                placeholder="Ex: A, EA, NA"
+                                className="w-full border border-[var(--app-border)] rounded px-2 py-1.5 text-sm disabled:bg-slate-50 disabled:cursor-not-allowed"
+                                disabled={!canEditGrades}
+                              />
+                            </td>
+                            <td className="px-4 py-2">
+                              <input
+                                type="text"
+                                value={r.frequency ?? ""}
+                                onChange={(e) => setPreschoolRows((prev) => prev.map((row) => row.student_id === r.student_id ? { ...row, frequency: e.target.value || null } : row))}
+                                placeholder="Ex: Régulier"
+                                className="w-full border border-[var(--app-border)] rounded px-2 py-1.5 text-sm disabled:bg-slate-50 disabled:cursor-not-allowed"
+                                disabled={!canEditGrades}
+                              />
+                            </td>
+                            <td className="px-4 py-2">
+                              <input
+                                type="text"
+                                value={r.observation}
+                                onChange={(e) => setPreschoolRows((prev) => prev.map((row) => row.student_id === r.student_id ? { ...row, observation: e.target.value } : row))}
+                                placeholder="Observation"
+                                className="w-full border border-[var(--app-border)] rounded px-2 py-1.5 text-sm disabled:bg-slate-50 disabled:cursor-not-allowed"
+                                disabled={!canEditGrades}
+                              />
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-xl border border-[var(--app-border)]">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 border-b border-[var(--app-border)]">
+                      <tr>
+                        <th className="px-4 py-3 font-medium text-slate-900">Élève</th>
+                        <th className="px-4 py-3 font-medium text-slate-900 w-24">Coef.</th>
+                        <th className="px-4 py-3 font-medium text-slate-900 w-28">Points</th>
+                        <th className="px-4 py-3 font-medium text-slate-900">Détail</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.length === 0 ? (
+                        <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-500">Aucun élève dans cette classe</td></tr>
+                      ) : (
+                        rows.map((r) => (
+                          <tr key={r.student_id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
+                            <td className="px-4 py-3 font-medium text-slate-900">{r.student_name}</td>
+                            <td className="px-4 py-2">
+                              <input
+                                type="number"
+                                step="0.5"
+                                min="0"
+                                value={r.coefficient ?? defaultCoefficient ?? ""}
+                                onChange={(e) => setRows((prev) => prev.map((row) => row.student_id === r.student_id ? { ...row, coefficient: parseFloat(e.target.value) || 0 } : row))}
+                                className="w-full border border-[var(--app-border)] rounded px-2 py-1.5 text-sm disabled:bg-slate-50 disabled:cursor-not-allowed"
+                                disabled={!canEditGrades}
+                              />
+                            </td>
+                            <td className="px-4 py-2">
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={r.grade_value ?? ""}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setRows((prev) => prev.map((row) => row.student_id === r.student_id ? { ...row, grade_value: v === "" ? null : parseFloat(v) } : row));
+                                }}
+                                placeholder="Points obtenus"
+                                className="w-full border border-[var(--app-border)] rounded px-2 py-1.5 text-sm disabled:bg-slate-50 disabled:cursor-not-allowed"
+                                disabled={!canEditGrades}
+                              />
+                            </td>
+                            <td className="px-4 py-2">
+                              <input
+                                type="text"
+                                value={r.detail ?? ""}
+                                onChange={(e) => setRows((prev) => prev.map((row) => row.student_id === r.student_id ? { ...row, detail: e.target.value } : row))}
+                                placeholder="Optionnel"
+                                className="w-full border border-[var(--app-border)] rounded px-2 py-1.5 text-sm disabled:bg-slate-50 disabled:cursor-not-allowed"
+                                disabled={!canEditGrades}
+                              />
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </form>
+          )}
+        </>
+      )}
 
       {classes.some((c) => !c.is_preschool) && (
         <>
@@ -522,48 +706,48 @@ export default function GradesPage() {
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Admis (min. moyenne)</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Admis (min. moyenne /10)</label>
                   <input
                     type="number"
                     step="0.5"
                     min="0"
-                    max="20"
+                    max="10"
                     value={thresholdForm.min_average_admis}
                     onChange={(e) => setThresholdForm((f) => ({ ...f, min_average_admis: e.target.value }))}
                     className="border border-[var(--app-border)] rounded-lg px-3 py-2 w-full"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Admis ailleurs (min.)</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Admis ailleurs (min. /10)</label>
                   <input
                     type="number"
                     step="0.5"
                     min="0"
-                    max="20"
+                    max="10"
                     value={thresholdForm.min_average_admis_ailleurs}
                     onChange={(e) => setThresholdForm((f) => ({ ...f, min_average_admis_ailleurs: e.target.value }))}
                     className="border border-[var(--app-border)] rounded-lg px-3 py-2 w-full"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Redoubler (min.)</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Redoubler (min. /10)</label>
                   <input
                     type="number"
                     step="0.5"
                     min="0"
-                    max="20"
+                    max="10"
                     value={thresholdForm.min_average_redoubler}
                     onChange={(e) => setThresholdForm((f) => ({ ...f, min_average_redoubler: e.target.value }))}
                     className="border border-[var(--app-border)] rounded-lg px-3 py-2 w-full"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Ajourné (min.)</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Ajourné (min. /10)</label>
                   <input
                     type="number"
                     step="0.5"
                     min="0"
-                    max="20"
+                    max="10"
                     value={thresholdForm.min_average_ajourne}
                     onChange={(e) => setThresholdForm((f) => ({ ...f, min_average_ajourne: e.target.value }))}
                     className="border border-[var(--app-border)] rounded-lg px-3 py-2 w-full"
@@ -664,281 +848,149 @@ export default function GradesPage() {
           </div>
 
           <div className="p-5 rounded-xl border border-[var(--app-border)] bg-white">
-          <h3 className="font-semibold text-slate-900 mb-4">Définir les coefficients (hors préscolaire)</h3>
-          <p className="text-sm text-slate-600 mb-4">
-            Attribuez un coefficient à chaque matière par classe. Ce coefficient s&apos;applique à toutes les périodes et sera utilisé automatiquement lors de la saisie des notes.
-          </p>
-          <form onSubmit={handleSaveCoefficient} className="flex flex-wrap gap-4 items-end mb-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Année académique</label>
-              <select
-                value={coefAcademicYearId}
-                onChange={(e) => setCoefAcademicYearId(e.target.value)}
-                className="border border-[var(--app-border)] rounded-lg px-3 py-2 min-w-[160px]"
-                required
-              >
-                <option value="">Sélectionner</option>
-                {academicYears.map((y) => (
-                  <option key={y.id} value={y.id}>{y.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Classe</label>
-              <select
-                value={coefForm.class_id}
-                onChange={(e) => setCoefForm((f) => ({ ...f, class_id: e.target.value, subject_id: "" }))}
-                className="border border-[var(--app-border)] rounded-lg px-3 py-2 min-w-[160px]"
-                required
-              >
-                <option value="">Sélectionner</option>
-                {classes.filter((c) => !c.is_preschool).map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Matière</label>
-              <select
-                value={coefForm.subject_id}
-                onChange={(e) => setCoefForm((f) => ({ ...f, subject_id: e.target.value }))}
-                className="border border-[var(--app-border)] rounded-lg px-3 py-2 min-w-[160px]"
-                required
-                disabled={!coefForm.class_id}
-              >
-                <option value="">{coefForm.class_id ? "Sélectionner" : "Choisir une classe d'abord"}</option>
-                {classSubjects.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Coefficient</label>
-              <input
-                type="number"
-                step="0.5"
-                min="0"
-                value={coefForm.coefficient}
-                onChange={(e) => setCoefForm((f) => ({ ...f, coefficient: e.target.value }))}
-                className="border border-[var(--app-border)] rounded-lg px-3 py-2 w-24"
-                required
-              />
-            </div>
-            <button type="submit" disabled={coefSaving || !coefAcademicYearId} className="app-btn-primary disabled:opacity-60">
-              {coefSaving ? "Enregistrement..." : "Enregistrer le coefficient"}
-            </button>
-          </form>
-          <div>
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-              <h4 className="font-medium text-slate-900">Coefficients définis</h4>
-              {coefficients.length > 0 && (
-                <ExportPdfButton
-                  table={{
-                    title: "Coefficients par classe et matière",
-                    subtitle: academicYears.find((y) => y.id === coefAcademicYearId)?.name,
-                    columns: [
-                      { header: "Année", key: "academic_year_name" },
-                      { header: "Classe", key: "class_name" },
-                      { header: "Matière", key: "subject_name" },
-                      { header: "Coef.", key: "coefficient" },
-                    ],
-                    rows: coefficients.map((c) => ({
-                      academic_year_name: c.academic_year_name,
-                      class_name: c.class_name,
-                      subject_name: c.subject_name,
-                      coefficient: c.coefficient,
-                    })),
-                  }}
-                  filename="coefficients-matieres.pdf"
-                  label="Exporter en PDF"
-                  className="text-sm px-2 py-1.5 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+            <h3 className="font-semibold text-slate-900 mb-4">Définir les coefficients (hors préscolaire)</h3>
+            <p className="text-sm text-slate-600 mb-4">
+              Attribuez un coefficient à chaque matière par classe. Ce coefficient s&apos;applique à toutes les périodes et sera utilisé automatiquement lors de la saisie des notes.
+            </p>
+            <form onSubmit={handleSaveCoefficient} className="flex flex-wrap gap-4 items-end mb-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Année académique</label>
+                <select
+                  value={coefAcademicYearId}
+                  onChange={(e) => setCoefAcademicYearId(e.target.value)}
+                  className="border border-[var(--app-border)] rounded-lg px-3 py-2 min-w-[160px]"
+                  required
+                >
+                  <option value="">Sélectionner</option>
+                  {academicYears.map((y) => (
+                    <option key={y.id} value={y.id}>{y.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Classe</label>
+                <select
+                  value={coefForm.class_id}
+                  onChange={(e) => setCoefForm((f) => ({ ...f, class_id: e.target.value, subject_id: "" }))}
+                  className="border border-[var(--app-border)] rounded-lg px-3 py-2 min-w-[160px]"
+                  required
+                >
+                  <option value="">Sélectionner</option>
+                  {classes.filter((c) => !c.is_preschool).map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Matière</label>
+                <select
+                  value={coefForm.subject_id}
+                  onChange={(e) => setCoefForm((f) => ({ ...f, subject_id: e.target.value }))}
+                  className="border border-[var(--app-border)] rounded-lg px-3 py-2 min-w-[160px]"
+                  required
+                  disabled={!coefForm.class_id}
+                >
+                  <option value="">{coefForm.class_id ? "Sélectionner" : "Choisir une classe d'abord"}</option>
+                  {classSubjects.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Coefficient</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  value={coefForm.coefficient}
+                  onChange={(e) => setCoefForm((f) => ({ ...f, coefficient: e.target.value }))}
+                  className="border border-[var(--app-border)] rounded-lg px-3 py-2 w-24"
+                  required
                 />
-              )}
-            </div>
-            <div className="flex flex-wrap gap-3 mb-3">
-              <select
-                value={coefFilterClass}
-                onChange={(e) => setCoefFilterClass(e.target.value)}
-                className="border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm"
-              >
-                <option value="">Toutes les classes</option>
-                {classes.filter((c) => !c.is_preschool).map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            </div>
-            {coefLoading ? (
-              <p className="text-slate-500 text-sm py-4">Chargement...</p>
-            ) : coefficients.length === 0 ? (
-              <p className="text-slate-500 text-sm py-4">Aucun coefficient défini. Sélectionnez une année académique pour afficher la liste.</p>
-            ) : (
-              <div className="overflow-x-auto rounded-lg border border-[var(--app-border)]">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-50 border-b border-[var(--app-border)]">
-                    <tr>
-                      <th className="px-4 py-2 font-medium text-slate-900">Année</th>
-                      <th className="px-4 py-2 font-medium text-slate-900">Classe</th>
-                      <th className="px-4 py-2 font-medium text-slate-900">Matière</th>
-                      <th className="px-4 py-2 font-medium text-slate-900 w-20">Coef.</th>
-                      <th className="px-4 py-2 font-medium text-slate-900 w-24">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {coefficients.map((c) => (
-                      <tr key={c.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
-                        <td className="px-4 py-2 text-slate-700">{c.academic_year_name}</td>
-                        <td className="px-4 py-2 text-slate-700">{c.class_name}</td>
-                        <td className="px-4 py-2 text-slate-700">{c.subject_name}</td>
-                        <td className="px-4 py-2 font-medium text-slate-900">{c.coefficient}</td>
-                        <td className="px-4 py-2">
-                          <button
-                            type="button"
-                            onClick={() => handleEditCoefficient(c)}
-                            className="text-[var(--school-accent-1)] hover:underline text-xs"
-                          >
-                            Modifier
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
               </div>
-            )}
-          </div>
-        </div>
-        </>
-      )}
-
-      {canLoadForm && (
-        <>
-          {formLoading ? (
-            <div className="p-8 text-center text-slate-500">Chargement des élèves et des notes...</div>
-          ) : (
-            <form onSubmit={handleSaveGrades} className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm text-slate-600">
-                  {subjectName} — {periodName}
-                  {teacher && <span className="ml-2">(Enseignant : {teacher.name})</span>}
-                  {isPreschool && <span className="ml-2 font-medium text-amber-700">— Évaluation préscolaire</span>}
-                </p>
-                <button type="submit" disabled={saving} className="app-btn-primary disabled:opacity-60">
-                  {saving ? "Enregistrement..." : "Enregistrer les notes"}
-                </button>
-              </div>
-
-              {isPreschool ? (
-                <div className="overflow-x-auto rounded-xl border border-[var(--app-border)]">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50 border-b border-[var(--app-border)]">
-                      <tr>
-                        <th className="px-4 py-3 font-medium text-slate-900">Élève</th>
-                        <th className="px-4 py-3 font-medium text-slate-900 w-32">Niveau</th>
-                        <th className="px-4 py-3 font-medium text-slate-900 w-32">Fréquence</th>
-                        <th className="px-4 py-3 font-medium text-slate-900">Observation</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {preschoolRows.length === 0 ? (
-                        <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-500">Aucun élève dans cette classe</td></tr>
-                      ) : (
-                        preschoolRows.map((r) => (
-                          <tr key={r.student_id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
-                            <td className="px-4 py-3 font-medium text-slate-900">{r.student_name}</td>
-                            <td className="px-4 py-2">
-                              <input
-                                type="text"
-                                value={r.level ?? ""}
-                                onChange={(e) => setPreschoolRows((prev) => prev.map((row) => row.student_id === r.student_id ? { ...row, level: e.target.value || null } : row))}
-                                placeholder="Ex: A, EA, NA"
-                                className="w-full border border-[var(--app-border)] rounded px-2 py-1.5 text-sm"
-                              />
-                            </td>
-                            <td className="px-4 py-2">
-                              <input
-                                type="text"
-                                value={r.frequency ?? ""}
-                                onChange={(e) => setPreschoolRows((prev) => prev.map((row) => row.student_id === r.student_id ? { ...row, frequency: e.target.value || null } : row))}
-                                placeholder="Ex: Régulier"
-                                className="w-full border border-[var(--app-border)] rounded px-2 py-1.5 text-sm"
-                              />
-                            </td>
-                            <td className="px-4 py-2">
-                              <input
-                                type="text"
-                                value={r.observation}
-                                onChange={(e) => setPreschoolRows((prev) => prev.map((row) => row.student_id === r.student_id ? { ...row, observation: e.target.value } : row))}
-                                placeholder="Observation"
-                                className="w-full border border-[var(--app-border)] rounded px-2 py-1.5 text-sm"
-                              />
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="overflow-x-auto rounded-xl border border-[var(--app-border)]">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50 border-b border-[var(--app-border)]">
-                      <tr>
-                        <th className="px-4 py-3 font-medium text-slate-900">Élève</th>
-                        <th className="px-4 py-3 font-medium text-slate-900 w-24">Coef.</th>
-                        <th className="px-4 py-3 font-medium text-slate-900 w-28">Note</th>
-                        <th className="px-4 py-3 font-medium text-slate-900">Détail</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.length === 0 ? (
-                        <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-500">Aucun élève dans cette classe</td></tr>
-                      ) : (
-                        rows.map((r) => (
-                          <tr key={r.student_id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
-                            <td className="px-4 py-3 font-medium text-slate-900">{r.student_name}</td>
-                            <td className="px-4 py-2">
-                              <input
-                                type="number"
-                                step="0.5"
-                                min="0"
-                                value={r.coefficient ?? defaultCoefficient ?? ""}
-                                onChange={(e) => setRows((prev) => prev.map((row) => row.student_id === r.student_id ? { ...row, coefficient: parseFloat(e.target.value) || 0 } : row))}
-                                className="w-full border border-[var(--app-border)] rounded px-2 py-1.5 text-sm"
-                              />
-                            </td>
-                            <td className="px-4 py-2">
-                              <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                max="20"
-                                value={r.grade_value ?? ""}
-                                onChange={(e) => {
-                                  const v = e.target.value;
-                                  setRows((prev) => prev.map((row) => row.student_id === r.student_id ? { ...row, grade_value: v === "" ? null : parseFloat(v) } : row));
-                                }}
-                                placeholder="0–20"
-                                className="w-full border border-[var(--app-border)] rounded px-2 py-1.5 text-sm"
-                              />
-                            </td>
-                            <td className="px-4 py-2">
-                              <input
-                                type="text"
-                                value={r.detail ?? ""}
-                                onChange={(e) => setRows((prev) => prev.map((row) => row.student_id === r.student_id ? { ...row, detail: e.target.value } : row))}
-                                placeholder="Optionnel"
-                                className="w-full border border-[var(--app-border)] rounded px-2 py-1.5 text-sm"
-                              />
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              <button type="submit" disabled={coefSaving || !coefAcademicYearId} className="app-btn-primary disabled:opacity-60">
+                {coefSaving ? "Enregistrement..." : "Enregistrer le coefficient"}
+              </button>
             </form>
-          )}
+            <div>
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <h4 className="font-medium text-slate-900">Coefficients définis</h4>
+                {coefficients.length > 0 && (
+                  <ExportPdfButton
+                    table={{
+                      title: "Coefficients par classe et matière",
+                      subtitle: academicYears.find((y) => y.id === coefAcademicYearId)?.name,
+                      columns: [
+                        { header: "Année", key: "academic_year_name" },
+                        { header: "Classe", key: "class_name" },
+                        { header: "Matière", key: "subject_name" },
+                        { header: "Coef.", key: "coefficient" },
+                      ],
+                      rows: coefficients.map((c) => ({
+                        academic_year_name: c.academic_year_name,
+                        class_name: c.class_name,
+                        subject_name: c.subject_name,
+                        coefficient: c.coefficient,
+                      })),
+                    }}
+                    filename="coefficients-matieres.pdf"
+                    label="Exporter en PDF"
+                    className="text-sm px-2 py-1.5 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                  />
+                )}
+              </div>
+              <div className="flex flex-wrap gap-3 mb-3">
+                <select
+                  value={coefFilterClass}
+                  onChange={(e) => setCoefFilterClass(e.target.value)}
+                  className="border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm"
+                >
+                  <option value="">Toutes les classes</option>
+                  {classes.filter((c) => !c.is_preschool).map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              {coefLoading ? (
+                <p className="text-slate-500 text-sm py-4">Chargement...</p>
+              ) : coefficients.length === 0 ? (
+                <p className="text-slate-500 text-sm py-4">Aucun coefficient défini. Sélectionnez une année académique pour afficher la liste.</p>
+              ) : (
+                <div className="overflow-x-auto rounded-lg border border-[var(--app-border)]">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 border-b border-[var(--app-border)]">
+                      <tr>
+                        <th className="px-4 py-2 font-medium text-slate-900">Année</th>
+                        <th className="px-4 py-2 font-medium text-slate-900">Classe</th>
+                        <th className="px-4 py-2 font-medium text-slate-900">Matière</th>
+                        <th className="px-4 py-2 font-medium text-slate-900 w-20">Coef.</th>
+                        <th className="px-4 py-2 font-medium text-slate-900 w-24">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {coefficients.map((c) => (
+                        <tr key={c.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
+                          <td className="px-4 py-2 text-slate-700">{c.academic_year_name}</td>
+                          <td className="px-4 py-2 text-slate-700">{c.class_name}</td>
+                          <td className="px-4 py-2 text-slate-700">{c.subject_name}</td>
+                          <td className="px-4 py-2 font-medium text-slate-900">{c.coefficient}</td>
+                          <td className="px-4 py-2">
+                            <button
+                              type="button"
+                              onClick={() => handleEditCoefficient(c)}
+                              className="text-[var(--school-accent-1)] hover:underline text-xs"
+                            >
+                              Modifier
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
         </>
       )}
 

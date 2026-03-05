@@ -144,6 +144,23 @@ export class GradesService {
     return { teacher, default_coefficient: defaultCoef, rows };
   }
 
+  async hasExistingGrades(params: {
+    academic_year_id: string;
+    class_id: string;
+    subject_id: string;
+    period_id: string;
+  }): Promise<boolean> {
+    const count = await this.gradeRepo.count({
+      where: {
+        academic_year: { id: params.academic_year_id },
+        class: { id: params.class_id },
+        subject: { id: params.subject_id },
+        period: { id: params.period_id },
+      },
+    });
+    return count > 0;
+  }
+
   async saveGrades(params: {
     academic_year_id: string;
     class_id: string;
@@ -241,6 +258,7 @@ export class GradesService {
     if (!student) throw new NotFoundException('Student not found');
     const classId = student.class?.id;
     if (!classId) return { periods: [], subjects: [], academic_year_name: null };
+
     const [periods, coefficients, grades] = await Promise.all([
       this.periodRepo.find({
         where: { academic_year: { id: academicYearId } },
@@ -251,45 +269,84 @@ export class GradesService {
         where: { academic_year: { id: academicYearId }, class: { id: classId } },
         relations: ['subject'],
       }),
-      this.gradeRepo.find({
-        where: { student: { id: studentId }, academic_year: { id: academicYearId } },
-        relations: ['subject', 'period'],
-      }),
+      this.gradeRepo
+        .createQueryBuilder('g')
+        .leftJoinAndSelect('g.subject', 'subject')
+        .leftJoinAndSelect('g.period', 'period')
+        .where('g.student_id = :studentId', { studentId })
+        .andWhere('g.academic_year_id = :academicYearId', { academicYearId })
+        .getMany(),
     ]);
-    const gradeMap = new Map<string, number>();
-    for (const g of grades) {
-      const sid = g.subject?.id ?? (g as any).subject_id;
-      const pid = g.period?.id ?? (g as any).period_id;
-      if (sid && pid) gradeMap.set(`${sid}:${pid}`, Number(g.grade_value));
-    }
+
     const coefBySubject = new Map<string, { subjectName: string; coefficient: number }>();
     for (const c of coefficients) {
-      const sid = c.subject?.id ?? (c as any).subject_id;
-      const subjName = c.subject?.name ?? '—';
-      coefBySubject.set(sid, { subjectName: subjName, coefficient: Number(c.coefficient) });
+      const sid = String(c.subject?.id ?? (c as any).subject_id ?? '');
+      if (sid) coefBySubject.set(sid, { subjectName: (c.subject as any)?.name ?? '—', coefficient: Number(c.coefficient) });
     }
-    const subjectMap = new Map<string, any>();
-    for (const p of periods) {
-      for (const [sid, { subjectName, coefficient }] of coefBySubject) {
-        const gradeVal = gradeMap.get(`${sid}:${p.id}`) ?? 0;
-        if (!subjectMap.has(sid)) {
-          subjectMap.set(sid, { subject_id: sid, subject_name: subjectName, periods: [] });
-        }
-        const sub = subjectMap.get(sid);
+
+    const subjectMap = new Map<string, { subject_id: string; subject_name: string; periods: any[] }>();
+
+    for (const g of grades) {
+      const sid = String((g as any).subject_id ?? g.subject?.id ?? '');
+      const pid = (g as any).period_id ?? g.period?.id;
+      if (!sid || !pid) continue;
+      const subjName = (g.subject as any)?.name ?? coefBySubject.get(sid)?.subjectName ?? '—';
+      const coef = (Number(g.coefficient) || coefBySubject.get(sid)?.coefficient) ?? 0;
+      const val = Number(g.grade_value) || 0;
+      const period = g.period as any;
+      const orderIndex = period?.order_index ?? 0;
+      const periodName = period?.name ?? '—';
+
+      if (!subjectMap.has(sid)) {
+        subjectMap.set(sid, { subject_id: sid, subject_name: subjName, periods: [] });
+      }
+      const sub = subjectMap.get(sid)!;
+      if (!sub.periods.some((pe: any) => pe.period_id === pid)) {
+        sub.periods.push({
+          period_id: pid,
+          period_name: periodName,
+          order_index: orderIndex,
+          coefficient: coef,
+          grade_value: val,
+        });
+      }
+    }
+
+    for (const sub of subjectMap.values()) {
+      const existingPids = new Set(sub.periods.map((pe: any) => String(pe.period_id)));
+      for (const p of periods) {
+        const pid = String(p.id);
+        if (existingPids.has(pid)) continue;
+        sub.periods.push({
+          period_id: p.id,
+          period_name: p.name ?? '—',
+          order_index: p.order_index ?? 0,
+          coefficient: coefBySubject.get(sub.subject_id)?.coefficient ?? 0,
+          grade_value: 0,
+        });
+      }
+      sub.periods.sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+    }
+
+    for (const [sid, { subjectName, coefficient }] of coefBySubject) {
+      if (subjectMap.has(sid)) continue;
+      const sub = { subject_id: sid, subject_name: subjectName, periods: [] as any[] };
+      for (const p of periods) {
         sub.periods.push({
           period_id: p.id,
           period_name: p.name ?? '—',
           order_index: p.order_index ?? 0,
           coefficient,
-          grade_value: gradeVal,
+          grade_value: 0,
         });
       }
+      subjectMap.set(sid, sub);
     }
+
     const periodList = periods.map((p) => ({ id: p.id, name: p.name, order_index: p.order_index ?? 0 }));
-    const subjectList = Array.from(subjectMap.values()).map((s) => ({
-      ...s,
-      periods: s.periods.sort((a: any, b: any) => a.order_index - b.order_index),
-    }));
+    const subjectList = Array.from(subjectMap.values()).sort((a, b) =>
+      (a.subject_name || '').localeCompare(b.subject_name || ''),
+    );
     const ay = periods[0]?.academic_year;
     return {
       academic_year_id: academicYearId,

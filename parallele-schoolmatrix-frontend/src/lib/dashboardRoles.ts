@@ -60,7 +60,7 @@ export const DASHBOARD_NAV: {
   // Bloc Management (vie étudiante) : Inscription, Économat, Saisie de notes, Discipline, Formation de classe
   { href: "/dashboard/students", label: "Inscription", allowedRoles: [...ROLES_FULL], block: "management" },
   { href: "/dashboard/economat", label: "Économat", allowedRoles: [...ROLES_FULL, ...ROLES_ECONOME], block: "management" },
-  { href: "/dashboard/grades", label: "Saisie des notes", allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES], block: "management" },
+  { href: "/dashboard/grades", label: "Saisie des notes", allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, "TEACHER"], block: "management" },
   { href: "/dashboard/discipline", label: "Discipline", allowedRoles: [...ROLES_FULL, ...ROLES_DISCIPLINE], block: "management" },
   { href: "/dashboard/formation-classe", label: "Formation de classe", allowedRoles: [...ROLES_FULL], block: "management" },
   // Bloc Fiche élève (dominant, seul)
@@ -124,5 +124,5 @@ export function canAccessSchoolProfile(roleName: string): boolean {
  * Enseignant et Parent voient seulement cette vue.
  */
 export function isMonitorOnlyRole(roleName: string): boolean {
-  return roleName === "TEACHER" || roleName === "PARENT";
+  return roleName === "PARENT";
 }

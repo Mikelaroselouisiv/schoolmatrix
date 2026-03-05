@@ -8,6 +8,9 @@ import {
   Query,
   UseGuards,
   ParseIntPipe,
+  Req,
+  ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { TeachersService } from './teachers.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -16,6 +19,32 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 @UseGuards(JwtAuthGuard)
 export class TeachersController {
   constructor(private readonly teachersService: TeachersService) {}
+
+  /** Classes que le professeur connecté enseigne (pour saisie des notes). */
+  @Get('me/classes')
+  async myClasses(@Req() req: { user?: { userId?: number; sub?: number; id?: number } }) {
+    const userId = req.user?.userId ?? req.user?.sub ?? req.user?.id;
+    if (!userId) throw new ForbiddenException('Non authentifié');
+    await this.teachersService.findOneTeacher(userId as number);
+    const classes = await this.teachersService.getTeacherClassesForGrades(userId as number);
+    return { ok: true, classes };
+  }
+
+  /** Matières que le professeur connecté enseigne dans cette classe (pour saisie des notes). */
+  @Get('me/classes/:classId/subjects')
+  async mySubjectsInClass(
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number } },
+    @Param('classId') classId: string,
+  ) {
+    const userId = req.user?.userId ?? req.user?.sub ?? req.user?.id;
+    if (!userId) throw new ForbiddenException('Non authentifié');
+    await this.teachersService.findOneTeacher(userId as number);
+    const subjects = await this.teachersService.getTeacherSubjectsInClass(
+      userId as number,
+      classId,
+    );
+    return { ok: true, subjects };
+  }
 
   @Get()
   async list(
@@ -42,6 +71,7 @@ export class TeachersController {
     const teacher = await this.teachersService.findOneTeacher(id);
     const classes = await this.teachersService.getTeacherClasses(id);
     const subjects = await this.teachersService.getTeacherSubjects(id);
+    const class_subjects = await this.teachersService.getTeacherClassSubjects(id);
     const slots = await this.teachersService.getScheduleSlots({ teacher_id: id });
     return {
       ok: true,
@@ -54,9 +84,49 @@ export class TeachersController {
         active: teacher.active,
         classes,
         subjects,
+        class_subjects,
         schedule_slots: slots,
       },
     };
+  }
+
+  @Get(':id/class-subjects')
+  async getClassSubjects(@Param('id', ParseIntPipe) id: number) {
+    const list = await this.teachersService.getTeacherClassSubjects(id);
+    return { ok: true, class_subjects: list };
+  }
+
+  @Post(':id/class-subjects')
+  async addClassSubject(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { class_id: string; subject_id: string },
+  ) {
+    if (!body?.class_id || !body?.subject_id) {
+      throw new BadRequestException('class_id et subject_id requis');
+    }
+    const assignment = await this.teachersService.addTeacherClassSubject(
+      id,
+      body.class_id,
+      body.subject_id,
+    );
+    return {
+      ok: true,
+      assignment: {
+        id: assignment.id,
+        class_id: assignment.class_id ?? (assignment as any).class?.id,
+        subject_id: assignment.subject_id ?? (assignment as any).subject?.id,
+        created_at: assignment.created_at,
+      },
+    };
+  }
+
+  @Delete(':id/class-subjects/:assignmentId')
+  async removeClassSubject(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('assignmentId') assignmentId: string,
+  ) {
+    await this.teachersService.removeTeacherClassSubject(id, assignmentId);
+    return { ok: true, deleted: true };
   }
 
   @Get(':id/classes')

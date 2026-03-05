@@ -7,6 +7,7 @@ import { fetchWithAuth, getImageUrl } from "@/src/lib/api";
 import { useSchoolProfile } from "@/src/contexts/SchoolProfileContext";
 import { ROLES_FULL } from "@/src/lib/dashboardRoles";
 import { ExportPdfButton } from "@/src/components/ExportPdfButton";
+import { formatDateJJMMAAAA } from "@/src/lib/format";
 
 type Student = {
   id: string;
@@ -41,7 +42,7 @@ type DisciplineSummary = {
   disciplinary_points: number;
   lateness_count: number;
   absence_count: number;
-  latest_measure: { id: string; label: string; color?: string; reason?: string } | null;
+  latest_measure: { id: string; label: string; color?: string; reason?: string; expires_at?: string } | null;
   points_history?: { date: string | null; points: number }[];
 };
 
@@ -537,6 +538,11 @@ export default function FicheElevePage() {
                       >
                         {discipline.latest_measure.label}
                         {discipline.latest_measure.reason && ` — ${discipline.latest_measure.reason}`}
+                        {discipline.latest_measure.expires_at && (
+                          <span className="ml-1">
+                            (jusqu'au {formatDateJJMMAAAA(discipline.latest_measure.expires_at)})
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -693,7 +699,7 @@ export default function FicheElevePage() {
                       ) : (
                         examSchedules.map((e) => (
                           <tr key={e.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
-                            <td className="px-4 py-2 text-slate-600">{e.exam_date}</td>
+                            <td className="px-4 py-2 text-slate-600">{formatDateJJMMAAAA(e.exam_date)}</td>
                             <td className="px-4 py-2 text-slate-600">{e.start_time} – {e.end_time}</td>
                             <td className="px-4 py-2 font-medium text-slate-900">{e.subject_name}</td>
                             <td className="px-4 py-2 text-slate-600">{e.period}</td>
@@ -722,7 +728,7 @@ export default function FicheElevePage() {
                       ) : (
                         extracurricularActivities.map((a) => (
                           <tr key={a.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
-                            <td className="px-4 py-2 text-slate-600">{a.activity_date}</td>
+                            <td className="px-4 py-2 text-slate-600">{formatDateJJMMAAAA(a.activity_date)}</td>
                             <td className="px-4 py-2 text-slate-600">{a.start_time} – {a.end_time}</td>
                             <td className="px-4 py-2 font-medium text-slate-900">{a.occasion}</td>
                             <td className="px-4 py-2 text-slate-600">{a.participation_fee ?? "—"}</td>
@@ -746,28 +752,66 @@ export default function FicheElevePage() {
                 <ExportPdfButton
                   sections={[
                     {
-                      title: "Carnet de notes",
+                      title: "Carnet de notes (points/coef, moy. sur 10)",
                       table: {
                         columns: [
                           { header: "Matière", key: "subject_name" },
                           ...(examResults.periods.map((p, i) => ({ header: p.name, key: `period_${i}` }))),
-                          { header: "Moy. mat.", key: "moy_mat" },
+                          { header: "Moy. mat. /10", key: "moy_mat" },
                         ],
-                        rows: examResults.subjects.map((subj) => {
-                          const grades = subj.periods || [];
-                          const totalCoef = grades.reduce((s, g) => s + g.coefficient, 0);
-                          const weightedSum = grades.reduce((s, g) => s + (g.grade_value || 0) * g.coefficient, 0);
-                          const moyMat = totalCoef > 0 ? Math.round((weightedSum / totalCoef) * 100) / 100 : null;
-                          const row: Record<string, string | number> = {
-                            subject_name: subj.subject_name,
-                            moy_mat: moyMat != null ? moyMat.toFixed(2) : "—",
-                          };
-                          examResults.periods?.forEach((p, i) => {
-                            const g = grades.find((gr) => gr.period_id === p.id);
-                            row[`period_${i}`] = g?.grade_value != null ? g.grade_value : "—";
-                          });
-                          return row;
-                        }),
+                        rows: [
+                          ...examResults.subjects.map((subj) => {
+                            const grades = subj.periods || [];
+                            const totalPoints = grades.reduce((s, g) => s + (g.grade_value ?? 0), 0);
+                            const totalCoef = grades.reduce((s, g) => s + g.coefficient, 0);
+                            const moyMat = totalCoef > 0 ? Math.round((totalPoints / totalCoef) * 10 * 100) / 100 : null;
+                            const row: Record<string, string | number> = {
+                              subject_name: subj.subject_name,
+                              moy_mat: moyMat != null ? moyMat.toFixed(2) : "—",
+                            };
+                            examResults.periods?.forEach((p, i) => {
+                              const g = grades.find((gr) => gr.period_id === p.id);
+                              const pts = g?.grade_value != null ? Number(g.grade_value) : null;
+                              const coef = g?.coefficient != null ? Number(g.coefficient) : null;
+                              row[`period_${i}`] = pts != null && coef != null ? `${pts}/${coef}` : "—";
+                            });
+                            return row;
+                          }),
+                          ...(examResults.periods?.length
+                            ? (() => {
+                                const periodSums = examResults.periods.map((p) => {
+                                  let obtained = 0, possible = 0;
+                                  examResults.subjects?.forEach((subj) => {
+                                    const g = (subj.periods || []).find((gr) => gr.period_id === p.id);
+                                    if (g) {
+                                      obtained += Number(g.grade_value) || 0;
+                                      possible += Number(g.coefficient) || 0;
+                                    }
+                                  });
+                                  return { obtained, possible };
+                                });
+                                const periodAvgs = periodSums.map(({ obtained, possible }) =>
+                                  possible > 0 ? (obtained / possible) * 10 : null,
+                                );
+                                const sumRow: Record<string, string | number> = {
+                                  subject_name: "Somme points",
+                                  moy_mat: "—",
+                                };
+                                examResults.periods?.forEach((p, i) => {
+                                  sumRow[`period_${i}`] =
+                                    periodSums[i].possible > 0 ? `${periodSums[i].obtained}/${periodSums[i].possible}` : "—";
+                                });
+                                const avgRow: Record<string, string | number> = {
+                                  subject_name: "Moy. période /10",
+                                  moy_mat: "—",
+                                };
+                                periodAvgs.forEach((avg, i) => {
+                                  avgRow[`period_${i}`] = avg != null ? avg.toFixed(2) : "—";
+                                });
+                                return [sumRow, avgRow];
+                              })()
+                            : []),
+                        ],
                       },
                     },
                     ...(formationDecision?.average != null || formationDecision?.decision
@@ -776,7 +820,7 @@ export default function FicheElevePage() {
                             title: "Résultat",
                             lines: [
                               ...(formationDecision?.average != null
-                                ? [`Moyenne générale : ${Number(formationDecision.average).toFixed(2)}`]
+                                ? [`Moyenne générale /10 : ${Number(formationDecision.average).toFixed(2)}`]
                                 : []),
                               ...(formationDecision?.decision
                                 ? [`Décision : ${DECISION_LABELS[formationDecision.decision] ?? formationDecision.decision}`]
@@ -803,10 +847,11 @@ export default function FicheElevePage() {
               </select>
               </div>
             </div>
-            <div className="p-4 overflow-x-auto">
+            <div className="p-4 overflow-auto max-h-[70vh]">
               {examResults && examResults.subjects?.length > 0 ? (
                 <div className="space-y-4">
-                  <table className="w-full text-sm border-collapse">
+                  <p className="text-xs text-slate-500 mb-2">Points avec coefficients (ex. 85/100). Moyennes sur 10.</p>
+                  <table className="w-full text-sm border-collapse min-w-[600px]">
                     <thead>
                       <tr>
                         <th className="text-left py-2 px-2 font-medium text-slate-700 border-b border-[var(--app-border)]">Matière</th>
@@ -815,23 +860,25 @@ export default function FicheElevePage() {
                             {p.name}
                           </th>
                         ))}
-                        <th className="py-2 px-2 font-medium text-slate-700 border-b border-[var(--app-border)] text-center">Moy. mat.</th>
+                        <th className="py-2 px-2 font-medium text-slate-700 border-b border-[var(--app-border)] text-center">Moy. mat. /10</th>
                       </tr>
                     </thead>
                     <tbody>
                       {examResults.subjects.map((subj) => {
                         const grades = subj.periods || [];
+                        const totalPoints = grades.reduce((s, g) => s + (g.grade_value ?? 0), 0);
                         const totalCoef = grades.reduce((s, g) => s + g.coefficient, 0);
-                        const weightedSum = grades.reduce((s, g) => s + (g.grade_value || 0) * g.coefficient, 0);
-                        const moyMat = totalCoef > 0 ? Math.round((weightedSum / totalCoef) * 100) / 100 : null;
+                        const moyMat = totalCoef > 0 ? Math.round((totalPoints / totalCoef) * 10 * 100) / 100 : null;
                         return (
                           <tr key={subj.subject_id} className="border-b border-[var(--app-border)] last:border-b-0">
                             <td className="py-2 px-2 font-medium text-slate-900">{subj.subject_name}</td>
                             {examResults.periods?.map((p) => {
                               const g = grades.find((gr) => gr.period_id === p.id);
+                              const pts = g?.grade_value != null ? Number(g.grade_value) : null;
+                              const coef = g?.coefficient != null ? Number(g.coefficient) : null;
                               return (
                                 <td key={p.id} className="py-2 px-2 text-center">
-                                  {g?.grade_value != null ? g.grade_value : "—"}
+                                  {pts != null && coef != null ? `${pts}/${coef}` : "—"}
                                 </td>
                               );
                             })}
@@ -841,6 +888,44 @@ export default function FicheElevePage() {
                           </tr>
                         );
                       })}
+                      {examResults.periods && examResults.periods.length > 0 && (() => {
+                        const periodSums = examResults.periods.map((p) => {
+                          let obtained = 0, possible = 0;
+                          examResults.subjects?.forEach((subj) => {
+                            const g = (subj.periods || []).find((gr) => gr.period_id === p.id);
+                            if (g) {
+                              obtained += Number(g.grade_value) || 0;
+                              possible += Number(g.coefficient) || 0;
+                            }
+                          });
+                          return { obtained, possible };
+                        });
+                        const periodAvgs = periodSums.map(({ obtained, possible }) =>
+                          possible > 0 ? Math.round((obtained / possible) * 10 * 100) / 100 : null,
+                        );
+                        return (
+                          <>
+                            <tr className="border-t-2 border-[var(--app-border)] bg-slate-50 font-medium">
+                              <td className="py-2 px-2 text-slate-900">Somme points</td>
+                              {periodSums.map((sum, i) => (
+                                <td key={examResults.periods?.[i]?.id ?? i} className="py-2 px-2 text-center">
+                                  {sum.possible > 0 ? `${sum.obtained}/${sum.possible}` : "—"}
+                                </td>
+                              ))}
+                              <td className="py-2 px-2 text-center">—</td>
+                            </tr>
+                            <tr className="border-b border-[var(--app-border)] bg-slate-50 font-medium">
+                              <td className="py-2 px-2 text-slate-900">Moy. période /10</td>
+                              {periodAvgs.map((avg, i) => (
+                                <td key={examResults.periods?.[i]?.id ?? `avg-${i}`} className="py-2 px-2 text-center">
+                                  {avg != null ? avg.toFixed(2) : "—"}
+                                </td>
+                              ))}
+                              <td className="py-2 px-2 text-center">—</td>
+                            </tr>
+                          </>
+                        );
+                      })()}
                     </tbody>
                   </table>
 
@@ -848,7 +933,7 @@ export default function FicheElevePage() {
                   <div className="flex flex-wrap gap-6 mt-6 pt-4 border-t border-[var(--app-border)]">
                     {formationDecision?.average != null && (
                       <div>
-                        <span className="text-slate-600 text-sm">Moyenne générale : </span>
+                        <span className="text-slate-600 text-sm">Moyenne générale /10 : </span>
                         <span className="font-bold text-lg text-slate-900">{Number(formationDecision.average).toFixed(2)}</span>
                       </div>
                     )}

@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { fetchWithAuth } from "@/src/lib/api";
+import { formatDateJJMMAAAA } from "@/src/lib/format";
+import { DateInputJJMMAAAA } from "@/src/components/DateInputJJMMAAAA";
 
 type AcademicYear = {
   id: string;
@@ -339,19 +341,17 @@ export default function AcademicYearsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Début</label>
-                <input
-                  type="date"
+                <DateInputJJMMAAAA
                   value={yearStart}
-                  onChange={(e) => setYearStart(e.target.value)}
+                  onChange={setYearStart}
                   className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Fin</label>
-                <input
-                  type="date"
+                <DateInputJJMMAAAA
                   value={yearEnd}
-                  onChange={(e) => setYearEnd(e.target.value)}
+                  onChange={setYearEnd}
                   className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40"
                 />
               </div>
@@ -398,8 +398,8 @@ export default function AcademicYearsPage() {
                     onClick={() => setSelectedYearId(y.id)}
                   >
                     <td className="px-4 py-3 font-medium text-slate-900">{y.name}</td>
-                    <td className="px-4 py-3 text-slate-600">{y.start_date ?? "-"}</td>
-                    <td className="px-4 py-3 text-slate-600">{y.end_date ?? "-"}</td>
+                    <td className="px-4 py-3 text-slate-600">{formatDateJJMMAAAA(y.start_date)}</td>
+                    <td className="px-4 py-3 text-slate-600">{formatDateJJMMAAAA(y.end_date)}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${y.active ? "bg-green-100 text-green-800" : "bg-slate-100 text-slate-600"}`}>
                         {y.active ? "Actif" : "Inactif"}

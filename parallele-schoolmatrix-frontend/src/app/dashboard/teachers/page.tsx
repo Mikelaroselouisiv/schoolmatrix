@@ -13,9 +13,18 @@ type Teacher = {
   active: boolean;
 };
 
+type ClassSubjectAssignment = {
+  id: string;
+  class_id: string;
+  class_name: string;
+  subject_id: string;
+  subject_name: string;
+};
+
 type TeacherDetail = Teacher & {
   classes: { id: string; class_id: string; class_name: string; is_main: boolean }[];
   subjects: { id: string; subject_id: string; subject_name: string }[];
+  class_subjects?: ClassSubjectAssignment[];
 };
 
 type ClassItem = { id: string; name: string };
@@ -39,6 +48,9 @@ export default function TeachersPage() {
   const [newSubjectId, setNewSubjectId] = useState("");
   const [addingClass, setAddingClass] = useState(false);
   const [newClassId, setNewClassId] = useState("");
+  const [addingAssignment, setAddingAssignment] = useState(false);
+  const [newAssignmentClassId, setNewAssignmentClassId] = useState("");
+  const [newAssignmentSubjectId, setNewAssignmentSubjectId] = useState("");
   const [saving, setSaving] = useState(false);
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
@@ -206,10 +218,54 @@ export default function TeachersPage() {
     }
   }
 
+  async function handleAddAssignment(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedTeacher || !newAssignmentClassId || !newAssignmentSubjectId) return;
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/teachers/${selectedTeacher.id}/class-subjects`, {
+        method: "POST",
+        body: JSON.stringify({ class_id: newAssignmentClassId, subject_id: newAssignmentSubjectId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      setAddingAssignment(false);
+      setNewAssignmentClassId("");
+      setNewAssignmentSubjectId("");
+      await loadTeacherDetail(selectedTeacher.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleRemoveAssignment(assignmentId: string) {
+    if (!selectedTeacher || !confirm("Retirer cette assignation ?")) return;
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/teachers/${selectedTeacher.id}/class-subjects/${assignmentId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || "Erreur");
+      }
+      await loadTeacherDetail(selectedTeacher.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    }
+  }
+
   const teacherSubjects = selectedTeacher?.subjects ?? [];
   const teacherClasses = selectedTeacher?.classes ?? [];
+  const assignments = selectedTeacher?.class_subjects ?? [];
   const availableSubjects = subjects.filter((s) => !teacherSubjects.some((ts) => ts.subject_id === s.id));
   const availableClasses = classes.filter((c) => !teacherClasses.some((tc) => tc.class_id === c.id));
+  const availableSubjectsForNewClass = newAssignmentClassId
+    ? subjects.filter((s) => !assignments.some((a) => a.class_id === newAssignmentClassId && a.subject_id === s.id))
+    : subjects;
 
   function teacherName(t: Teacher) {
     return [t.first_name, t.last_name].filter(Boolean).join(" ") || t.email;
@@ -282,7 +338,7 @@ export default function TeachersPage() {
                 <button
                   key={t.id}
                   type="button"
-                  onClick={() => setSelectedTeacher({ ...t, classes: [], subjects: [] })}
+                  onClick={() => setSelectedTeacher({ ...t, classes: [], subjects: [], class_subjects: [] })}
                   className={`w-full text-left px-4 py-3 border-b border-[var(--app-border)] last:border-b-0 hover:bg-slate-50 transition-colors ${selectedTeacher?.id === t.id ? "bg-slate-50 border-l-4 border-l-[var(--school-accent-1)]" : ""}`}
                 >
                   <div className="font-medium text-slate-900">{teacherName(t)}</div>
@@ -301,92 +357,79 @@ export default function TeachersPage() {
 
           {selectedTeacher && (
             <>
-              {/* Matières enseignées */}
+              {/* Assignations : matière enseignée dans quelle classe */}
               <div className="rounded-xl border border-[var(--app-border)] bg-white p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <h4 className="font-medium text-slate-900">Matières enseignées</h4>
-                  {!addingSubject && availableSubjects.length > 0 && (
-                    <button onClick={() => setAddingSubject(true)} className="text-sm text-[var(--school-accent-1)] hover:underline">
-                      + Ajouter
+                  <h4 className="font-medium text-slate-900">Assignations (classe + matière)</h4>
+                  {!addingAssignment && (
+                    <button onClick={() => setAddingAssignment(true)} className="text-sm text-[var(--school-accent-1)] hover:underline">
+                      + Ajouter une assignation
                     </button>
                   )}
                 </div>
-                {addingSubject && (
-                  <form onSubmit={handleAddSubject} className="flex gap-2 mb-3">
+                <p className="text-sm text-slate-600 mb-3">
+                  Définissez précisément quelles matières ce professeur enseigne dans quelles classes. Cela permettra au professeur de ne voir que ses matières lors de la saisie des notes.
+                </p>
+                {addingAssignment && (
+                  <form onSubmit={handleAddAssignment} className="flex flex-wrap gap-2 mb-3 p-3 bg-slate-50 rounded-lg">
                     <select
-                      value={newSubjectId}
-                      onChange={(e) => setNewSubjectId(e.target.value)}
-                      className="flex-1 border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40"
+                      value={newAssignmentClassId}
+                      onChange={(e) => { setNewAssignmentClassId(e.target.value); setNewAssignmentSubjectId(""); }}
+                      className="border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40 min-w-[140px]"
+                      required
                     >
-                      <option value="">Choisir une matière...</option>
-                      {availableSubjects.map((s) => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </select>
-                    <button type="submit" disabled={saving || !newSubjectId} className="app-btn-primary text-sm py-2 disabled:opacity-60">
-                      OK
-                    </button>
-                    <button type="button" onClick={() => { setAddingSubject(false); setNewSubjectId(""); }} className="app-btn-secondary text-sm py-2">Annuler</button>
-                  </form>
-                )}
-                <ul className="space-y-1">
-                  {teacherSubjects.length === 0 ? (
-                    <li className="text-sm text-slate-500">Aucune matière assignée</li>
-                  ) : (
-                    teacherSubjects.map((s) => (
-                      <li key={s.id} className="flex items-center justify-between py-1">
-                        <span className="text-slate-700">{s.subject_name}</span>
-                        <button onClick={() => handleRemoveSubject(s.subject_id)} className="text-xs text-red-600 hover:underline">Retirer</button>
-                      </li>
-                    ))
-                  )}
-                </ul>
-              </div>
-
-              {/* Classes */}
-              <div className="rounded-xl border border-[var(--app-border)] bg-white p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="font-medium text-slate-900">Classes</h4>
-                  {!addingClass && availableClasses.length > 0 && (
-                    <button onClick={() => setAddingClass(true)} className="text-sm text-[var(--school-accent-1)] hover:underline">
-                      + Ajouter
-                    </button>
-                  )}
-                </div>
-                {addingClass && (
-                  <form onSubmit={handleAddClass} className="flex gap-2 mb-3">
-                    <select
-                      value={newClassId}
-                      onChange={(e) => setNewClassId(e.target.value)}
-                      className="flex-1 border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40"
-                    >
-                      <option value="">Choisir une classe...</option>
-                      {availableClasses.map((c) => (
+                      <option value="">Classe...</option>
+                      {classes.map((c) => (
                         <option key={c.id} value={c.id}>{c.name}</option>
                       ))}
                     </select>
-                    <button type="submit" disabled={saving || !newClassId} className="app-btn-primary text-sm py-2 disabled:opacity-60">
-                      OK
+                    <select
+                      value={newAssignmentSubjectId}
+                      onChange={(e) => setNewAssignmentSubjectId(e.target.value)}
+                      className="border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40 min-w-[140px]"
+                      required
+                    >
+                      <option value="">Matière...</option>
+                      {availableSubjectsForNewClass.map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                    <button type="submit" disabled={saving || !newAssignmentClassId || !newAssignmentSubjectId} className="app-btn-primary text-sm py-2 disabled:opacity-60">
+                      {saving ? "..." : "Ajouter"}
                     </button>
-                    <button type="button" onClick={() => { setAddingClass(false); setNewClassId(""); }} className="app-btn-secondary text-sm py-2">Annuler</button>
+                    <button type="button" onClick={() => { setAddingAssignment(false); setNewAssignmentClassId(""); setNewAssignmentSubjectId(""); }} className="app-btn-secondary text-sm py-2">Annuler</button>
                   </form>
                 )}
-                <ul className="space-y-1">
-                  {teacherClasses.length === 0 ? (
-                    <li className="text-sm text-slate-500">Aucune classe assignée</li>
-                  ) : (
-                    teacherClasses.map((c) => (
-                      <li key={c.id} className="flex items-center justify-between py-1">
-                        <span className="text-slate-700">{c.class_name}{c.is_main ? " (principale)" : ""}</span>
-                        <button onClick={() => handleRemoveClass(c.class_id)} className="text-xs text-red-600 hover:underline">Retirer</button>
-                      </li>
-                    ))
-                  )}
-                </ul>
+                <div className="overflow-x-auto rounded-lg border border-[var(--app-border)]">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-slate-50 border-b border-[var(--app-border)]">
+                      <tr>
+                        <th className="px-3 py-2 font-medium text-slate-900">Classe</th>
+                        <th className="px-3 py-2 font-medium text-slate-900">Matière</th>
+                        <th className="px-3 py-2 font-medium text-slate-900 w-20">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {assignments.length === 0 ? (
+                        <tr><td colSpan={3} className="px-3 py-4 text-center text-slate-500">Aucune assignation. Ajoutez « Classe + Matière » pour que le professeur puisse saisir les notes.</td></tr>
+                      ) : (
+                        assignments.map((a) => (
+                          <tr key={a.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
+                            <td className="px-3 py-2 text-slate-700">{a.class_name}</td>
+                            <td className="px-3 py-2 text-slate-700">{a.subject_name}</td>
+                            <td className="px-3 py-2">
+                              <button type="button" onClick={() => handleRemoveAssignment(a.id)} className="text-red-600 hover:underline text-xs">Retirer</button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
               <p className="text-xs text-slate-500">
-                Ce professeur peut enseigner {teacherSubjects.length} matière(s) dans {teacherClasses.length} classe(s). L&apos;horaire précis (jour, heure) sera défini dans Horaires.
+                L&apos;horaire précis (jour, heure) se définit dans Horaires. En saisie des notes, le professeur ne verra que les classes et matières listées ici.
               </p>
             </>
           )}

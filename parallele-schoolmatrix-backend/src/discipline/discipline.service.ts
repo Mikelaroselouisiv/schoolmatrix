@@ -213,15 +213,33 @@ export class DisciplineService {
     return { ok: true, deleted: true };
   }
 
-  async addMeasure(studentId: string, measureType: string, reason?: string): Promise<any> {
+  async addMeasure(
+    studentId: string,
+    measureType: string,
+    reason?: string,
+    durationDays?: number,
+  ): Promise<any> {
     const student = await this.studentRepo.findOne({ where: { id: studentId } });
     if (!student) throw new NotFoundException('Student not found');
+    if (measureType === 'RENVOYE_TEMPORAIREMENT') {
+      const days = durationDays ?? 1;
+      if (days < 1 || days > 365) {
+        throw new BadRequestException('duration_days doit être entre 1 et 365 pour un renvoi temporaire.');
+      }
+    }
     const rec = this.measureRepo.create({
       student: { id: studentId },
       measure_type: measureType,
       reason: reason?.trim() || undefined,
     });
     const saved = await this.measureRepo.save(rec);
+    if (measureType === 'RENVOYE_TEMPORAIREMENT') {
+      const days = durationDays ?? 1;
+      const expiresAt = new Date(saved.created_at.getTime());
+      expiresAt.setDate(expiresAt.getDate() + days);
+      saved.expires_at = expiresAt;
+      await this.measureRepo.save(saved);
+    }
     return {
       ok: true,
       measure: {
@@ -232,12 +250,60 @@ export class DisciplineService {
         color: MEASURE_COLORS[saved.measure_type],
         reason: saved.reason,
         created_at: saved.created_at,
+        expires_at: saved.expires_at ?? undefined,
+      },
+    };
+  }
+
+  async deleteMeasure(id: string): Promise<{ ok: boolean; deleted: boolean }> {
+    const rec = await this.measureRepo.findOne({ where: { id } });
+    if (!rec) throw new NotFoundException('Measure not found');
+    await this.measureRepo.remove(rec);
+    return { ok: true, deleted: true };
+  }
+
+  async updateMeasure(
+    id: string,
+    payload: { reason?: string; duration_days?: number },
+  ): Promise<any> {
+    const rec = await this.measureRepo.findOne({ where: { id }, relations: ['student'] });
+    if (!rec) throw new NotFoundException('Measure not found');
+    if (payload.reason !== undefined) rec.reason = payload.reason?.trim() || null;
+    if (rec.measure_type === 'RENVOYE_TEMPORAIREMENT' && payload.duration_days != null) {
+      if (payload.duration_days < 1 || payload.duration_days > 365) {
+        throw new BadRequestException('duration_days doit être entre 1 et 365.');
+      }
+      const from = rec.created_at ?? new Date();
+      const expiresAt = new Date(from.getTime());
+      expiresAt.setDate(expiresAt.getDate() + payload.duration_days);
+      rec.expires_at = expiresAt;
+    }
+    const saved = await this.measureRepo.save(rec);
+    const studentId = saved.student?.id ?? (saved as any).student_id;
+    return {
+      ok: true,
+      measure: {
+        id: saved.id,
+        student_id: studentId,
+        measure_type: saved.measure_type,
+        label: MEASURE_LABELS[saved.measure_type],
+        color: MEASURE_COLORS[saved.measure_type],
+        reason: saved.reason,
+        created_at: saved.created_at,
+        expires_at: saved.expires_at ?? undefined,
       },
     };
   }
 
   /** La mesure "En retenue" est temporaire : elle disparaît après 10 heures. */
   private static readonly RETENUE_HOURS = 10;
+
+  /** Compare uniquement la date (jour), pas l'heure : expiré dès que le jour d'échéance est atteint. */
+  private static isDateReachedOrPast(now: Date, expiry: Date): boolean {
+    const n = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const e = new Date(expiry.getFullYear(), expiry.getMonth(), expiry.getDate()).getTime();
+    return n >= e;
+  }
 
   async listMeasures(studentId?: string): Promise<any> {
     const qb = this.measureRepo
@@ -249,9 +315,14 @@ export class DisciplineService {
     const now = new Date();
     const retenueExpiryMs = DisciplineService.RETENUE_HOURS * 60 * 60 * 1000;
     const filtered = list.filter((m) => {
-      if (m.measure_type !== 'EN_RETENUE') return true;
-      const age = now.getTime() - (m.created_at?.getTime() ?? 0);
-      return age < retenueExpiryMs;
+      if (m.measure_type === 'EN_RETENUE') {
+        const age = now.getTime() - (m.created_at?.getTime() ?? 0);
+        return age < retenueExpiryMs;
+      }
+      if (m.measure_type === 'RENVOYE_TEMPORAIREMENT' && m.expires_at) {
+        return !DisciplineService.isDateReachedOrPast(now, m.expires_at);
+      }
+      return true;
     });
     return {
       ok: true,
@@ -264,6 +335,7 @@ export class DisciplineService {
         color: MEASURE_COLORS[m.measure_type],
         reason: m.reason,
         created_at: m.created_at,
+        expires_at: m.expires_at ?? undefined,
       })),
     };
   }
@@ -293,8 +365,14 @@ export class DisciplineService {
       m?.measure_type === 'EN_RETENUE' &&
       m?.created_at &&
       (now.getTime() - m.created_at.getTime()) >= retenueExpiryMs;
+    const isRenvoiExpired = (m: any) =>
+      m?.measure_type === 'RENVOYE_TEMPORAIREMENT' &&
+      m?.expires_at &&
+      DisciplineService.isDateReachedOrPast(now, m.expires_at);
     const latestMeasureData =
-      latestMeasure && !isRetenueExpired(latestMeasure)
+      latestMeasure &&
+      !isRetenueExpired(latestMeasure) &&
+      !isRenvoiExpired(latestMeasure)
         ? {
             id: latestMeasure.id,
             measure_type: latestMeasure.measure_type,
@@ -302,6 +380,7 @@ export class DisciplineService {
             color: MEASURE_COLORS[latestMeasure.measure_type],
             reason: latestMeasure.reason,
             created_at: latestMeasure.created_at,
+            expires_at: latestMeasure.expires_at ?? undefined,
           }
         : null;
     let cumulative = DISCIPLINARY_BASE_POINTS;

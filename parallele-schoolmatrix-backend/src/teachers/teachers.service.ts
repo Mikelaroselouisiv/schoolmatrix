@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { ClassTeacher } from './class-teacher.entity';
 import { TeacherSubject } from './teacher-subject.entity';
+import { TeacherClassSubject } from './teacher-class-subject.entity';
 import { ScheduleSlot } from './schedule-slot.entity';
 import { User } from '../users/user.entity';
 import { Role } from '../roles/role.entity';
@@ -21,6 +22,8 @@ export class TeachersService {
     private readonly classTeacherRepo: Repository<ClassTeacher>,
     @InjectRepository(TeacherSubject)
     private readonly teacherSubjectRepo: Repository<TeacherSubject>,
+    @InjectRepository(TeacherClassSubject)
+    private readonly teacherClassSubjectRepo: Repository<TeacherClassSubject>,
     @InjectRepository(ScheduleSlot)
     private readonly scheduleSlotRepo: Repository<ScheduleSlot>,
   ) {}
@@ -134,6 +137,100 @@ export class TeachersService {
     if (!assignment) throw new NotFoundException('Assignment not found');
     await this.teacherSubjectRepo.remove(assignment);
     return { deleted: true };
+  }
+
+  /** Assignations précises : (classe, matière) pour ce professeur. */
+  async getTeacherClassSubjects(teacherId: number) {
+    await this.findOneTeacher(teacherId);
+    const list = await this.teacherClassSubjectRepo.find({
+      where: { teacher: { id: teacherId } },
+      relations: ['class', 'subject'],
+      order: { created_at: 'ASC' },
+    });
+    return list.map((a) => ({
+      id: a.id,
+      class_id: a.class?.id ?? a.class_id,
+      class_name: a.class?.name ?? '',
+      subject_id: a.subject?.id ?? a.subject_id,
+      subject_name: a.subject?.name ?? '',
+      created_at: a.created_at,
+    }));
+  }
+
+  async addTeacherClassSubject(
+    teacherId: number,
+    classId: string,
+    subjectId: string,
+  ): Promise<TeacherClassSubject> {
+    await this.findOneTeacher(teacherId);
+    const existing = await this.teacherClassSubjectRepo.findOne({
+      where: {
+        teacher: { id: teacherId },
+        class: { id: classId },
+        subject: { id: subjectId },
+      },
+    });
+    if (existing) {
+      throw new BadRequestException(
+        'Ce professeur enseigne déjà cette matière dans cette classe.',
+      );
+    }
+    const assignment = this.teacherClassSubjectRepo.create({
+      teacher: { id: teacherId },
+      class: { id: classId },
+      subject: { id: subjectId },
+    });
+    return this.teacherClassSubjectRepo.save(assignment);
+  }
+
+  async removeTeacherClassSubject(
+    teacherId: number,
+    assignmentId: string,
+  ): Promise<{ deleted: boolean }> {
+    const assignment = await this.teacherClassSubjectRepo.findOne({
+      where: { id: assignmentId, teacher: { id: teacherId } },
+    });
+    if (!assignment) throw new NotFoundException('Assignation introuvable');
+    await this.teacherClassSubjectRepo.remove(assignment);
+    return { deleted: true };
+  }
+
+  /** Classes dans lesquelles ce professeur enseigne (au moins une matière). */
+  async getTeacherClassesForGrades(teacherId: number) {
+    const list = await this.teacherClassSubjectRepo.find({
+      where: { teacher: { id: teacherId } },
+      relations: ['class'],
+      order: { created_at: 'ASC' },
+    });
+    const seen = new Set<string>();
+    const result: { id: string; name: string }[] = [];
+    for (const a of list) {
+      const cid = a.class?.id ?? (a as any).class_id;
+      if (cid && !seen.has(cid)) {
+        seen.add(cid);
+        result.push({
+          id: cid,
+          name: a.class?.name ?? '',
+        });
+      }
+    }
+    return result.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /** Matières que ce professeur enseigne dans cette classe (pour saisie des notes). */
+  async getTeacherSubjectsInClass(teacherId: number, classId: string) {
+    const list = await this.teacherClassSubjectRepo.find({
+      where: {
+        teacher: { id: teacherId },
+        class: { id: classId },
+      },
+      relations: ['subject'],
+      order: { created_at: 'ASC' },
+    });
+    return list.map((a) => ({
+      id: a.subject?.id ?? (a as any).subject_id,
+      name: a.subject?.name ?? '',
+    }));
   }
 
   async findTeachersForClassAndSubject(

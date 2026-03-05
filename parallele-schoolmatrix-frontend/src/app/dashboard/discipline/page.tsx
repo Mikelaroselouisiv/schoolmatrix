@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { fetchWithAuth } from "@/src/lib/api";
+import { formatDateJJMMAAAA, getTodayLocalYYYYMMDD } from "@/src/lib/format";
+import { DateInputJJMMAAAA } from "@/src/components/DateInputJJMMAAAA";
 
 type ClassItem = { id: string; name: string };
 type StudentRow = { id: string; first_name: string; last_name: string; status: string | null };
@@ -32,6 +34,7 @@ type MeasureItem = {
   color: string;
   reason: string | null;
   created_at: string;
+  expires_at?: string | null;
 };
 
 const ATTENDANCE_STATUSES = [
@@ -56,7 +59,7 @@ export default function DisciplinePage() {
 
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [attendanceClassId, setAttendanceClassId] = useState("");
-  const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().slice(0, 10));
+  const [attendanceDate, setAttendanceDate] = useState(getTodayLocalYYYYMMDD());
   const [attendanceStudents, setAttendanceStudents] = useState<StudentRow[]>([]);
   const [attendanceSaving, setAttendanceSaving] = useState(false);
 
@@ -66,7 +69,7 @@ export default function DisciplinePage() {
   const [latenessForm, setLatenessForm] = useState({
     student_id: "",
     class_id: "",
-    date: new Date().toISOString().slice(0, 10),
+    date: getTodayLocalYYYYMMDD(),
     arrival_time: "08:00",
   });
   const [studentsForLateness, setStudentsForLateness] = useState<{ id: string; first_name: string; last_name: string; order_number: string | null }[]>([]);
@@ -88,8 +91,17 @@ export default function DisciplinePage() {
   const [measures, setMeasures] = useState<MeasureItem[]>([]);
   const [measureFilterClass, setMeasureFilterClass] = useState("");
   const [measureFilterStudent, setMeasureFilterStudent] = useState("");
-  const [measureForm, setMeasureForm] = useState({ class_id: "", student_id: "", measure_type: "SOUS_SURVEILLANCE", reason: "" });
+  const [measureForm, setMeasureForm] = useState({
+    class_id: "",
+    student_id: "",
+    measure_type: "SOUS_SURVEILLANCE",
+    reason: "",
+    duration_days: "3",
+  });
   const [measureSaving, setMeasureSaving] = useState(false);
+  const [editingMeasure, setEditingMeasure] = useState<MeasureItem | null>(null);
+  const [measureEditForm, setMeasureEditForm] = useState({ reason: "", duration_days: "3" });
+  const [measureEditSaving, setMeasureEditSaving] = useState(false);
 
   async function loadClasses() {
     setError("");
@@ -331,22 +343,94 @@ export default function DisciplinePage() {
     }
   }
 
+  function openEditMeasure(m: MeasureItem) {
+    setEditingMeasure(m);
+    let days = "3";
+    if (m.measure_type === "RENVOYE_TEMPORAIREMENT" && m.expires_at && m.created_at) {
+      const created = new Date(m.created_at).getTime();
+      const expires = new Date(m.expires_at).getTime();
+      days = String(Math.max(1, Math.round((expires - created) / (24 * 60 * 60 * 1000))));
+    }
+    setMeasureEditForm({ reason: m.reason ?? "", duration_days: days });
+  }
+
+  async function handleDeleteMeasure(id: string) {
+    if (!confirm("Supprimer cette mesure ?")) return;
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/discipline/measures/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || "Erreur");
+      }
+      setEditingMeasure(null);
+      loadMeasures();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    }
+  }
+
+  async function handleUpdateMeasure(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingMeasure) return;
+    if (editingMeasure.measure_type === "RENVOYE_TEMPORAIREMENT") {
+      const days = parseInt(measureEditForm.duration_days, 10);
+      if (isNaN(days) || days < 1 || days > 365) {
+        setError("Durée entre 1 et 365 jours.");
+        return;
+      }
+    }
+    setMeasureEditSaving(true);
+    setError("");
+    try {
+      const body: { reason?: string; duration_days?: number } = {
+        reason: measureEditForm.reason.trim() || undefined,
+      };
+      if (editingMeasure.measure_type === "RENVOYE_TEMPORAIREMENT") {
+        body.duration_days = parseInt(measureEditForm.duration_days, 10);
+      }
+      const res = await fetchWithAuth(`${API_BASE}/discipline/measures/${editingMeasure.id}`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      setEditingMeasure(null);
+      loadMeasures();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setMeasureEditSaving(false);
+    }
+  }
+
   async function handleAddMeasure(e: React.FormEvent) {
     e.preventDefault();
     if (!measureForm.student_id) {
       setError("Sélectionnez un élève.");
       return;
     }
+    if (measureForm.measure_type === "RENVOYE_TEMPORAIREMENT") {
+      const days = parseInt(measureForm.duration_days, 10);
+      if (isNaN(days) || days < 1 || days > 365) {
+        setError("Pour un renvoi temporaire, indiquez une durée entre 1 et 365 jours.");
+        return;
+      }
+    }
     setMeasureSaving(true);
     setError("");
     try {
+      const body: { student_id: string; measure_type: string; reason?: string; duration_days?: number } = {
+        student_id: measureForm.student_id,
+        measure_type: measureForm.measure_type,
+        reason: measureForm.reason.trim() || undefined,
+      };
+      if (measureForm.measure_type === "RENVOYE_TEMPORAIREMENT") {
+        body.duration_days = parseInt(measureForm.duration_days, 10);
+      }
       const res = await fetchWithAuth(`${API_BASE}/discipline/measures`, {
         method: "POST",
-        body: JSON.stringify({
-          student_id: measureForm.student_id,
-          measure_type: measureForm.measure_type,
-          reason: measureForm.reason.trim() || undefined,
-        }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Erreur");
@@ -408,11 +492,10 @@ export default function DisciplinePage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Date</label>
-              <input
-                type="date"
+              <DateInputJJMMAAAA
                 value={attendanceDate}
-                onChange={(e) => setAttendanceDate(e.target.value)}
-                className="border border-[var(--app-border)] rounded-lg px-3 py-2"
+                onChange={setAttendanceDate}
+                className="border border-[var(--app-border)] rounded-lg px-3 py-2 w-full"
               />
             </div>
           </div>
@@ -498,10 +581,9 @@ export default function DisciplinePage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Date</label>
-                <input
-                  type="date"
+                <DateInputJJMMAAAA
                   value={latenessForm.date}
-                  onChange={(e) => setLatenessForm((f) => ({ ...f, date: e.target.value }))}
+                  onChange={(date) => setLatenessForm((f) => ({ ...f, date }))}
                   className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
                   required
                 />
@@ -534,10 +616,9 @@ export default function DisciplinePage() {
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
-              <input
-                type="date"
+              <DateInputJJMMAAAA
                 value={latenessFilterDate}
-                onChange={(e) => setLatenessFilterDate(e.target.value)}
+                onChange={setLatenessFilterDate}
                 className="border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm"
               />
             </div>
@@ -558,7 +639,7 @@ export default function DisciplinePage() {
                   ) : (
                     latenesses.map((l) => (
                       <tr key={l.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
-                        <td className="px-4 py-3 text-slate-600">{typeof l.date === "string" ? l.date.slice(0, 10) : l.date}</td>
+                        <td className="px-4 py-3 text-slate-600">{formatDateJJMMAAAA(l.date)}</td>
                         <td className="px-4 py-3 text-slate-600">{l.arrival_time}</td>
                         <td className="px-4 py-3 font-medium text-slate-900">{l.student_name ?? "—"}</td>
                         <td className="px-4 py-3 text-slate-600">{l.class_name ?? "—"}</td>
@@ -701,7 +782,7 @@ export default function DisciplinePage() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-slate-600">{d.reason ?? "—"}</td>
-                        <td className="px-4 py-3 text-slate-600">{typeof d.created_at === "string" ? d.created_at.slice(0, 10) : d.created_at}</td>
+                        <td className="px-4 py-3 text-slate-600">{formatDateJJMMAAAA(d.created_at)}</td>
                         <td className="px-4 py-3">
                           <button type="button" onClick={() => handleDeleteDeduction(d.id)} className="text-red-600 hover:underline text-xs">Supprimer</button>
                         </td>
@@ -759,6 +840,20 @@ export default function DisciplinePage() {
                 ))}
               </select>
             </div>
+            {measureForm.measure_type === "RENVOYE_TEMPORAIREMENT" && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Durée du renvoi (jours)</label>
+                <select
+                  value={measureForm.duration_days}
+                  onChange={(e) => setMeasureForm((f) => ({ ...f, duration_days: e.target.value }))}
+                  className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
+                >
+                  {[1, 2, 3, 5, 7, 10, 14, 21, 30].map((d) => (
+                    <option key={d} value={String(d)}>{d} jour{d > 1 ? "s" : ""}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Motif (optionnel)</label>
               <input
@@ -811,11 +906,13 @@ export default function DisciplinePage() {
                     <th className="px-4 py-3 font-medium text-slate-900">Mesure</th>
                     <th className="px-4 py-3 font-medium text-slate-900">Motif</th>
                     <th className="px-4 py-3 font-medium text-slate-900">Date</th>
+                    <th className="px-4 py-3 font-medium text-slate-900">Fin / Échéance</th>
+                    <th className="px-4 py-3 font-medium text-slate-900 w-28">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {measures.length === 0 ? (
-                    <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-500">Aucune mesure</td></tr>
+                    <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">Aucune mesure</td></tr>
                   ) : (
                     measures.map((m) => (
                       <tr key={m.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
@@ -824,7 +921,16 @@ export default function DisciplinePage() {
                           <span className="inline-block px-2 py-0.5 rounded text-xs font-medium text-white" style={{ backgroundColor: m.color || "#64748b" }}>{m.label}</span>
                         </td>
                         <td className="px-4 py-3 text-slate-600">{m.reason ?? "—"}</td>
-                        <td className="px-4 py-3 text-slate-600">{typeof m.created_at === "string" ? m.created_at.slice(0, 10) : m.created_at}</td>
+                        <td className="px-4 py-3 text-slate-600">{formatDateJJMMAAAA(m.created_at)}</td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {m.measure_type === "RENVOYE_TEMPORAIREMENT" && m.expires_at
+                            ? `Jusqu'au ${formatDateJJMMAAAA(m.expires_at)}`
+                            : "—"}
+                        </td>
+                        <td className="px-4 py-3 flex gap-2">
+                          <button type="button" onClick={() => openEditMeasure(m)} className="text-[var(--school-accent-1)] hover:underline text-xs">Modifier</button>
+                          <button type="button" onClick={() => handleDeleteMeasure(m.id)} className="text-red-600 hover:underline text-xs">Supprimer</button>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -832,6 +938,50 @@ export default function DisciplinePage() {
               </table>
             </div>
           </div>
+
+          {/* Modal modifier une mesure */}
+          {editingMeasure && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setEditingMeasure(null)}>
+              <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-4" onClick={(e) => e.stopPropagation()}>
+                <h3 className="font-semibold text-slate-900 mb-3">Modifier la mesure</h3>
+                <p className="text-sm text-slate-600 mb-3">
+                  {editingMeasure.student_name} — <span className="font-medium" style={{ color: editingMeasure.color }}>{editingMeasure.label}</span>
+                </p>
+                <form onSubmit={handleUpdateMeasure} className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Motif (optionnel)</label>
+                    <input
+                      type="text"
+                      value={measureEditForm.reason}
+                      onChange={(e) => setMeasureEditForm((f) => ({ ...f, reason: e.target.value }))}
+                      placeholder="Ex: comportement en classe"
+                      className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
+                    />
+                  </div>
+                  {editingMeasure.measure_type === "RENVOYE_TEMPORAIREMENT" && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Durée du renvoi (jours)</label>
+                      <select
+                        value={measureEditForm.duration_days}
+                        onChange={(e) => setMeasureEditForm((f) => ({ ...f, duration_days: e.target.value }))}
+                        className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
+                      >
+                        {[1, 2, 3, 5, 7, 10, 14, 21, 30].map((d) => (
+                          <option key={d} value={String(d)}>{d} jour{d > 1 ? "s" : ""}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  <div className="flex gap-2 justify-end pt-2">
+                    <button type="button" onClick={() => setEditingMeasure(null)} className="px-3 py-1.5 rounded-lg border border-[var(--app-border)] text-slate-700 text-sm">Annuler</button>
+                    <button type="submit" disabled={measureEditSaving} className="app-btn-primary disabled:opacity-60 text-sm">
+                      {measureEditSaving ? "Enregistrement..." : "Enregistrer"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

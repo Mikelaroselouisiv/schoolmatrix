@@ -23,6 +23,10 @@ export class DisciplinaryMeasure {
   @Column({ type: 'varchar', length: 500, nullable: true })
   reason: string | null;
 
+  /** Pour "Renvoyé temporairement" : date/heure de fin de la mesure (après laquelle elle est retirée). */
+  @Column({ type: 'timestamptz', nullable: true })
+  expires_at: Date | null;
+
   @CreateDateColumn()
   created_at: Date;
 }

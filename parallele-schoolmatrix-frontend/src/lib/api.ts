@@ -1,7 +1,8 @@
+// Navigateur : NEXT_PUBLIC_API_URL. Serveur (SSR dans le conteneur) : API_INTERNAL_URL.
 const API_BASE =
   typeof window !== "undefined"
     ? (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000")
-    : process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
+    : (process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000");
 
 /**
  * Retourne l'URL complète pour afficher une image stockée dans le projet (dossier uploads).
@@ -12,7 +13,10 @@ function getImageUrl(storedUrl: string | null | undefined): string | null {
   const trimmed = storedUrl.trim();
   if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed;
   const path = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
-  const base = typeof window !== "undefined" ? (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000") : process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
+  const base =
+    typeof window !== "undefined"
+      ? (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000")
+      : (process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000");
   return `${base.replace(/\/$/, "")}${path}`;
 }
 

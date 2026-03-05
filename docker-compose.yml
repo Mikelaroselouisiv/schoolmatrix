@@ -1,46 +1,28 @@
-# Une seule base, un seul volume.
-# En dev : utiliser ta base existante (schoolmatrix-db-dev sur port 5433). Ne pas lancer ce compose pour la base.
+# Même logique qu'en dev : une seule base (schoolmatrix-db-dev, port 5433).
+# L'API charge le .env du backend (env_file) pour avoir les mêmes identifiants qu'en dev.
+# DB_HOST et DB_PORT sont forcés pour que le conteneur joigne la base sur l'hôte (5433).
 #
-# PROD : pour que les conteneurs s'affichent et tournent dans Docker, il faut les DÉMARRER (pas seulement build).
-#   Build = crée les images. Up = crée et démarre les conteneurs (ils apparaissent dans Docker Desktop).
-#   Commande tout-en-un (build + démarrage) :
-#     docker compose --profile prod up -d --build
-#   Ou depuis PowerShell à la racine : .\start-prod.ps1
-services:
-  db:
-    image: postgres:16
-    container_name: schoolmatrix_db
-    environment:
-      POSTGRES_USER: schoolmatrix
-      POSTGRES_PASSWORD: schoolmatrix
-      POSTGRES_DB: schoolmatrix
-    ports:
-      - "5432:5432"
-    volumes:
-      - schoolmatrix_pgdata:/var/lib/postgresql/data
+# Build + lancer :  docker compose up -d --build   ou   .\run.ps1
 
+services:
   api:
     image: schoolmatrix-api
     build:
       context: ./parallele-schoolmatrix-backend
       args:
         - CACHEBUST=${CACHEBUST:-0}
-    container_name: schoolmatrix_api
+    container_name: schoolmatrix-api
     restart: unless-stopped
-    profiles:
-      - prod
+    env_file:
+      - ./parallele-schoolmatrix-backend/.env.dev
     environment:
       NODE_ENV: production
-      DB_HOST: db
-      DB_PORT: "5432"
-      DB_USER: schoolmatrix
-      DB_PASS: schoolmatrix
-      DB_NAME: schoolmatrix
-      JWT_SECRET: change_me
-    depends_on:
-      - db
+      DB_HOST: host.docker.internal
+      DB_PORT: "5433"
     ports:
       - "3000:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   web:
     image: schoolmatrix-web
@@ -48,18 +30,16 @@ services:
       context: ./parallele-schoolmatrix-frontend
       args:
         - CACHEBUST=${CACHEBUST:-0}
-    container_name: schoolmatrix_web
+        - NEXT_PUBLIC_API_URL=http://127.0.0.1:3000
+    container_name: schoolmatrix-web
     restart: unless-stopped
-    profiles:
-      - prod
     environment:
       NODE_ENV: production
+      HOSTNAME: "0.0.0.0"
+      PORT: "3001"
       NEXT_PUBLIC_API_URL: http://127.0.0.1:3000
+      API_INTERNAL_URL: http://schoolmatrix-api:3000
     depends_on:
       - api
     ports:
       - "3001:3001"
-
-volumes:
-  # Pour réutiliser les données de l'ancien volume pgdata_prod, remplacer par: pgdata_prod:
-  schoolmatrix_pgdata:

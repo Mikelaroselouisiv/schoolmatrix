@@ -2,8 +2,9 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci
-# CACHEBUST: passe --build-arg CACHEBUST=$(date +%s) pour forcer la prise en compte du nouveau code
 ARG CACHEBUST
+ARG NEXT_PUBLIC_API_URL=http://127.0.0.1:3000
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 COPY . .
 RUN npm run build
 

@@ -1,4 +1,3 @@
-# La base PostgreSQL est dans le docker-compose à la racine du projet.
-# Dev  : à la racine, lancer  docker compose up -d           (uniquement la base, port 5432)
-# Prod : à la racine, lancer  docker compose --profile prod up -d
-# Ce fichier ne définit plus de service pour éviter toute confusion.
+# Tout est à la racine du projet.
+# Base (dev) : schoolmatrix-db-dev (port 5433) — démarrer avec  docker start schoolmatrix-db-dev
+# Build + run (api + web, même base) : à la racine  docker compose up -d --build   ou  .\run.ps1

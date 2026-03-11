@@ -29,6 +29,7 @@ type UserMe = {
   first_name?: string;
   last_name?: string;
   role?: { name: string } | string;
+  role_permissions?: string[];
 };
 
 type SchoolProfileContextValue = {
@@ -36,6 +37,7 @@ type SchoolProfileContextValue = {
   user: UserMe | null;
   loading: boolean;
   roleName: string;
+  rolePermissions: string[];
   refetch: () => Promise<void>;
 };
 
@@ -59,6 +61,8 @@ export function SchoolProfileProvider({
     const r = user?.role;
     return (typeof r === "object" ? r?.name : r) ?? "";
   }, [user]);
+
+  const rolePermissions = useMemo(() => user?.role_permissions ?? [], [user]);
 
   const load = useCallback((): Promise<void> => {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -99,9 +103,10 @@ export function SchoolProfileProvider({
       user: user ?? null,
       loading,
       roleName,
+      rolePermissions,
       refetch: load,
     }),
-    [school, user, loading, roleName, load]
+    [school, user, loading, roleName, rolePermissions, load]
   );
 
   return (

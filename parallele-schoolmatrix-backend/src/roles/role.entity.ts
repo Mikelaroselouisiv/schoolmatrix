@@ -17,6 +17,9 @@ export class Role {
   @Column({ nullable: true })
   description: string | null;
 
+  @Column({ type: 'simple-json', nullable: true })
+  permissions: string[] | null = null;
+
   @OneToMany(() => User, (user) => user.role)
   users: User[];
 }

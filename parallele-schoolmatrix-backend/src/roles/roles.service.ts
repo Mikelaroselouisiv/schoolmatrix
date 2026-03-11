@@ -49,15 +49,19 @@ export class RolesService {
     return this.rolesRepo.findOne({ where: { name: name.toUpperCase().trim() } });
   }
 
-  async create(params: { name: string; description?: string }): Promise<Role> {
+  async create(params: { name: string; description?: string; permissions?: string[] }): Promise<Role> {
     const name = params.name.toUpperCase().trim();
     const exists = await this.rolesRepo.findOne({ where: { name } });
     if (exists) throw new BadRequestException('Role name already exists');
-    const role = this.rolesRepo.create({ name, description: params.description?.trim() });
+    const role = this.rolesRepo.create({
+      name,
+      description: params.description?.trim(),
+      permissions: params.permissions && params.permissions.length > 0 ? params.permissions : null,
+    });
     return this.rolesRepo.save(role);
   }
 
-  async update(id: number, params: { name?: string; description?: string }): Promise<Role> {
+  async update(id: number, params: { name?: string; description?: string; permissions?: string[] }): Promise<Role> {
     const role = await this.findOne(id);
     if (params.name !== undefined) {
       const name = params.name.toUpperCase().trim();
@@ -67,6 +71,9 @@ export class RolesService {
     }
     if (params.description !== undefined) {
       role.description = params.description.trim() || undefined;
+    }
+    if (params.permissions !== undefined) {
+      role.permissions = params.permissions && params.permissions.length > 0 ? params.permissions : null;
     }
     return this.rolesRepo.save(role);
   }

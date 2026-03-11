@@ -22,8 +22,13 @@ import { DisciplineModule } from './discipline/discipline.module';
 import { FormationClasseModule } from './formation-classe/formation-classe.module';
 import { StudentParentsModule } from './student-parents/student-parents.module';
 import { RolesModule } from './roles/roles.module';
-import { RolesService } from './roles/roles.service';
 import { SetupModule } from './setup/setup.module';
+import { SystemSeedModule } from './system-seed/system-seed.module';
+import { SystemSeedService } from './system-seed/system-seed.service';
+import { S3Module } from './s3/s3.module';
+import { StorageModule } from './storage/storage.module';
+import { FileMetadataModule } from './file-metadata/file-metadata.module';
+import { SyncModule } from './sync/sync.module';
 
 @Module({
   imports: [
@@ -44,6 +49,11 @@ import { SetupModule } from './setup/setup.module';
         synchronize: process.env.NODE_ENV !== 'production',
       }),
     }),
+    StorageModule,
+    S3Module,
+    FileMetadataModule,
+    SyncModule,
+    SystemSeedModule,
     RolesModule,
     SetupModule,
     SchoolProfileModule,
@@ -69,9 +79,9 @@ import { SetupModule } from './setup/setup.module';
   providers: [AppService],
 })
 export class AppModule {
-  constructor(private readonly rolesService: RolesService) {}
+  constructor(private readonly systemSeedService: SystemSeedService) {}
 
   async onModuleInit() {
-    await this.rolesService.seedDefaults();
+    await this.systemSeedService.run();
   }
 }

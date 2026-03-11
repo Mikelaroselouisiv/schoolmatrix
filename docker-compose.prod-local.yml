@@ -1,0 +1,65 @@
+# Production locale Windows — stack avec build local des images
+#
+# Démarrer (préparation + build local) : node scripts/start-prod-local-build.js
+# Lancer manuellement : docker compose -f docker-compose.prod-local.yml up -d --build
+# Arrêter : docker compose -f docker-compose.prod-local.yml down
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: schoolmatrix-db-prod-local
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - ${SCHOOLMATRIX_DATA}/postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    image: schoolmatrix-api
+    build:
+      context: ./parallele-schoolmatrix-backend
+      args:
+        - CACHEBUST=${CACHEBUST:-0}
+    container_name: schoolmatrix-api
+    restart: unless-stopped
+    env_file:
+      - ${SCHOOLMATRIX_DATA}/.env.prod
+    environment:
+      NODE_ENV: production
+      DB_HOST: db
+      DB_PORT: "5432"
+      STORAGE_ROOT: /app/storage
+    volumes:
+      - ${SCHOOLMATRIX_DATA}/storage:/app/storage
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    image: schoolmatrix-web
+    build:
+      context: ./parallele-schoolmatrix-frontend
+      args:
+        - CACHEBUST=${CACHEBUST:-0}
+        - NEXT_PUBLIC_API_URL=http://127.0.0.1:3000
+    container_name: schoolmatrix-web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOSTNAME: "0.0.0.0"
+      PORT: "3001"
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:3000
+      API_INTERNAL_URL: http://schoolmatrix-api:3000
+    depends_on:
+      - api
+    ports:
+      - "3001:3001"

@@ -12,10 +12,4 @@ import { Period } from '../period/period.entity';
   providers: [SchoolProfileService],
   exports: [SchoolProfileService],
 })
-export class SchoolProfileModule {
-  constructor(private readonly schoolProfileService: SchoolProfileService) {}
-
-  async onModuleInit() {
-    await this.schoolProfileService.ensureProfile();
-  }
-}
+export class SchoolProfileModule {}

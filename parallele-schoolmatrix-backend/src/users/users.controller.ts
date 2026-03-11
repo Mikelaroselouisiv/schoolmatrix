@@ -21,6 +21,7 @@ export class UsersController {
       cover_photo_url: u.cover_photo_url,
       order_number: u.order_number ?? null,
       role: u.role?.name,
+      role_permissions: u.role?.permissions ?? [],
       active: u.active,
       created_at: u.created_at,
       updated_at: u.updated_at,

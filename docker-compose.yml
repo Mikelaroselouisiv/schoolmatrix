@@ -3,6 +3,9 @@
 # DB_HOST et DB_PORT sont forcés pour que le conteneur joigne la base sur l'hôte (5433).
 #
 # Build + lancer :  docker compose up -d --build   ou   .\run.ps1
+# Optionnel : volume pour persister les fichiers (profiles, uploads, backups)
+# volumes:
+#   schoolmatrix-storage:
 
 services:
   api:
@@ -19,10 +22,14 @@ services:
       NODE_ENV: production
       DB_HOST: host.docker.internal
       DB_PORT: "5433"
+      STORAGE_ROOT: /app/storage
     ports:
       - "3000:3000"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # Décommenter pour persister les fichiers :
+    # volumes:
+    #   - schoolmatrix-storage:/app/storage
 
   web:
     image: schoolmatrix-web

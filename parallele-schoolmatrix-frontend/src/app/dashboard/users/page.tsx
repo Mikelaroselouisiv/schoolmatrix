@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { fetchWithAuth, getImageUrl } from "@/src/lib/api";
 import { PasswordInput } from "@/src/components/PasswordInput";
 import { ImageUpload } from "@/src/components/ImageUpload";
+import { PERMISSION_OPTIONS } from "@/src/lib/permissionKeys";
 
 type User = {
   id: number;
@@ -18,7 +19,7 @@ type User = {
   linked_student_ids?: string[];
 };
 
-type Role = { id: number; name: string };
+type Role = { id: number; name: string; description?: string | null; permissions?: string[] };
 
 type StudentOption = { id: string; order_number: string | null; first_name: string; last_name: string; class_name: string };
 
@@ -47,6 +48,13 @@ export default function UsersPage() {
   const [resetPwdUser, setResetPwdUser] = useState<User | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [resettingPwd, setResettingPwd] = useState(false);
+  const [rolesSectionExpanded, setRolesSectionExpanded] = useState(false);
+  const [showRoleForm, setShowRoleForm] = useState(false);
+  const [editingRole, setEditingRole] = useState<Role | null>(null);
+  const [roleNameInput, setRoleNameInput] = useState("");
+  const [roleDescriptionInput, setRoleDescriptionInput] = useState("");
+  const [rolePermissionsInput, setRolePermissionsInput] = useState<string[]>([]);
+  const [savingRole, setSavingRole] = useState(false);
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -247,14 +255,212 @@ export default function UsersPage() {
     );
   }
 
+  function toggleRolePermission(key: string) {
+    if (key === "full_access") {
+      setRolePermissionsInput((prev) =>
+        prev.includes("full_access") ? [] : ["full_access"]
+      );
+      return;
+    }
+    setRolePermissionsInput((prev) => {
+      const hasKey = prev.includes(key);
+      if (hasKey) return prev.filter((k) => k !== key);
+      return [...prev.filter((k) => k !== "full_access"), key];
+    });
+  }
+
+  function openCreateRole() {
+    setEditingRole(null);
+    setRoleNameInput("");
+    setRoleDescriptionInput("");
+    setRolePermissionsInput([]);
+    setShowRoleForm(true);
+  }
+
+  function openEditRole(r: Role) {
+    setEditingRole(r);
+    setRoleNameInput(r.name);
+    setRoleDescriptionInput(r.description ?? "");
+    setRolePermissionsInput(r.permissions ?? []);
+    setShowRoleForm(true);
+  }
+
+  async function handleRoleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingRole(true);
+    setError("");
+    try {
+      if (editingRole) {
+        const res = await fetchWithAuth(`${API_BASE}/roles/${editingRole.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            name: roleNameInput.trim(),
+            description: roleDescriptionInput.trim() || undefined,
+            permissions: rolePermissionsInput,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Erreur");
+      } else {
+        const res = await fetchWithAuth(`${API_BASE}/roles`, {
+          method: "POST",
+          body: JSON.stringify({
+            name: roleNameInput.trim(),
+            description: roleDescriptionInput.trim() || undefined,
+            permissions: rolePermissionsInput.length ? rolePermissionsInput : undefined,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Erreur");
+      }
+      setShowRoleForm(false);
+      setEditingRole(null);
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setSavingRole(false);
+    }
+  }
+
+  async function handleDeleteRole(id: number) {
+    if (!confirm("Supprimer ce rôle ? Les utilisateurs ayant ce rôle devront être réaffectés.")) return;
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/roles/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || "Erreur");
+      }
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    }
+  }
+
   if (loading) return <div className="animate-pulse text-slate-500">Chargement...</div>;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h2 className="text-2xl font-bold text-slate-900">Gestion des utilisateurs</h2>
         <button onClick={openCreate} className="app-btn-primary">Ajouter un utilisateur</button>
       </div>
+
+      {/* Section Gestion des rôles (repliable) */}
+      <section className="rounded-xl border border-[var(--app-border)] bg-white overflow-hidden">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setRolesSectionExpanded((v) => !v)}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setRolesSectionExpanded((v) => !v); } }}
+          className="w-full px-5 py-4 flex items-center justify-between gap-3 text-left hover:bg-slate-50/80 transition-colors cursor-pointer"
+        >
+          <h3 className="text-lg font-semibold text-slate-900">Gestion des rôles</h3>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); openCreateRole(); setRolesSectionExpanded(true); }}
+              className="app-btn-secondary text-sm"
+            >
+              Créer un rôle
+            </button>
+            <span className="inline-block text-slate-400 text-xs transition-transform duration-200" style={{ transform: rolesSectionExpanded ? "rotate(180deg)" : "rotate(0deg)" }}>
+              ▼
+            </span>
+          </div>
+        </div>
+        {rolesSectionExpanded && (
+        <div className="p-5 border-t border-[var(--app-border)]">
+          {showRoleForm && (
+            <form onSubmit={handleRoleSubmit} className="mb-6 p-5 rounded-xl border border-[var(--app-border)] bg-slate-50/50 space-y-4 max-w-2xl">
+              <h4 className="font-semibold text-slate-900">{editingRole ? "Modifier le rôle" : "Nouveau rôle"}</h4>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Nom du rôle</label>
+                <input
+                  type="text"
+                  value={roleNameInput}
+                  onChange={(e) => setRoleNameInput(e.target.value.toUpperCase())}
+                  placeholder="EXEMPLE_ROLE"
+                  className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Description (optionnel)</label>
+                <input
+                  type="text"
+                  value={roleDescriptionInput}
+                  onChange={(e) => setRoleDescriptionInput(e.target.value)}
+                  placeholder="Description du rôle..."
+                  className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Accès (permissions)</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-2 border border-[var(--app-border)] rounded-lg bg-white">
+                  {PERMISSION_OPTIONS.map((opt) => (
+                    <label key={opt.key} className="flex items-center gap-2 py-1 cursor-pointer hover:bg-slate-50 rounded px-2">
+                      <input
+                        type="checkbox"
+                        checked={rolePermissionsInput.includes(opt.key)}
+                        onChange={() => toggleRolePermission(opt.key)}
+                        className="rounded border-slate-300 text-[var(--school-accent-1)]"
+                      />
+                      <span className="text-sm text-slate-700">{opt.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              {error && <p className="text-sm text-red-600">{error}</p>}
+              <div className="flex gap-3">
+                <button type="submit" disabled={savingRole} className="app-btn-primary disabled:opacity-60">
+                  {savingRole ? "Enregistrement..." : "Enregistrer"}
+                </button>
+                <button type="button" onClick={() => { setShowRoleForm(false); setEditingRole(null); setError(""); }} className="app-btn-secondary">
+                  Annuler
+                </button>
+              </div>
+            </form>
+          )}
+          <div className="overflow-x-auto rounded-lg border border-[var(--app-border)]">
+            <table className="w-full text-left">
+              <thead className="bg-slate-50 border-b border-[var(--app-border)]">
+                <tr>
+                  <th className="px-4 py-3 font-medium text-slate-900">Nom</th>
+                  <th className="px-4 py-3 font-medium text-slate-900">Description</th>
+                  <th className="px-4 py-3 font-medium text-slate-900">Accès</th>
+                  <th className="px-4 py-3 font-medium text-slate-900 w-32">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {roles.length === 0 ? (
+                  <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">Aucun rôle</td></tr>
+                ) : (
+                  roles.map((r) => (
+                    <tr key={r.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
+                      <td className="px-4 py-3 font-medium text-slate-900">{r.name}</td>
+                      <td className="px-4 py-3 text-slate-600 text-sm">{r.description ?? "—"}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600">
+                        {r.permissions?.includes("full_access")
+                          ? "Accès total"
+                          : (r.permissions?.length ?? 0) > 0
+                            ? r.permissions!.join(", ")
+                            : "Par défaut (selon le rôle)"}
+                      </td>
+                      <td className="px-4 py-3 flex gap-2">
+                        <button onClick={() => openEditRole(r)} className="text-sm text-[var(--school-accent-1)] hover:underline">Modifier</button>
+                        <button onClick={() => handleDeleteRole(r.id)} className="text-sm text-red-600 hover:underline">Supprimer</button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        )}
+      </section>
 
       {showForm && (
         <form onSubmit={handleSubmit} className="p-5 rounded-xl border border-[var(--app-border)] bg-white space-y-4 max-w-lg">

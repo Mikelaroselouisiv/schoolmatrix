@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { API_BASE } from "@/src/lib/api";
@@ -14,6 +14,24 @@ export default function SignupPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [checkingSetup, setCheckingSetup] = useState(true);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/setup/status`)
+      .then((res) => {
+        if (res.status === 403) {
+          router.replace("/login");
+          return;
+        }
+        return res.json().then((data) => {
+          if (data.setupRequired !== true) {
+            router.replace("/login");
+          }
+        });
+      })
+      .catch(() => {})
+      .finally(() => setCheckingSetup(false));
+  }, [router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -21,7 +39,7 @@ export default function SignupPage() {
     setMessage("");
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/setup`, {
+      const res = await fetch(`${API_BASE}/setup/initial-admin`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -45,6 +63,14 @@ export default function SignupPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (checkingSetup) {
+    return (
+      <div className="flex justify-center py-12">
+        <div className="animate-pulse text-slate-500">Chargement...</div>
+      </div>
+    );
   }
 
   return (

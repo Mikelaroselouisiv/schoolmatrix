@@ -8,7 +8,7 @@ import { getImageUrl } from "@/src/lib/api";
 import { getNavItemsForRole } from "@/src/lib/dashboardRoles";
 
 export default function DashboardPage() {
-  const { school, user, loading, roleName } = useSchoolProfile();
+  const { school, user, loading, roleName, rolePermissions } = useSchoolProfile();
   const router = useRouter();
 
   useEffect(() => {
@@ -25,7 +25,7 @@ export default function DashboardPage() {
     );
   }
 
-  const shortcuts = getNavItemsForRole(roleName);
+  const shortcuts = getNavItemsForRole(roleName, rolePermissions);
   const logoUrl = getImageUrl(school?.logo_url ?? undefined);
   const userName = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.email;
 

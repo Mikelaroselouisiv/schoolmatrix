@@ -13,6 +13,8 @@ ENV NODE_ENV=production
 COPY --from=builder /app/package.json /app/package-lock.json* ./
 RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist
-RUN mkdir -p uploads
+COPY --from=builder /app/scripts ./scripts
+RUN mkdir -p storage/profiles storage/uploads storage/backups
+ENV STORAGE_ROOT=/app/storage
 EXPOSE 3000
-CMD ["node", "dist/main"]
+CMD ["node", "scripts/bootstrap-production.js"]

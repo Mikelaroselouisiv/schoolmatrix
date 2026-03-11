@@ -1,0 +1,63 @@
+# Build des images SchoolMatrix et push vers AWS ECR
+# Déclenché sur push (main/master) ou manuellement.
+# Les images sont taguées : latest + commit SHA (court).
+
+name: Build and push to ECR
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-2
+  ECR_REGISTRY: 421983920969.dkr.ecr.us-east-2.amazonaws.com
+  API_REPO: schoolmatrix-api
+  WEB_REPO: schoolmatrix-web
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR (Docker)
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
+
+      - name: Set image tag (short SHA)
+        id: tag
+        run: echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Build and push backend (schoolmatrix-api)
+        env:
+          IMAGE_TAG: ${{ steps.tag.outputs.SHORT_SHA }}
+        run: |
+          docker build -t ${{ env.ECR_REGISTRY }}/${{ env.API_REPO }}:latest \
+            -t ${{ env.ECR_REGISTRY }}/${{ env.API_REPO }}:${IMAGE_TAG} \
+            ./parallele-schoolmatrix-backend
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.API_REPO }}:latest
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.API_REPO }}:${IMAGE_TAG}
+
+      - name: Build and push frontend (schoolmatrix-web)
+        env:
+          IMAGE_TAG: ${{ steps.tag.outputs.SHORT_SHA }}
+        run: |
+          docker build -t ${{ env.ECR_REGISTRY }}/${{ env.WEB_REPO }}:latest \
+            -t ${{ env.ECR_REGISTRY }}/${{ env.WEB_REPO }}:${IMAGE_TAG} \
+            --build-arg NEXT_PUBLIC_API_URL=http://127.0.0.1:3000 \
+            ./parallele-schoolmatrix-frontend
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.WEB_REPO }}:latest
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.WEB_REPO }}:${IMAGE_TAG}

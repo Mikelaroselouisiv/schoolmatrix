@@ -20,22 +20,38 @@ function canSeeNavItem(roleName: string, allowedRoles: string[]): boolean {
   return allowedRoles.includes(roleName);
 }
 
-function getNavItemsByBlock(roleName: string) {
+function canSeeByPermissions(permissionKey: string, rolePermissions: string[]): boolean {
+  if (rolePermissions.includes("full_access")) return true;
+  if (permissionKey === "dashboard") return true;
+  return rolePermissions.includes(permissionKey);
+}
+
+function getNavItemsByBlock(roleName: string, rolePermissions: string[]) {
+  const usePermissions = rolePermissions.length > 0;
   const config: typeof DASHBOARD_NAV[0][] = [];
   const management: typeof DASHBOARD_NAV[0][] = [];
   const fiche: typeof DASHBOARD_NAV[0][] = [];
 
   for (const item of DASHBOARD_NAV) {
     if (item.href === "/dashboard") continue;
-    if (!canSeeNavItem(roleName, item.allowedRoles)) continue;
+    const canSee = usePermissions
+      ? canSeeByPermissions(item.permissionKey, rolePermissions)
+      : canSeeNavItem(roleName, item.allowedRoles);
+    if (!canSee) continue;
     if (item.block === "configuration") config.push(item);
     else if (item.block === "management") management.push(item);
     else if (item.block === "fiche") fiche.push(item);
   }
 
   const special: { href: string; label: string }[] = [];
-  if (ROLES_FULL.includes(roleName)) special.push(USERS_NAV);
-  if (canAccessSchoolProfile(roleName)) special.push(SCHOOL_NAV);
+  const canSeeUsers = usePermissions
+    ? canSeeByPermissions("users", rolePermissions)
+    : ROLES_FULL.includes(roleName);
+  const canSeeSchool = usePermissions
+    ? canSeeByPermissions("school", rolePermissions)
+    : canAccessSchoolProfile(roleName);
+  if (canSeeUsers) special.push(USERS_NAV);
+  if (canSeeSchool) special.push(SCHOOL_NAV);
 
   return { config, management, fiche, special };
 }
@@ -46,18 +62,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const school = ctx?.school ?? null;
   const user = ctx?.user ?? null;
   const roleName = ctx?.roleName ?? "";
+  const rolePermissions = ctx?.rolePermissions ?? [];
   const segments = getBreadcrumbSegments(pathname);
 
-  const { config, management, fiche, special } = getNavItemsByBlock(roleName);
+  const { config, management, fiche, special } = getNavItemsByBlock(roleName, rolePermissions);
   const allMainItems = [...config, ...management, ...fiche];
 
   // Redirection si l’utilisateur accède à une URL non autorisée pour son rôle
   useEffect(() => {
     if (ctx?.loading || !roleName) return;
-    if (!canAccessPath(roleName, pathname)) {
+    if (!canAccessPath(roleName, pathname, rolePermissions.length > 0 ? rolePermissions : undefined)) {
       router.replace("/dashboard?message=access_denied");
     }
-  }, [ctx?.loading, roleName, pathname, router]);
+  }, [ctx?.loading, roleName, pathname, rolePermissions, router]);
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--app-bg-gradient)" }}>

@@ -41,43 +41,67 @@ function canSeeNavItem(roleName: string, allowedRoles: string[]): boolean {
   return allowedRoles.includes(roleName);
 }
 
+function canSeeByPermissions(permissionKey: string, rolePermissions: string[]): boolean {
+  if (rolePermissions.includes("full_access")) return true;
+  if (permissionKey === "dashboard") return true;
+  return rolePermissions.includes(permissionKey);
+}
+
 export type NavBlock = "configuration" | "management" | "fiche" | "special";
 
-/** Entrées du menu dashboard avec les rôles autorisés et le bloc d'affichage. */
-export const DASHBOARD_NAV: {
+export type NavItem = {
   href: string;
   label: string;
   allowedRoles: string[];
+  permissionKey: string;
   block: NavBlock;
-}[] = [
-  { href: "/dashboard", label: "Tableau de bord", allowedRoles: [], block: "configuration" },
+};
+
+/** Entrées du menu dashboard avec les rôles autorisés et le bloc d'affichage. */
+export const DASHBOARD_NAV: NavItem[] = [
+  { href: "/dashboard", label: "Tableau de bord", allowedRoles: [], permissionKey: "dashboard", block: "configuration" },
   // Bloc Configuration : Matière, Classes, Années et périodes, Professeurs, Horaires
-  { href: "/dashboard/subjects", label: "Matières", allowedRoles: [...ROLES_FULL], block: "configuration" },
-  { href: "/dashboard/classes", label: "Classes", allowedRoles: [...ROLES_FULL], block: "configuration" },
-  { href: "/dashboard/academic-years", label: "Années et périodes", allowedRoles: [...ROLES_FULL], block: "configuration" },
-  { href: "/dashboard/teachers", label: "Professeurs", allowedRoles: [...ROLES_FULL], block: "configuration" },
-  { href: "/dashboard/schedule", label: "Horaires", allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...ROLES_HORAIRES_SEUL], block: "configuration" },
+  { href: "/dashboard/subjects", label: "Matières", allowedRoles: [...ROLES_FULL], permissionKey: "subjects", block: "configuration" },
+  { href: "/dashboard/classes", label: "Classes", allowedRoles: [...ROLES_FULL], permissionKey: "classes", block: "configuration" },
+  { href: "/dashboard/academic-years", label: "Années et périodes", allowedRoles: [...ROLES_FULL], permissionKey: "academic-years", block: "configuration" },
+  { href: "/dashboard/teachers", label: "Professeurs", allowedRoles: [...ROLES_FULL], permissionKey: "teachers", block: "configuration" },
+  { href: "/dashboard/schedule", label: "Horaires", allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...ROLES_HORAIRES_SEUL], permissionKey: "schedule", block: "configuration" },
   // Bloc Management (vie étudiante) : Inscription, Économat, Saisie de notes, Discipline, Formation de classe
-  { href: "/dashboard/students", label: "Inscription", allowedRoles: [...ROLES_FULL], block: "management" },
-  { href: "/dashboard/economat", label: "Économat", allowedRoles: [...ROLES_FULL, ...ROLES_ECONOME], block: "management" },
-  { href: "/dashboard/grades", label: "Saisie des notes", allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, "TEACHER"], block: "management" },
-  { href: "/dashboard/discipline", label: "Discipline", allowedRoles: [...ROLES_FULL, ...ROLES_DISCIPLINE], block: "management" },
-  { href: "/dashboard/formation-classe", label: "Formation de classe", allowedRoles: [...ROLES_FULL], block: "management" },
+  { href: "/dashboard/students", label: "Inscription", allowedRoles: [...ROLES_FULL], permissionKey: "students", block: "management" },
+  { href: "/dashboard/economat", label: "Économat", allowedRoles: [...ROLES_FULL, ...ROLES_ECONOME], permissionKey: "economat", block: "management" },
+  { href: "/dashboard/grades", label: "Saisie des notes", allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, "TEACHER"], permissionKey: "grades", block: "management" },
+  { href: "/dashboard/discipline", label: "Discipline", allowedRoles: [...ROLES_FULL, ...ROLES_DISCIPLINE], permissionKey: "discipline", block: "management" },
+  { href: "/dashboard/formation-classe", label: "Formation de classe", allowedRoles: [...ROLES_FULL], permissionKey: "formation-classe", block: "management" },
   // Bloc Fiche élève (dominant, seul)
   {
     href: "/dashboard/fiche-eleve",
     label: "Fiche élève",
     allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...ROLES_HORAIRES_SEUL, ...ROLES_ECONOME, "PARENT"],
+    permissionKey: "fiche-eleve",
     block: "fiche",
   },
 ];
 
-export const SCHOOL_NAV = { href: "/dashboard/school", label: "Gestion établissement", block: "special" as const };
-export const USERS_NAV = { href: "/dashboard/users", label: "Gestion Utilisateurs", block: "special" as const };
+export const SCHOOL_NAV = { href: "/dashboard/school", label: "Gestion établissement", permissionKey: "school", block: "special" as const };
+export const USERS_NAV = { href: "/dashboard/users", label: "Gestion Utilisateurs", permissionKey: "users", block: "special" as const };
 
 /** Vérifie si un rôle peut accéder à un chemin (pour redirection si accès interdit). */
-export function canAccessPath(roleName: string, path: string): boolean {
+export function canAccessPath(roleName: string, path: string, rolePermissions?: string[]): boolean {
   if (path === "/dashboard") return true;
+  if (rolePermissions && rolePermissions.length > 0) {
+    if (rolePermissions.includes("full_access")) return true;
+    if (path === SCHOOL_NAV.href || path.startsWith(SCHOOL_NAV.href + "/")) {
+      return canSeeByPermissions("school", rolePermissions);
+    }
+    if (path === USERS_NAV.href || path.startsWith(USERS_NAV.href + "/")) {
+      return canSeeByPermissions("users", rolePermissions);
+    }
+    const item = DASHBOARD_NAV.find(
+      (n) => n.href !== "/dashboard" && (n.href === path || path.startsWith(n.href + "/"))
+    );
+    if (!item) return false;
+    return canSeeByPermissions(item.permissionKey, rolePermissions);
+  }
   if (ROLES_FULL.includes(roleName)) return true;
   if (path === SCHOOL_NAV.href || path.startsWith(SCHOOL_NAV.href + "/")) {
     return canSeeNavItem(roleName, ROLES_FULL);
@@ -95,19 +119,33 @@ export function canAccessPath(roleName: string, path: string): boolean {
 const BLOCK_ORDER: NavBlock[] = ["configuration", "management", "fiche", "special"];
 
 /** Retourne les entrées de menu visibles pour un rôle, ordonnées par bloc (pour les raccourcis). */
-export function getNavItemsForRole(roleName: string): { href: string; label: string; block?: NavBlock }[] {
+export function getNavItemsForRole(
+  roleName: string,
+  rolePermissions?: string[]
+): { href: string; label: string; block?: NavBlock }[] {
   const items: { href: string; label: string; block?: NavBlock }[] = [];
+  const usePermissions = rolePermissions && rolePermissions.length > 0;
+
   for (const block of BLOCK_ORDER) {
     for (const item of DASHBOARD_NAV) {
       if (item.href === "/dashboard") continue;
       if (item.block !== block) continue;
-      if (canSeeNavItem(roleName, item.allowedRoles)) {
+      const canSee = usePermissions
+        ? canSeeByPermissions(item.permissionKey, rolePermissions)
+        : canSeeNavItem(roleName, item.allowedRoles);
+      if (canSee) {
         items.push({ href: item.href, label: item.label, block });
       }
     }
     if (block === "special") {
-      if (canSeeNavItem(roleName, ROLES_FULL)) items.push(USERS_NAV);
-      if (canAccessSchoolProfile(roleName)) items.push(SCHOOL_NAV);
+      const canSeeUsers = usePermissions
+        ? canSeeByPermissions("users", rolePermissions)
+        : canSeeNavItem(roleName, ROLES_FULL);
+      const canSeeSchool = usePermissions
+        ? canSeeByPermissions("school", rolePermissions)
+        : canAccessSchoolProfile(roleName);
+      if (canSeeUsers) items.push(USERS_NAV);
+      if (canSeeSchool) items.push(SCHOOL_NAV);
     }
   }
   return items;

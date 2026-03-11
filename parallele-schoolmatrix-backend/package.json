@@ -12,9 +12,18 @@
     "dev": "node scripts/start-db-then-dev.js",
     "start:dev": "cross-env NODE_ENV=development nest start --watch",
     "start:debug": "nest start --debug --watch",
-    "start:prod": "nest build; node dist/main.js"
+    "start:prod": "nest build && node dist/main.js",
+    "start:prod:bootstrap": "nest build && node scripts/bootstrap-production.js",
+    "typeorm": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js",
+    "migration:generate": "npm run build && npm run typeorm -- migration:generate src/migrations/SchemaUpdate -d src/data-source.ts",
+    "migration:run": "npm run build && npm run typeorm -- migration:run -d dist/data-source.js",
+    "migration:run:prod": "node ./node_modules/typeorm/cli.js migration:run -d dist/data-source.js",
+    "migration:revert": "npm run typeorm -- migration:revert -d dist/data-source.js",
+    "migration:show": "npm run typeorm -- migration:show -d dist/data-source.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1004.0",
+    "@aws-sdk/s3-request-presigner": "^3.1004.0",
     "@nestjs/common": "^11.0.0",
     "@nestjs/config": "^4.0.0",
     "@nestjs/core": "^11.0.0",
@@ -28,12 +37,15 @@
     "pg": "^8.18.0",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.0",
-    "typeorm": "^0.3.28"
+    "typeorm": "^0.3.28",
+    "dotenv": "^16.4.5"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
     "cross-env": "^7.0.3",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
     "typescript": "^5.0.0"
   }
 }

@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Installation — Parallele SchoolMatrix</title>
+  <style>
+    :root {
+      --bg: #1a1a1a;
+      --panel: #252525;
+      --border: #404040;
+      --text: #e5e5e5;
+      --text-muted: #a3a3a3;
+      --accent: #0d9488;
+      --accent-hover: #0f766e;
+      --error: #dc2626;
+      --success: #16a34a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .layout {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+    }
+    .sidebar {
+      width: 220px;
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      padding: 24px 0;
+    }
+    .step-item {
+      padding: 10px 20px;
+      margin: 2px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      color: var(--text-muted);
+      cursor: default;
+    }
+    .step-item.active { color: var(--accent); background: rgba(13, 148, 136, 0.15); }
+    .step-item.done { color: var(--success); }
+    .content {
+      flex: 1;
+      padding: 32px 40px;
+      overflow-y: auto;
+    }
+    h2 { margin: 0 0 8px; font-size: 18px; font-weight: 600; }
+    .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 24px; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+    .form-group input, .form-group select {
+      width: 100%;
+      max-width: 420px;
+      padding: 8px 12px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 13px;
+    }
+    .form-group input:focus { outline: none; border-color: var(--accent); }
+    .path-row { display: flex; gap: 8px; align-items: center; max-width: 520px; }
+    .path-row input { flex: 1; }
+    .btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: none;
+      font-size: 13px;
+      cursor: pointer;
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn:hover { background: var(--accent-hover); }
+    .btn.secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border); }
+    .btn.secondary:hover { background: #333; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .prereq-list { list-style: none; padding: 0; margin: 0; max-width: 480px; }
+    .prereq-list li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin-bottom: 8px;
+    }
+    .prereq-name { font-weight: 500; }
+    .prereq-status { font-size: 12px; }
+    .prereq-status.ok { color: var(--success); }
+    .prereq-status.missing { color: var(--error); }
+    .prereq-status a { color: var(--accent); text-decoration: none; }
+    .prereq-status a:hover { text-decoration: underline; }
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 40px;
+      border-top: 1px solid var(--border);
+      background: var(--panel);
+    }
+    .step { display: none; }
+    .step.visible { display: block; }
+    .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin: 20px 0 8px; }
+    .section-title:first-of-type { margin-top: 0; }
+    .progress-msg { font-size: 12px; color: var(--text-muted); margin-top: 12px; }
+    .progress-msg.error { color: var(--error); }
+    .progress-msg.success { color: var(--success); }
+    .checkbox-row { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
+    .checkbox-row input[type="checkbox"] { width: auto; max-width: none; }
+    #progressPanel { display: none; margin-top: 16px; }
+    #progressPanel.visible { display: block; }
+    .ecr-status { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; }
+    .ecr-log {
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 12px;
+      background: #0f0f0f;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+      max-height: 220px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: var(--text);
+      margin-top: 8px;
+    }
+    .ecr-log .line-err { color: #f87171; }
+    .ecr-result { font-weight: 600; margin-top: 12px; }
+    .ecr-result.ok { color: var(--success); }
+    .ecr-result.fail { color: var(--error); }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="step-item active" data-step="1">Emplacement des données</div>
+      <div class="step-item" data-step="2">Prérequis</div>
+      <div class="step-item" data-step="3">Configuration</div>
+      <div class="step-item" data-step="4">Téléchargement (ECR)</div>
+      <div class="step-item" data-step="5">Terminer</div>
+    </aside>
+    <main class="content">
+      <!-- Step 1: Data folder -->
+      <div class="step visible" id="step1">
+        <h2>Dossier des données</h2>
+        <p class="subtitle">Choisissez où stocker les bases de données, fichiers et configuration. Vous pouvez créer un nouveau dossier.</p>
+        <div class="form-group">
+          <label>Chemin du dossier</label>
+          <div class="path-row">
+            <input type="text" id="dataFolder" value="C:/SchoolMatrix" placeholder="C:/SchoolMatrix" />
+            <button type="button" class="btn secondary" id="browseFolder">Parcourir</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: Prerequisites -->
+      <div class="step" id="step2">
+        <h2>Prérequis</h2>
+        <p class="subtitle">Vérifiez que les logiciels nécessaires sont installés. Cliquez sur les liens pour télécharger ce qui manque.</p>
+        <ul class="prereq-list" id="prereqList"></ul>
+        <button type="button" class="btn secondary" id="recheckPrereqs">Revérifier</button>
+      </div>
+
+      <!-- Step 3: Configuration (.env form) -->
+      <div class="step" id="step3">
+        <h2>Configuration de base</h2>
+        <p class="subtitle">Remplissez les paramètres. Un fichier .env complet sera créé dans le dossier des données.</p>
+
+        <div class="section-title">PostgreSQL (conteneur local)</div>
+        <div class="form-group">
+          <label>DB_USER</label>
+          <input type="text" id="DB_USER" value="schoolmatrix" />
+        </div>
+        <div class="form-group">
+          <label>DB_PASS</label>
+          <input type="password" id="DB_PASS" value="schoolmatrix" />
+        </div>
+        <div class="form-group">
+          <label>DB_NAME</label>
+          <input type="text" id="DB_NAME" value="schoolmatrix" />
+        </div>
+
+        <div class="section-title">JWT (sécurité)</div>
+        <div class="form-group">
+          <label>JWT_SECRET (obligatoire en production)</label>
+          <input type="text" id="JWT_SECRET" placeholder="change-me-in-production" />
+        </div>
+
+        <div class="section-title">ECR (mises à jour depuis AWS)</div>
+        <div class="form-group">
+          <label>ECR_REGISTRY</label>
+          <input type="text" id="ECR_REGISTRY" placeholder="123456789.dkr.ecr.region.amazonaws.com" />
+        </div>
+        <div class="form-group">
+          <label>AWS_REGION</label>
+          <input type="text" id="AWS_REGION" value="us-east-2" />
+        </div>
+        <div class="form-group">
+          <label>IMAGE_TAG</label>
+          <input type="text" id="IMAGE_TAG" value="latest" />
+        </div>
+
+        <div class="section-title">AWS (credentials pour ECR et S3)</div>
+        <div class="form-group">
+          <label>AWS_ACCESS_KEY_ID</label>
+          <input type="text" id="AWS_ACCESS_KEY_ID" placeholder="Optionnel pour ECR" />
+        </div>
+        <div class="form-group">
+          <label>AWS_SECRET_ACCESS_KEY</label>
+          <input type="password" id="AWS_SECRET_ACCESS_KEY" placeholder="Optionnel pour ECR" />
+        </div>
+
+        <div class="section-title">S3 (stockage cloud, optionnel)</div>
+        <div class="form-group">
+          <label>AWS_S3_BUCKET</label>
+          <input type="text" id="AWS_S3_BUCKET" />
+        </div>
+        <div class="form-group">
+          <label>AWS_S3_PREFIX</label>
+          <input type="text" id="AWS_S3_PREFIX" value="schoolmatrix" />
+        </div>
+      </div>
+
+      <!-- Step 4: Pull ECR -->
+      <div class="step" id="step4">
+        <h2>Télécharger les images</h2>
+        <p class="subtitle">Téléchargez dès maintenant la dernière version des conteneurs depuis ECR (recommandé si vous avez configuré ECR).</p>
+        <div class="checkbox-row">
+          <input type="checkbox" id="pullEcrNow" checked />
+          <label for="pullEcrNow">Télécharger les images ECR maintenant</label>
+        </div>
+        <p class="progress-msg" id="pullProgress"></p>
+      </div>
+
+      <!-- Step 5: Finish -->
+      <div class="step" id="step5">
+        <h2>Installation terminée</h2>
+        <p class="subtitle">Tout est configuré. Vous pouvez lancer Parallele SchoolMatrix ou quitter.</p>
+        <div id="step5Form">
+          <div class="checkbox-row">
+            <input type="checkbox" id="launchNow" checked />
+            <label for="launchNow">Lancer l'application maintenant</label>
+          </div>
+        </div>
+        <div id="progressPanel">
+          <div class="ecr-status" id="ecrStatus">Préparation…</div>
+          <div class="ecr-log" id="ecrLog"></div>
+          <div class="ecr-result" id="ecrResult"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <footer class="footer">
+    <button type="button" class="btn secondary" id="btnBack" style="visibility: hidden;">Retour</button>
+    <div></div>
+    <button type="button" class="btn" id="btnNext">Suivant</button>
+  </footer>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+    const currentStep = { value: 1 };
+    const totalSteps = 5;
+
+    function showStep(n) {
+      document.querySelectorAll('.step').forEach(el => el.classList.remove('visible'));
+      document.getElementById('step' + n).classList.add('visible');
+      document.querySelectorAll('.step-item').forEach((el, i) => {
+        el.classList.remove('active', 'done');
+        if (i + 1 === n) el.classList.add('active');
+        else if (i + 1 < n) el.classList.add('done');
+      });
+      document.getElementById('btnBack').style.visibility = n === 1 ? 'hidden' : 'visible';
+      document.getElementById('btnNext').textContent = n === totalSteps ? 'Terminer' : 'Suivant';
+      currentStep.value = n;
+    }
+
+    document.getElementById('browseFolder').onclick = () => ipcRenderer.invoke('installer:choose-data-folder').then(p => { if (p) document.getElementById('dataFolder').value = p; });
+
+    document.getElementById('recheckPrereqs').onclick = () => loadPrereqs();
+
+    function loadPrereqs() {
+      ipcRenderer.invoke('installer:check-prereqs').then(list => {
+        const ul = document.getElementById('prereqList');
+        ul.innerHTML = list.map(item => `
+          <li>
+            <span class="prereq-name">${item.name}</span>
+            <span class="prereq-status ${item.ok ? 'ok' : 'missing'}">
+              ${item.ok ? '✓ Installé' : (item.url ? `<a href="#" data-url="${item.url}">Télécharger</a>` : 'Non détecté')}
+            </span>
+          </li>
+        `).join('');
+        ul.querySelectorAll('[data-url]').forEach(a => {
+          a.onclick = (e) => { e.preventDefault(); require('electron').shell.openExternal(a.getAttribute('data-url')); };
+        });
+      });
+    }
+
+    document.getElementById('btnBack').onclick = () => { if (currentStep.value > 1) showStep(currentStep.value - 1); };
+    document.getElementById('btnNext').onclick = async () => {
+      if (currentStep.value < totalSteps) {
+        if (currentStep.value === 1) loadPrereqs();
+        showStep(currentStep.value + 1);
+        return;
+      }
+      // Finish
+      const dataFolder = document.getElementById('dataFolder').value.trim();
+      if (!dataFolder) { alert('Indiquez le dossier des données.'); return; }
+
+      const env = {
+        SCHOOLMATRIX_DATA: dataFolder.replace(/\\/g, '/'),
+        DB_USER: document.getElementById('DB_USER').value.trim(),
+        DB_PASS: document.getElementById('DB_PASS').value.trim(),
+        DB_NAME: document.getElementById('DB_NAME').value.trim(),
+        JWT_SECRET: document.getElementById('JWT_SECRET').value.trim() || 'change-me-in-production',
+        ECR_REGISTRY: document.getElementById('ECR_REGISTRY').value.trim(),
+        AWS_REGION: document.getElementById('AWS_REGION').value.trim(),
+        IMAGE_TAG: document.getElementById('IMAGE_TAG').value.trim(),
+        AWS_ACCESS_KEY_ID: document.getElementById('AWS_ACCESS_KEY_ID').value.trim(),
+        AWS_SECRET_ACCESS_KEY: document.getElementById('AWS_SECRET_ACCESS_KEY').value.trim(),
+        AWS_S3_BUCKET: document.getElementById('AWS_S3_BUCKET').value.trim(),
+        AWS_S3_PREFIX: document.getElementById('AWS_S3_PREFIX').value.trim(),
+      };
+
+      const pullEcrNow = document.getElementById('pullEcrNow').checked;
+      const launchNow = document.getElementById('launchNow').checked;
+
+      document.getElementById('btnNext').disabled = true;
+      document.getElementById('btnNext').textContent = 'Configuration en cours…';
+      const progressPanel = document.getElementById('progressPanel');
+      const step5Form = document.getElementById('step5Form');
+      const ecrStatus = document.getElementById('ecrStatus');
+      const ecrLog = document.getElementById('ecrLog');
+      const ecrResult = document.getElementById('ecrResult');
+      step5Form.style.display = 'none';
+      progressPanel.classList.add('visible');
+      ecrStatus.textContent = 'Préparation du dossier et de la configuration…';
+      ecrLog.textContent = '';
+      ecrResult.textContent = '';
+
+      try {
+        await ipcRenderer.invoke('installer:write-env-and-prepare', { dataFolder, env });
+        ecrStatus.textContent = 'Préparation terminée.';
+
+        if (pullEcrNow) {
+          ecrStatus.textContent = 'Téléchargement des images ECR… (suivi en direct ci-dessous)';
+          ecrLog.textContent = '';
+          ecrResult.textContent = '';
+
+          const onOutput = (ev, { line, stderr: isErr }) => {
+            const span = document.createElement('span');
+            span.className = isErr ? 'line-err' : '';
+            span.textContent = line;
+            ecrLog.appendChild(span);
+            ecrLog.scrollTop = ecrLog.scrollHeight;
+          };
+          const onDone = (ev, { success, error }) => {
+            ipcRenderer.removeListener('installer:ecr-output', onOutput);
+            ipcRenderer.removeListener('installer:ecr-done', onDone);
+            ecrResult.className = 'ecr-result ' + (success ? 'ok' : 'fail');
+            if (success) {
+              ecrResult.textContent = 'Téléchargement et démarrage des conteneurs : réussi.';
+              ecrStatus.textContent = 'Téléchargement terminé.';
+            } else {
+              ecrResult.textContent = 'Échec : ' + (error || 'Erreur inconnue');
+              ecrStatus.textContent = 'Téléchargement ECR terminé avec des erreurs.';
+            }
+          };
+          ipcRenderer.on('installer:ecr-output', onOutput);
+          ipcRenderer.once('installer:ecr-done', onDone);
+
+          await ipcRenderer.invoke('installer:start-pull-ecr', dataFolder);
+        } else {
+          ecrStatus.textContent = 'Configuration enregistrée.';
+        }
+
+        await ipcRenderer.invoke('installer:finish', { dataFolder, launchNow });
+      } catch (e) {
+        document.getElementById('btnNext').disabled = false;
+        document.getElementById('btnNext').textContent = 'Terminer';
+        progressPanel.classList.remove('visible');
+        step5Form.style.display = '';
+        alert('Erreur : ' + (e.message || e));
+      }
+    };
+
+    showStep(1);
+  </script>
+</body>
+</html>

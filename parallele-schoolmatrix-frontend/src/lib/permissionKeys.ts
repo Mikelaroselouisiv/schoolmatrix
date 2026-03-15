@@ -11,6 +11,7 @@ export const PERMISSION_OPTIONS: { key: string; label: string }[] = [
   { key: "schedule", label: "Horaires" },
   { key: "students", label: "Inscription" },
   { key: "economat", label: "Économat" },
+  { key: "finance", label: "Finance (Économat, Dépenses, Moniteur, Comptabilité)" },
   { key: "grades", label: "Saisie des notes" },
   { key: "discipline", label: "Discipline" },
   { key: "formation-classe", label: "Formation de classe" },

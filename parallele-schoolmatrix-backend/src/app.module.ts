@@ -14,6 +14,7 @@ import { TeachersModule } from './teachers/teachers.module';
 import { ExamScheduleModule } from './exam-schedule/exam-schedule.module';
 import { ExtracurricularActivityModule } from './extracurricular-activity/extracurricular-activity.module';
 import { EconomatModule } from './economat/economat.module';
+import { FinanceModule } from './finance/finance.module';
 import { AcademicYearModule } from './academic-year/academic-year.module';
 import { PeriodModule } from './period/period.module';
 import { GradesModule } from './grades/grades.module';
@@ -29,6 +30,7 @@ import { S3Module } from './s3/s3.module';
 import { StorageModule } from './storage/storage.module';
 import { FileMetadataModule } from './file-metadata/file-metadata.module';
 import { SyncModule } from './sync/sync.module';
+import { migrations } from './migrations';
 
 @Module({
   imports: [
@@ -47,6 +49,9 @@ import { SyncModule } from './sync/sync.module';
         database: config.get('DB_NAME'),
         autoLoadEntities: true,
         synchronize: process.env.NODE_ENV !== 'production',
+        migrations,
+        migrationsRun: true,
+        migrationsTableName: 'typeorm_migrations',
       }),
     }),
     StorageModule,
@@ -66,6 +71,7 @@ import { SyncModule } from './sync/sync.module';
     ExamScheduleModule,
     ExtracurricularActivityModule,
     EconomatModule,
+    FinanceModule,
     AcademicYearModule,
     PeriodModule,
     GradesModule,

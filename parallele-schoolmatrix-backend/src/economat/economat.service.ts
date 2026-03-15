@@ -41,21 +41,24 @@ export class EconomatService {
     return this.feeServiceRepo.find({ order: { name: 'ASC' } });
   }
 
-  async createFeeService(params: { name: string; code?: string }): Promise<FeeService> {
+  async createFeeService(params: { name: string; code?: string; nature?: string }): Promise<FeeService> {
+    const nature = params.nature === 'PARASCOLAIRE' ? 'PARASCOLAIRE' : 'OBLIGATOIRE';
     const s = this.feeServiceRepo.create({
       name: params.name.trim(),
       code: params.code?.trim(),
       active: true,
+      nature,
     });
     return this.feeServiceRepo.save(s);
   }
 
-  async updateFeeService(id: string, params: Partial<{ name: string; code: string; active: boolean }>): Promise<FeeService> {
+  async updateFeeService(id: string, params: Partial<{ name: string; code: string; active: boolean; nature: string }>): Promise<FeeService> {
     const s = await this.feeServiceRepo.findOne({ where: { id } });
     if (!s) throw new NotFoundException('Fee service not found');
     if (params.name !== undefined) s.name = params.name.trim();
     if (params.code !== undefined) s.code = params.code?.trim() || undefined;
     if (params.active !== undefined) s.active = params.active;
+    if (params.nature !== undefined) s.nature = params.nature === 'PARASCOLAIRE' ? 'PARASCOLAIRE' : 'OBLIGATOIRE';
     return this.feeServiceRepo.save(s);
   }
 

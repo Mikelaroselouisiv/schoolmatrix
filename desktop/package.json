@@ -1,6 +1,6 @@
 {
   "name": "parallele-schoolmatrix-desktop",
-  "version": "1.0.0",
+  "version": "1.0.8",
   "description": "Application desktop Electron pour Parallele SchoolMatrix",
   "main": "main.js",
   "author": "Parallele SchoolMatrix",
@@ -15,14 +15,20 @@
     "directories": {
       "output": "dist"
     },
-    "files": ["main.js", "App logo.png", "package.json"],
+    "files": ["main.js", "installer.html", "App logo.png", "package.json"],
+    "extraResources": [
+      { "from": "../scripts", "to": "scripts", "filter": ["**/*"] },
+      { "from": "../docker-compose.prod-local.yml", "to": "." },
+      { "from": "../docker-compose.prod-local-ecr.yml", "to": "." }
+    ],
     "win": {
       "target": "nsis",
       "icon": "App logo.png"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "runAfterFinish": true
     }
   },
   "devDependencies": {

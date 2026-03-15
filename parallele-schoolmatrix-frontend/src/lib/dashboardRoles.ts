@@ -44,10 +44,11 @@ function canSeeNavItem(roleName: string, allowedRoles: string[]): boolean {
 function canSeeByPermissions(permissionKey: string, rolePermissions: string[]): boolean {
   if (rolePermissions.includes("full_access")) return true;
   if (permissionKey === "dashboard") return true;
+  if (permissionKey === "finance") return rolePermissions.includes("finance") || rolePermissions.includes("economat");
   return rolePermissions.includes(permissionKey);
 }
 
-export type NavBlock = "configuration" | "management" | "fiche" | "special";
+export type NavBlock = "configuration" | "management" | "finance" | "fiche" | "special";
 
 export type NavItem = {
   href: string;
@@ -66,12 +67,16 @@ export const DASHBOARD_NAV: NavItem[] = [
   { href: "/dashboard/academic-years", label: "Années et périodes", allowedRoles: [...ROLES_FULL], permissionKey: "academic-years", block: "configuration" },
   { href: "/dashboard/teachers", label: "Professeurs", allowedRoles: [...ROLES_FULL], permissionKey: "teachers", block: "configuration" },
   { href: "/dashboard/schedule", label: "Horaires", allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...ROLES_HORAIRES_SEUL], permissionKey: "schedule", block: "configuration" },
-  // Bloc Management (vie étudiante) : Inscription, Économat, Saisie de notes, Discipline, Formation de classe
+  // Bloc Management (vie étudiante) : Inscription, Saisie de notes, Discipline, Formation de classe
   { href: "/dashboard/students", label: "Inscription", allowedRoles: [...ROLES_FULL], permissionKey: "students", block: "management" },
-  { href: "/dashboard/economat", label: "Économat", allowedRoles: [...ROLES_FULL, ...ROLES_ECONOME], permissionKey: "economat", block: "management" },
   { href: "/dashboard/grades", label: "Saisie des notes", allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, "TEACHER"], permissionKey: "grades", block: "management" },
   { href: "/dashboard/discipline", label: "Discipline", allowedRoles: [...ROLES_FULL, ...ROLES_DISCIPLINE], permissionKey: "discipline", block: "management" },
   { href: "/dashboard/formation-classe", label: "Formation de classe", allowedRoles: [...ROLES_FULL], permissionKey: "formation-classe", block: "management" },
+  // Bloc Finance : Économat, Dépenses, Moniteur Finance, Comptabilité
+  { href: "/dashboard/economat", label: "Économat", allowedRoles: [...ROLES_FULL, ...ROLES_ECONOME], permissionKey: "finance", block: "finance" },
+  { href: "/dashboard/depenses", label: "Dépenses", allowedRoles: [...ROLES_FULL, ...ROLES_ECONOME], permissionKey: "finance", block: "finance" },
+  { href: "/dashboard/moniteur-finance", label: "Moniteur Finance", allowedRoles: [...ROLES_FULL, ...ROLES_ECONOME], permissionKey: "finance", block: "finance" },
+  { href: "/dashboard/comptabilite", label: "Comptabilité", allowedRoles: [...ROLES_FULL, ...ROLES_ECONOME], permissionKey: "finance", block: "finance" },
   // Bloc Fiche élève (dominant, seul)
   {
     href: "/dashboard/fiche-eleve",
@@ -116,7 +121,7 @@ export function canAccessPath(roleName: string, path: string, rolePermissions?: 
   return canSeeNavItem(roleName, item.allowedRoles);
 }
 
-const BLOCK_ORDER: NavBlock[] = ["configuration", "management", "fiche", "special"];
+const BLOCK_ORDER: NavBlock[] = ["configuration", "management", "finance", "fiche", "special"];
 
 /** Retourne les entrées de menu visibles pour un rôle, ordonnées par bloc (pour les raccourcis). */
 export function getNavItemsForRole(

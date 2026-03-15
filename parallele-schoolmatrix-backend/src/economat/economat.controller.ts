@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { EconomatService } from './economat.service';
+import { FinanceService } from '../finance/finance.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -7,7 +8,10 @@ import { Roles } from '../auth/roles.decorator';
 @Controller('economat')
 @UseGuards(JwtAuthGuard)
 export class EconomatController {
-  constructor(private readonly economatService: EconomatService) {}
+  constructor(
+    private readonly economatService: EconomatService,
+    private readonly financeService: FinanceService,
+  ) {}
 
   @Get('current-year')
   currentYear() {
@@ -21,13 +25,13 @@ export class EconomatController {
   }
 
   @Post('fee-services')
-  async createFeeService(@Body() body: { name: string; code?: string }) {
-    const s = await this.economatService.createFeeService({ name: body.name, code: body.code });
-    return { ok: true, fee_service: { id: s.id, name: s.name, code: s.code, active: s.active } };
+  async createFeeService(@Body() body: { name: string; code?: string; nature?: string }) {
+    const s = await this.economatService.createFeeService({ name: body.name, code: body.code, nature: body.nature });
+    return { ok: true, fee_service: { id: s.id, name: s.name, code: s.code, active: s.active, nature: s.nature } };
   }
 
   @Patch('fee-services/:id')
-  async updateFeeService(@Param('id') id: string, @Body() body: Partial<{ name: string; code: string; active: boolean }>) {
+  async updateFeeService(@Param('id') id: string, @Body() body: Partial<{ name: string; code: string; active: boolean; nature: string }>) {
     const s = await this.economatService.updateFeeService(id, body);
     return { ok: true, fee_service: s };
   }
@@ -108,6 +112,11 @@ export class EconomatController {
     payment_date: string;
   }) {
     const tx = await this.economatService.recordPayment(body);
+    try {
+      await this.financeService.recordEconomatPayment(tx);
+    } catch {
+      // ne pas faire échouer le paiement si la comptabilité échoue
+    }
     return {
       ok: true,
       payment: {

@@ -12,7 +12,7 @@ const ROLES_SERVICES_ET_EXONERATIONS = ROLES_FULL; // DIRECTEUR_GENERAL, SCHOOL_
 type AcademicYear = { id: string; name: string };
 type ClassItem = { id: string; name: string };
 type Student = { id: string; order_number: string | null; first_name: string; last_name: string; class_id: string; class_name: string };
-type FeeService = { id: string; name: string; code: string | null };
+type FeeService = { id: string; name: string; code: string | null; nature?: string };
 type ClassFee = {
   id: string;
   academic_year: string;
@@ -98,6 +98,10 @@ export default function EconomatPage() {
   });
   const [savingExemption, setSavingExemption] = useState(false);
   const [exemptionFilterYear, setExemptionFilterYear] = useState("");
+  const [showServiceForm, setShowServiceForm] = useState(false);
+  const [serviceForm, setServiceForm] = useState({ name: "", code: "", nature: "OBLIGATOIRE" as string });
+  const [editingService, setEditingService] = useState<FeeService | null>(null);
+  const [savingService, setSavingService] = useState(false);
 
   async function loadBaseData() {
     setError("");
@@ -353,6 +357,58 @@ export default function EconomatPage() {
     }
   }
 
+  async function handleSaveService(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setSavingService(true);
+    try {
+      if (editingService) {
+        const res = await fetchWithAuth(`${API_BASE}/economat/fee-services/${editingService.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: serviceForm.name.trim(), code: serviceForm.code.trim() || undefined, nature: serviceForm.nature }),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.message || "Erreur");
+        }
+      } else {
+        const res = await fetchWithAuth(`${API_BASE}/economat/fee-services`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: serviceForm.name.trim(), code: serviceForm.code.trim() || undefined, nature: serviceForm.nature }),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.message || "Erreur");
+        }
+      }
+      setShowServiceForm(false);
+      setEditingService(null);
+      setServiceForm({ name: "", code: "", nature: "OBLIGATOIRE" });
+      loadBaseData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setSavingService(false);
+    }
+  }
+
+  async function handleDeleteService(id: string) {
+    if (!confirm("Supprimer cette source de revenus ?")) return;
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/economat/fee-services/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || "Erreur");
+      }
+      loadBaseData();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    }
+  }
+
   if (loading) {
     return (
       <div className="animate-pulse text-slate-500">Chargement...</div>
@@ -563,6 +619,77 @@ export default function EconomatPage() {
       {/* Tab 2: Services par classe */}
       {tab === "services" && canSeeServicesAndExemptions && (
         <div className="space-y-6">
+          <div className="rounded-xl border border-[var(--app-border)] bg-white p-5">
+            <h3 className="font-semibold text-slate-900 mb-3">Sources de revenus</h3>
+            <p className="text-sm text-slate-600 mb-4">Définissez les types de paiement (inscription, trimestre, activités parascolaires…). Indiquez la <strong>nature</strong> : paiement obligatoire ou activité parascolaire (pour le suivi des entrées/sorties par activité).</p>
+            {showServiceForm ? (
+              <form onSubmit={handleSaveService} className="space-y-3 max-w-md mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Nom</label>
+                  <input
+                    type="text"
+                    value={serviceForm.name}
+                    onChange={(e) => setServiceForm((f) => ({ ...f, name: e.target.value }))}
+                    className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
+                    placeholder="Ex: Inscription, Journée des fruits"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Code (optionnel)</label>
+                  <input
+                    type="text"
+                    value={serviceForm.code}
+                    onChange={(e) => setServiceForm((f) => ({ ...f, code: e.target.value }))}
+                    className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
+                    placeholder="Ex: INS, JDF"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Nature</label>
+                  <select
+                    value={serviceForm.nature}
+                    onChange={(e) => setServiceForm((f) => ({ ...f, nature: e.target.value }))}
+                    className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
+                  >
+                    <option value="OBLIGATOIRE">Paiement obligatoire</option>
+                    <option value="PARASCOLAIRE">Activité parascolaire</option>
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <button type="submit" disabled={savingService} className="app-btn-primary disabled:opacity-60">{savingService ? "Enregistrement..." : "Enregistrer"}</button>
+                  <button type="button" onClick={() => { setShowServiceForm(false); setEditingService(null); setServiceForm({ name: "", code: "", nature: "OBLIGATOIRE" }); }} className="app-btn-secondary">Annuler</button>
+                </div>
+              </form>
+            ) : (
+              <button type="button" onClick={() => { setShowServiceForm(true); setEditingService(null); setServiceForm({ name: "", code: "", nature: "OBLIGATOIRE" }); }} className="app-btn-secondary text-sm mb-4">Ajouter une source de revenus</button>
+            )}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 border-b border-[var(--app-border)]">
+                  <tr>
+                    <th className="px-3 py-2 font-medium text-slate-900 text-left">Nom</th>
+                    <th className="px-3 py-2 font-medium text-slate-900 text-left">Code</th>
+                    <th className="px-3 py-2 font-medium text-slate-900 text-left">Nature</th>
+                    <th className="px-3 py-2 font-medium text-slate-900 w-28">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {feeServices.map((s) => (
+                    <tr key={s.id} className="border-b border-[var(--app-border)]">
+                      <td className="px-3 py-2 font-medium text-slate-900">{s.name}</td>
+                      <td className="px-3 py-2 text-slate-600">{s.code ?? "—"}</td>
+                      <td className="px-3 py-2 text-slate-600">{s.nature === "PARASCOLAIRE" ? "Activité parascolaire" : "Paiement obligatoire"}</td>
+                      <td className="px-3 py-2">
+                        <button type="button" onClick={() => { setEditingService(s); setShowServiceForm(true); setServiceForm({ name: s.name, code: s.code ?? "", nature: s.nature ?? "OBLIGATOIRE" }); }} className="text-[var(--school-accent-1)] hover:underline text-xs mr-2">Modifier</button>
+                        <button type="button" onClick={() => handleDeleteService(s.id)} className="text-red-600 hover:underline text-xs">Supprimer</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
           <div className="flex flex-wrap items-center justify-between gap-4">
             <h3 className="font-semibold text-slate-900">Montants par classe et par année</h3>
             <div className="flex gap-2">

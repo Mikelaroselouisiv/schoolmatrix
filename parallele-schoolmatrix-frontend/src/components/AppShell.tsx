@@ -30,6 +30,7 @@ function getNavItemsByBlock(roleName: string, rolePermissions: string[]) {
   const usePermissions = rolePermissions.length > 0;
   const config: typeof DASHBOARD_NAV[0][] = [];
   const management: typeof DASHBOARD_NAV[0][] = [];
+  const finance: typeof DASHBOARD_NAV[0][] = [];
   const fiche: typeof DASHBOARD_NAV[0][] = [];
 
   for (const item of DASHBOARD_NAV) {
@@ -40,6 +41,7 @@ function getNavItemsByBlock(roleName: string, rolePermissions: string[]) {
     if (!canSee) continue;
     if (item.block === "configuration") config.push(item);
     else if (item.block === "management") management.push(item);
+    else if (item.block === "finance") finance.push(item);
     else if (item.block === "fiche") fiche.push(item);
   }
 
@@ -53,7 +55,7 @@ function getNavItemsByBlock(roleName: string, rolePermissions: string[]) {
   if (canSeeUsers) special.push(USERS_NAV);
   if (canSeeSchool) special.push(SCHOOL_NAV);
 
-  return { config, management, fiche, special };
+  return { config, management, finance, fiche, special };
 }
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -65,8 +67,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const rolePermissions = ctx?.rolePermissions ?? [];
   const segments = getBreadcrumbSegments(pathname);
 
-  const { config, management, fiche, special } = getNavItemsByBlock(roleName, rolePermissions);
-  const allMainItems = [...config, ...management, ...fiche];
+  const { config, management, finance, fiche, special } = getNavItemsByBlock(roleName, rolePermissions);
+  const allMainItems = [...config, ...management, ...finance, ...fiche];
 
   // Redirection si l’utilisateur accède à une URL non autorisée pour son rôle
   useEffect(() => {
@@ -176,7 +178,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {config.length > 0 && management.length > 0 && (
               <span className="flex-shrink-0 w-px self-center h-5 bg-slate-200 mx-1" aria-hidden />
             )}
-            {/* Bloc Management (vie étudiante) */}
+            {/* Bloc Management */}
             {management.map((item) => {
               const isActive =
                 pathname === item.href || pathname.startsWith(item.href + "/");
@@ -199,7 +201,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </Link>
               );
             })}
-            {(config.length > 0 || management.length > 0) && fiche.length > 0 && (
+            {finance.length > 0 && (
+              <>
+                <span className="flex-shrink-0 w-px self-center h-5 bg-slate-200 mx-1" aria-hidden />
+                {finance.map((item) => {
+                  const isActive =
+                    pathname === item.href || pathname.startsWith(item.href + "/");
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`
+                        relative px-3 py-3.5 text-sm font-medium whitespace-nowrap transition-all duration-200
+                        ${isActive ? "text-slate-900" : "text-slate-600 hover:text-slate-900"}
+                      `}
+                    >
+                      {item.label}
+                      {isActive && (
+                        <span
+                          className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full"
+                          style={{ backgroundColor: "var(--school-accent-1)" }}
+                        />
+                      )}
+                    </Link>
+                  );
+                })}
+              </>
+            )}
+            {(config.length > 0 || management.length > 0 || finance.length > 0) && fiche.length > 0 && (
               <span className="flex-shrink-0 w-px self-center h-5 bg-slate-200 mx-1" aria-hidden />
             )}
             {/* Bloc Fiche élève - dominant */}

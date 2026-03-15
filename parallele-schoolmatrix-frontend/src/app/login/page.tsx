@@ -44,7 +44,8 @@ export default function LoginPage() {
       } else {
         setError("Réponse serveur invalide");
       }
-    } catch {
+    } catch (err) {
+      console.error("Login API error:", err);
       setError("Erreur de connexion. Vérifiez que le backend est démarré.");
     } finally {
       setLoading(false);

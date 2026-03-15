@@ -20,6 +20,10 @@ export class FeeService {
   @Column({ default: true })
   active: boolean;
 
+  /** OBLIGATOIRE = paiement obligatoire (inscription, trimestre...). PARASCOLAIRE = activité à suivre (entrées/sorties). */
+  @Column({ type: 'varchar', length: 20, default: 'OBLIGATOIRE' })
+  nature: string;
+
   @CreateDateColumn()
   created_at: Date;
 

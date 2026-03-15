@@ -21,6 +21,7 @@ type ClassFee = {
   service_id: string;
   service_name: string;
   amount: number;
+  due_date: string | null;
   detail: string | null;
   created_at: string;
 };
@@ -84,6 +85,7 @@ export default function EconomatPage() {
     class_id: "",
     service_id: "",
     amount: "",
+    due_date: "",
     detail: "",
   });
   const [editingClassFee, setEditingClassFee] = useState<ClassFee | null>(null);
@@ -268,18 +270,25 @@ export default function EconomatPage() {
       if (editingClassFee) {
         const res = await fetchWithAuth(`${API_BASE}/economat/class-fees/${editingClassFee.id}`, {
           method: "PATCH",
-          body: JSON.stringify({ amount, detail: classFeeForm.detail.trim() || undefined }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amount,
+            due_date: classFeeForm.due_date.trim() || null,
+            detail: classFeeForm.detail.trim() || undefined,
+          }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || "Erreur");
       } else {
         const res = await fetchWithAuth(`${API_BASE}/economat/class-fees`, {
           method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             academic_year: year,
             class_id: classId,
             service_id: serviceId,
             amount,
+            due_date: classFeeForm.due_date.trim() || null,
             detail: classFeeForm.detail.trim() || undefined,
           }),
         });
@@ -288,7 +297,7 @@ export default function EconomatPage() {
       }
       setShowClassFeeForm(false);
       setEditingClassFee(null);
-      setClassFeeForm({ academic_year: "", class_id: "", service_id: "", amount: "", detail: "" });
+      setClassFeeForm({ academic_year: "", class_id: "", service_id: "", amount: "", due_date: "", detail: "" });
       loadClassFees();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
@@ -621,7 +630,6 @@ export default function EconomatPage() {
         <div className="space-y-6">
           <div className="rounded-xl border border-[var(--app-border)] bg-white p-5">
             <h3 className="font-semibold text-slate-900 mb-3">Sources de revenus</h3>
-            <p className="text-sm text-slate-600 mb-4">Définissez les types de paiement (inscription, trimestre, activités parascolaires…). Indiquez la <strong>nature</strong> : paiement obligatoire ou activité parascolaire (pour le suivi des entrées/sorties par activité).</p>
             {showServiceForm ? (
               <form onSubmit={handleSaveService} className="space-y-3 max-w-md mb-4">
                 <div>
@@ -713,7 +721,7 @@ export default function EconomatPage() {
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
-              <button type="button" onClick={() => { setShowClassFeeForm(true); setEditingClassFee(null); setClassFeeForm({ academic_year: filterYear || academicYears[0]?.name || "", class_id: filterClass || "", service_id: "", amount: "", detail: "" }); }} className="app-btn-primary text-sm">
+              <button type="button" onClick={() => { setShowClassFeeForm(true); setEditingClassFee(null); setClassFeeForm({ academic_year: filterYear || academicYears[0]?.name || "", class_id: filterClass || "", service_id: "", amount: "", due_date: "", detail: "" }); }} className="app-btn-primary text-sm">
                 Ajouter un montant
               </button>
             </div>
@@ -783,6 +791,16 @@ export default function EconomatPage() {
                 />
               </div>
               <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Date d&apos;échéance (optionnel)</label>
+                <input
+                  type="date"
+                  value={editingClassFee ? (editingClassFee.due_date ?? "") : classFeeForm.due_date}
+                  onChange={(e) => (editingClassFee ? setEditingClassFee({ ...editingClassFee, due_date: e.target.value || null }) : setClassFeeForm((f) => ({ ...f, due_date: e.target.value })))}
+                  className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
+                />
+                <p className="text-xs text-slate-500 mt-1">Visible par les parents sur la fiche élève pour s&apos;organiser.</p>
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Détail (optionnel)</label>
                 <input
                   type="text"
@@ -807,12 +825,13 @@ export default function EconomatPage() {
                   <th className="px-4 py-3 font-medium text-slate-900">Classe</th>
                   <th className="px-4 py-3 font-medium text-slate-900">Service</th>
                   <th className="px-4 py-3 font-medium text-slate-900 text-right">Montant</th>
+                  <th className="px-4 py-3 font-medium text-slate-900">Échéance</th>
                   {canSeeServicesAndExemptions && <th className="px-4 py-3 font-medium text-slate-900 w-32">Actions</th>}
                 </tr>
               </thead>
               <tbody>
                 {classFees.length === 0 ? (
-                  <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">Aucun montant défini</td></tr>
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">Aucun montant défini</td></tr>
                 ) : (
                   classFees.map((cf) => (
                     <tr key={cf.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
@@ -820,8 +839,9 @@ export default function EconomatPage() {
                       <td className="px-4 py-3 font-medium text-slate-900">{cf.class_name}</td>
                       <td className="px-4 py-3 text-slate-600">{cf.service_name}</td>
                       <td className="px-4 py-3 text-right font-medium text-slate-900">{Number(cf.amount).toLocaleString("fr-FR")}</td>
+                      <td className="px-4 py-3 text-slate-600">{cf.due_date ? formatDateJJMMAAAA(cf.due_date) : "—"}</td>
                       <td className="px-4 py-3 flex gap-2">
-                        <button type="button" onClick={() => { setEditingClassFee(cf); setShowClassFeeForm(true); setClassFeeForm({ academic_year: cf.academic_year, class_id: cf.class_id, service_id: cf.service_id, amount: String(cf.amount), detail: cf.detail ?? "" }); }} className="text-[var(--school-accent-1)] hover:underline text-xs">Modifier</button>
+                        <button type="button" onClick={() => { setEditingClassFee(cf); setShowClassFeeForm(true); setClassFeeForm({ academic_year: cf.academic_year, class_id: cf.class_id, service_id: cf.service_id, amount: String(cf.amount), due_date: cf.due_date ?? "", detail: cf.detail ?? "" }); }} className="text-[var(--school-accent-1)] hover:underline text-xs">Modifier</button>
                         <button type="button" onClick={() => handleDeleteClassFee(cf.id)} className="text-red-600 hover:underline text-xs">Supprimer</button>
                       </td>
                     </tr>

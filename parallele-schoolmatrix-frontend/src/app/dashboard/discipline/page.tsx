@@ -659,7 +659,6 @@ export default function DisciplinePage() {
       {/* Points disciplinaires */}
       {tab === "points" && (
         <div className="space-y-6">
-          <p className="text-sm text-slate-600">Base 100 points. Vous pouvez retirer des points (sanction) ou en ajouter (bonification).</p>
           <form onSubmit={handleAddDeduction} className="p-4 rounded-xl border border-[var(--app-border)] bg-white max-w-lg space-y-3">
             <h3 className="font-semibold text-slate-900">Modifier les points disciplinaires</h3>
             <div>

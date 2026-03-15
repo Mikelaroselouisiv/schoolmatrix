@@ -88,12 +88,13 @@ export class EconomatService {
       service_id: cf.service?.id,
       service_name: cf.service?.name,
       amount: Number(cf.amount),
+      due_date: cf.due_date ? (typeof cf.due_date === 'string' ? cf.due_date : (cf.due_date as Date).toISOString().slice(0, 10)) : null,
       detail: cf.detail,
       created_at: cf.created_at,
     }));
   }
 
-  async createClassFee(params: { academic_year: string; class_id: string; service_id: string; amount: number; detail?: string }): Promise<ClassFee> {
+  async createClassFee(params: { academic_year: string; class_id: string; service_id: string; amount: number; due_date?: string | null; detail?: string }): Promise<ClassFee> {
     const existing = await this.classFeeRepo.findOne({
       where: {
         academic_year: params.academic_year,
@@ -107,15 +108,17 @@ export class EconomatService {
       class: { id: params.class_id },
       service: { id: params.service_id },
       amount: String(params.amount),
+      due_date: params.due_date ? new Date(params.due_date) : null,
       detail: params.detail?.trim(),
     });
     return this.classFeeRepo.save(cf);
   }
 
-  async updateClassFee(id: string, params: Partial<{ amount: number; detail: string }>): Promise<ClassFee> {
+  async updateClassFee(id: string, params: Partial<{ amount: number; due_date: string | null; detail: string }>): Promise<ClassFee> {
     const cf = await this.classFeeRepo.findOne({ where: { id }, relations: ['class', 'service'] });
     if (!cf) throw new NotFoundException('Class fee not found');
     if (params.amount !== undefined) cf.amount = String(params.amount);
+    if (params.due_date !== undefined) cf.due_date = params.due_date ? new Date(params.due_date) : null;
     if (params.detail !== undefined) cf.detail = params.detail?.trim() || undefined;
     return this.classFeeRepo.save(cf);
   }
@@ -234,10 +237,12 @@ export class EconomatService {
     for (const cf of classFees) {
       const amount_due = await this.getAmountDueForStudent(studentId, year, cf.service.id);
       const total_paid = await this.getTotalPaidForStudent(studentId, year, cf.service.id);
+      const dueDateStr = cf.due_date ? (typeof cf.due_date === 'string' ? cf.due_date : (cf.due_date as Date).toISOString().slice(0, 10)) : null;
       result.push({
         service_id: cf.service.id,
         service_name: cf.service.name,
         payment_modality: cf.detail?.trim() || undefined,
+        due_date: dueDateStr,
         amount_due,
         total_paid,
         balance: Math.round((amount_due - total_paid) * 100) / 100,

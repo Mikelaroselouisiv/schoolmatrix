@@ -79,7 +79,7 @@ export default function MoniteurFinancePage() {
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-slate-900">Moniteur Finance</h2>
-      <p className="text-slate-600 text-sm">Vue synthèse des entrées et sorties d&apos;argent. Choisissez une activité parascolaire pour suivre uniquement ses flux.</p>
+
 
       {error && <div className="p-3 rounded-lg bg-red-50 text-red-600 text-sm">{error}</div>}
 

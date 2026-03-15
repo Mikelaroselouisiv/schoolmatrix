@@ -61,6 +61,7 @@ export default function ComptabilitePage() {
   const [addAccountForm, setAddAccountForm] = useState({ code: "", label: "", type: "CHARGE" as string });
   const [savingAddAccount, setSavingAddAccount] = useState(false);
   const [suggestingType, setSuggestingType] = useState(false);
+  const [planComptableOpen, setPlanComptableOpen] = useState(false);
 
   async function loadExercices() {
     try {
@@ -331,7 +332,7 @@ export default function ComptabilitePage() {
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-slate-900">Comptabilité</h2>
       <p className="text-slate-600 text-sm">
-        Le logiciel tient la comptabilité de l&apos;établissement. Ouvrez un exercice, saisissez l&apos;écriture d&apos;ouverture (immobilisations, passifs, caisse, capital…), puis les opérations courantes (paiements, dépenses, autres revenus) alimentent automatiquement le journal.
+  
       </p>
 
       {error && <div className="p-3 rounded-lg bg-red-50 text-red-600 text-sm">{error}</div>}
@@ -536,8 +537,8 @@ export default function ComptabilitePage() {
           )}
 
           <div className="rounded-xl border border-[var(--app-border)] bg-white p-5">
-            <h3 className="font-semibold text-slate-900 mb-3">Autres revenus (dons, subventions, ventes…)</h3>
-            <p className="text-sm text-slate-600 mb-3">La date du revenu doit être comprise dans la période de l&apos;exercice ouvert.</p>
+            <h3 className="font-semibold text-slate-900 mb-3">Autres revenus</h3>
+          
             {showOtherRevenueForm ? (
               <form onSubmit={handleCreateOtherRevenue} className="space-y-3 max-w-md mb-4">
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Date</label><DateInputJJMMAAAA value={otherRevenueForm.revenue_date} onChange={(v) => setOtherRevenueForm((f) => ({ ...f, revenue_date: v }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2" required /></div>
@@ -554,81 +555,99 @@ export default function ComptabilitePage() {
         </>
       )}
 
-      {/* Plan comptable */}
-      <div className="rounded-xl border border-[var(--app-border)] bg-white p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-semibold text-slate-900">Plan comptable</h3>
-          <button type="button" onClick={() => { setShowAddAccount(true); setAddAccountForm({ code: "", label: "", type: "CHARGE" }); setError(""); }} className="app-btn-primary text-sm">Ajouter un compte</button>
-        </div>
-        {showAddAccount && (
-          <form onSubmit={handleAddAccount} className="mb-4 p-4 bg-slate-50 rounded-lg border border-[var(--app-border)] space-y-3 max-w-lg">
-            <h4 className="font-medium text-slate-900">Nouveau compte</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Code</label>
-                <input
-                  type="text"
-                  value={addAccountForm.code}
-                  onChange={(e) => setAddAccountForm((f) => ({ ...f, code: e.target.value }))}
-                  onBlur={() => fetchSuggestType(addAccountForm.code)}
-                  placeholder="ex. 512000"
-                  className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 font-mono text-sm"
-                  required
-                />
-                {suggestingType && <span className="text-xs text-slate-500">Suggestion en cours...</span>}
+      {/* Plan comptable (accordéon) */}
+      <div className="rounded-xl border border-[var(--app-border)] bg-white overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setPlanComptableOpen((o) => !o)}
+          className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left hover:bg-slate-50/80 transition-colors"
+        >
+          <span className="flex items-center gap-2">
+            <svg className={`w-5 h-5 text-slate-500 transition-transform ${planComptableOpen ? "rotate-90" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            <h3 className="font-semibold text-slate-900">Plan comptable</h3>
+            <span className="text-sm text-slate-500 font-normal">({accounts.length} compte{accounts.length !== 1 ? "s" : ""})</span>
+          </span>
+        </button>
+        {planComptableOpen && (
+          <div className="px-5 pb-5 border-t border-[var(--app-border)]">
+            {showAddAccount && (
+              <form onSubmit={handleAddAccount} className="mt-4 mb-4 p-4 bg-slate-50 rounded-lg border border-[var(--app-border)] space-y-3 max-w-lg">
+                <h4 className="font-medium text-slate-900">Nouveau compte</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Code</label>
+                    <input
+                      type="text"
+                      value={addAccountForm.code}
+                      onChange={(e) => setAddAccountForm((f) => ({ ...f, code: e.target.value }))}
+                      onBlur={() => fetchSuggestType(addAccountForm.code)}
+                      placeholder="ex. 512000"
+                      className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 font-mono text-sm"
+                      required
+                    />
+                    {suggestingType && <span className="text-xs text-slate-500">Suggestion en cours...</span>}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Libellé</label>
+                    <input
+                      type="text"
+                      value={addAccountForm.label}
+                      onChange={(e) => setAddAccountForm((f) => ({ ...f, label: e.target.value }))}
+                      placeholder="ex. Banque"
+                      className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Type</label>
+                    <select
+                      value={addAccountForm.type}
+                      onChange={(e) => setAddAccountForm((f) => ({ ...f, type: e.target.value }))}
+                      className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm"
+                    >
+                      <option value="ACTIF">Actif (bilan)</option>
+                      <option value="PASSIF">Passif (bilan)</option>
+                      <option value="CHARGE">Charge (résultat)</option>
+                      <option value="PRODUIT">Produit (résultat)</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button type="submit" disabled={savingAddAccount} className="app-btn-primary disabled:opacity-60 text-sm">{savingAddAccount ? "Enregistrement..." : "Enregistrer"}</button>
+                  <button type="button" onClick={() => setShowAddAccount(false)} className="app-btn-secondary text-sm">Annuler</button>
+                </div>
+                {error && <p className="text-sm text-red-600">{error}</p>}
+              </form>
+            )}
+            {!showAddAccount && (
+              <div className="mt-4 flex justify-start">
+                <button type="button" onClick={() => { setShowAddAccount(true); setAddAccountForm({ code: "", label: "", type: "CHARGE" }); setError(""); }} className="app-btn-primary text-sm">Ajouter un compte</button>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Libellé</label>
-                <input
-                  type="text"
-                  value={addAccountForm.label}
-                  onChange={(e) => setAddAccountForm((f) => ({ ...f, label: e.target.value }))}
-                  placeholder="ex. Banque"
-                  className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Type</label>
-                <select
-                  value={addAccountForm.type}
-                  onChange={(e) => setAddAccountForm((f) => ({ ...f, type: e.target.value }))}
-                  className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm"
-                >
-                  <option value="ACTIF">Actif (bilan)</option>
-                  <option value="PASSIF">Passif (bilan)</option>
-                  <option value="CHARGE">Charge (résultat)</option>
-                  <option value="PRODUIT">Produit (résultat)</option>
-                </select>
-              </div>
+            )}
+            <div className="overflow-x-auto mt-4">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 border-b border-[var(--app-border)]">
+                  <tr>
+                    <th className="px-3 py-2 font-medium text-slate-900 text-left">Code</th>
+                    <th className="px-3 py-2 font-medium text-slate-900 text-left">Libellé</th>
+                    <th className="px-3 py-2 font-medium text-slate-900 text-left">Type</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {accounts.map((a) => (
+                    <tr key={a.id} className="border-b border-[var(--app-border)]">
+                      <td className="px-3 py-2 font-mono text-slate-700">{a.code}</td>
+                      <td className="px-3 py-2 text-slate-900">{a.label}</td>
+                      <td className="px-3 py-2 text-slate-600">{a.type}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <div className="flex gap-2">
-              <button type="submit" disabled={savingAddAccount} className="app-btn-primary disabled:opacity-60 text-sm">{savingAddAccount ? "Enregistrement..." : "Enregistrer"}</button>
-              <button type="button" onClick={() => setShowAddAccount(false)} className="app-btn-secondary text-sm">Annuler</button>
-            </div>
-            {error && <p className="text-sm text-red-600">{error}</p>}
-          </form>
+          </div>
         )}
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-[var(--app-border)]">
-              <tr>
-                <th className="px-3 py-2 font-medium text-slate-900 text-left">Code</th>
-                <th className="px-3 py-2 font-medium text-slate-900 text-left">Libellé</th>
-                <th className="px-3 py-2 font-medium text-slate-900 text-left">Type</th>
-              </tr>
-            </thead>
-            <tbody>
-              {accounts.map((a) => (
-                <tr key={a.id} className="border-b border-[var(--app-border)]">
-                  <td className="px-3 py-2 font-mono text-slate-700">{a.code}</td>
-                  <td className="px-3 py-2 text-slate-900">{a.label}</td>
-                  <td className="px-3 py-2 text-slate-600">{a.type}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       </div>
     </div>
   );

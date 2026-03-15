@@ -670,9 +670,6 @@ export default function GradesPage() {
         <>
           <div className="p-5 rounded-xl border border-[var(--app-border)] bg-white">
             <h3 className="font-semibold text-slate-900 mb-4">Seuils de décision de fin d&apos;année (hors préscolaire)</h3>
-            <p className="text-sm text-slate-600 mb-4">
-              Définissez la moyenne générale minimale pour chaque décision. La décision attribuée à l&apos;élève (sur la fiche et en formation de classe) est calculée automatiquement à partir de sa moyenne sur toutes les périodes. En dessous du seuil « Ajourné » = Renvoyé définitivement.
-            </p>
             <form onSubmit={handleSaveThreshold} className="space-y-4 mb-4">
               <div className="flex flex-wrap gap-4 items-end">
                 <div>
@@ -849,9 +846,7 @@ export default function GradesPage() {
 
           <div className="p-5 rounded-xl border border-[var(--app-border)] bg-white">
             <h3 className="font-semibold text-slate-900 mb-4">Définir les coefficients (hors préscolaire)</h3>
-            <p className="text-sm text-slate-600 mb-4">
-              Attribuez un coefficient à chaque matière par classe. Ce coefficient s&apos;applique à toutes les périodes et sera utilisé automatiquement lors de la saisie des notes.
-            </p>
+            
             <form onSubmit={handleSaveCoefficient} className="flex flex-wrap gap-4 items-end mb-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Année académique</label>

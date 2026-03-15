@@ -154,7 +154,6 @@ export default function DepensesPage() {
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-slate-900">Dépenses</h2>
-      <p className="text-slate-600 text-sm">Enregistrez les dépenses et indiquez si elles sont imputées à la trésorerie générale ou à une activité parascolaire.</p>
 
       {error && <div className="p-3 rounded-lg bg-red-50 text-red-600 text-sm">{error}</div>}
 

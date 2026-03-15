@@ -29,6 +29,10 @@ export class ClassFee {
   @Column({ type: 'decimal', precision: 12, scale: 2 })
   amount: string;
 
+  /** Date d'échéance de paiement pour ce service (classe, année). Affichée aux parents sur la fiche élève. */
+  @Column({ type: 'date', nullable: true })
+  due_date: Date | null;
+
   @Column({ type: 'text', nullable: true })
   detail: string;
 

@@ -59,9 +59,11 @@ export class EconomatController {
     class_id: string;
     service_id: string;
     amount: number;
+    due_date?: string | null;
     detail?: string;
   }) {
     const cf = await this.economatService.createClassFee(body);
+    const dueDateStr = cf.due_date ? (typeof cf.due_date === 'string' ? cf.due_date : (cf.due_date as Date).toISOString().slice(0, 10)) : null;
     return {
       ok: true,
       class_fee: {
@@ -70,6 +72,7 @@ export class EconomatController {
         class_id: cf.class?.id ?? (cf as any).classId,
         service_id: cf.service?.id ?? (cf as any).serviceId,
         amount: Number(cf.amount),
+        due_date: dueDateStr,
         detail: cf.detail,
         created_at: cf.created_at,
       },
@@ -79,7 +82,7 @@ export class EconomatController {
   @Patch('class-fees/:id')
   @UseGuards(RolesGuard)
   @Roles('SUPER_ADMIN', 'DIRECTEUR_GENERAL', 'SCHOOL_ADMIN')
-  async updateClassFee(@Param('id') id: string, @Body() body: Partial<{ amount: number; detail: string }>) {
+  async updateClassFee(@Param('id') id: string, @Body() body: Partial<{ amount: number; due_date: string | null; detail: string }>) {
     const cf = await this.economatService.updateClassFee(id, body);
     return { ok: true, class_fee: cf };
   }

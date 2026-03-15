@@ -52,6 +52,7 @@ type PaymentByService = {
   amount_due: number;
   total_paid: number;
   balance: number;
+  due_date?: string | null;
 };
 
 type PaymentStatus = {
@@ -564,12 +565,14 @@ export default function FicheElevePage() {
                       subtitle: payment.academic_year,
                       columns: [
                         { header: "Service", key: "service_name" },
-                        { header: "Dû", key: "amount_due" },
-                        { header: "Payé", key: "total_paid" },
-                        { header: "Solde", key: "balance" },
+                        { header: "Échéance", key: "due_date" },
+                        { header: "Montant", key: "amount_due" },
+                        { header: "Versement", key: "total_paid" },
+                        { header: "Balance", key: "balance" },
                       ],
                       rows: payment.by_service.map((svc) => ({
                         service_name: svc.service_name,
+                        due_date: svc.due_date ? formatDateJJMMAAAA(svc.due_date) : "—",
                         amount_due: String(svc.amount_due),
                         total_paid: String(svc.total_paid),
                         balance: String(svc.balance),
@@ -596,19 +599,44 @@ export default function FicheElevePage() {
               <div className="p-4">
                 {payment && payment.by_service?.length > 0 ? (
                   <div className="space-y-3">
-                    {payment.by_service.map((svc) => (
-                      <div key={svc.service_id} className="flex justify-between items-center text-sm">
-                        <span className="font-medium text-slate-700">{svc.service_name}</span>
-                        <div className="text-right">
-                          <span className="text-slate-600">Dû : {svc.amount_due}</span>
-                          <span className="mx-2 text-slate-400">|</span>
-                          <span className="text-slate-600">Payé : {svc.total_paid}</span>
-                          <span className={`ml-2 font-semibold ${svc.balance > 0 ? "text-amber-600" : "text-green-600"}`}>
-                            Solde : {svc.balance}
-                          </span>
+                    {payment.by_service.map((svc) => {
+                      const today = new Date();
+                      today.setHours(0, 0, 0, 0);
+                      const dueDate = svc.due_date ? new Date(svc.due_date) : null;
+                      if (dueDate) dueDate.setHours(0, 0, 0, 0);
+                      const isPaid = svc.balance <= 0;
+                      const isOverdue = !isPaid && dueDate && dueDate < today;
+                      const isDueSoon = !isPaid && dueDate && dueDate >= today && (dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24) <= 14;
+                      const statusBg = isPaid ? "bg-emerald-50 border-emerald-200" : isOverdue ? "bg-red-50 border-red-200" : isDueSoon ? "bg-amber-50 border-amber-200" : "bg-slate-50 border-slate-200";
+                      const statusLabel = isPaid ? "Payé" : isOverdue ? "En retard" : isDueSoon ? "À payer bientôt" : "À payer";
+                      const statusColor = isPaid ? "text-emerald-700" : isOverdue ? "text-red-700" : isDueSoon ? "text-amber-700" : "text-slate-700";
+                      return (
+                        <div key={svc.service_id} className={`flex flex-wrap justify-between items-center text-sm p-3 rounded-lg border ${statusBg}`}>
+                          <div>
+                            <span className="font-medium text-slate-900">{svc.service_name}</span>
+                            <p className={`text-xs mt-0.5 ${statusColor}`}>
+                              <span className="font-semibold">{statusLabel}</span>
+                              {svc.due_date && (
+                                <>
+                                  <br />
+                                  Délaie : {formatDateJJMMAAAA(svc.due_date)}
+                                </>
+                              )}
+                            </p>
+                          </div>
+                          <div className="text-right mt-1 sm:mt-0 text-sm">
+                            <div className="text-slate-700">Montant : {svc.amount_due.toLocaleString("fr-FR")}</div>
+                            <div className="mt-1 text-slate-600">
+                              Versement : {svc.total_paid.toLocaleString("fr-FR")}
+                              <span className="mx-2 text-slate-400">|</span>
+                              <span className={svc.balance > 0 ? "font-semibold text-amber-600" : "font-semibold text-emerald-600"}>
+                                Balance : {svc.balance.toLocaleString("fr-FR")}
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <p className="text-slate-500 text-sm">Aucune donnée de paiement pour cette année.</p>

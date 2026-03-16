@@ -161,6 +161,15 @@ export function canAccessSchoolProfile(roleName: string): boolean {
   return ROLES_FULL.includes(roleName);
 }
 
+/** Statistiques sensibles (nombre d'élèves, classes, professeurs) : uniquement directeurs et superadmin. */
+export function canSeeSensitiveDashboardStats(
+  roleName: string,
+  rolePermissions?: string[]
+): boolean {
+  if (rolePermissions?.length && rolePermissions.includes("full_access")) return true;
+  return ROLES_FULL.includes(roleName);
+}
+
 /**
  * Rôles "moniteur" : uniquement le tableau de bord avec bloc Profil / Moniteur
  * (pas d’accès aux menus de gestion : classes, élèves, professeurs, etc.).

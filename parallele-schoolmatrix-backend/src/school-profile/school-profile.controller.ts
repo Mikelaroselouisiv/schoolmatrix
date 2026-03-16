@@ -1,6 +1,8 @@
 import { Controller, Get, Patch, Body, UseGuards } from '@nestjs/common';
 import { SchoolProfileService } from './school-profile.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 
 @Controller('school')
 export class SchoolProfileController {
@@ -32,6 +34,15 @@ export class SchoolProfileController {
   async getCurrentContext() {
     const ctx = await this.schoolProfileService.getCurrentContext();
     return { ok: true, ...ctx };
+  }
+
+  /** Statistiques sensibles : uniquement directeurs et superadmin. */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPER_ADMIN', 'DIRECTEUR_GENERAL', 'SCHOOL_ADMIN')
+  @Get('dashboard-stats')
+  async getDashboardStats() {
+    const stats = await this.schoolProfileService.getDashboardStats();
+    return { ok: true, ...stats };
   }
 
   @UseGuards(JwtAuthGuard)

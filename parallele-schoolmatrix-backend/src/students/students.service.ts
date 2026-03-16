@@ -1,9 +1,16 @@
-import { Injectable, NotFoundException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Student } from './student.entity';
 import { Class } from '../classes/class.entity';
 import { FormationClasseService } from '../formation-classe/formation-classe.service';
+import { ClassesService } from '../classes/classes.service';
+
+export type ImportResult = {
+  created: number;
+  skipped: number;
+  errors: { row: number; message: string }[];
+};
 
 @Injectable()
 export class StudentsService {
@@ -12,29 +19,8 @@ export class StudentsService {
     private readonly studentRepo: Repository<Student>,
     @Inject(forwardRef(() => FormationClasseService))
     private readonly formationClasseService: FormationClasseService,
+    private readonly classesService: ClassesService,
   ) {}
-
-  private randomLetter(): string {
-    return 'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.floor(Math.random() * 24)];
-  }
-
-  private randomDigit(): string {
-    return String(Math.floor(Math.random() * 10));
-  }
-
-  /** Génère un numéro de dossier unique : 2 lettres + 6 chiffres (ex: KJ482917) */
-  private async generateDossierNumber(excludeStudentId?: string): Promise<string> {
-    const letters = Array.from({ length: 2 }, () => this.randomLetter()).join('');
-    const digits = Array.from({ length: 6 }, () => this.randomDigit()).join('');
-    const candidate = `${letters}${digits}`;
-    const qb = this.studentRepo.createQueryBuilder('s').where('s.order_number = :candidate', { candidate });
-    if (excludeStudentId) {
-      qb.andWhere('s.id != :excludeId', { excludeId: excludeStudentId });
-    }
-    const exists = await qb.getOne();
-    if (exists) return this.generateDossierNumber(excludeStudentId);
-    return candidate;
-  }
 
   async findAll(classId?: string): Promise<Student[]> {
     const qb = this.studentRepo
@@ -63,6 +49,7 @@ export class StudentsService {
     first_name: string;
     last_name: string;
     class_id: string;
+    order_number: string;
     academic_year_id?: string;
     email?: string;
     phone?: string;
@@ -81,9 +68,16 @@ export class StudentsService {
     responsible_name?: string;
     responsible_phone?: string;
   }): Promise<Student> {
-    const order_number = await this.generateDossierNumber();
+    const raw = (params.order_number ?? '').trim();
+    if (!raw) {
+      throw new BadRequestException('L\'identifiant élève (numéro ministère) est obligatoire.');
+    }
+    const existing = await this.studentRepo.findOne({ where: { order_number: raw } });
+    if (existing) {
+      throw new BadRequestException(`Un élève avec l'identifiant « ${raw} » existe déjà.`);
+    }
     const student = this.studentRepo.create({
-      order_number,
+      order_number: raw,
       first_name: params.first_name.trim(),
       last_name: params.last_name.trim(),
       email: params.email?.trim(),
@@ -123,6 +117,7 @@ export class StudentsService {
       first_name: string;
       last_name: string;
       class_id: string;
+      order_number: string;
       email: string;
       phone: string;
       address: string;
@@ -149,8 +144,17 @@ export class StudentsService {
     if (!student) {
       throw new NotFoundException('Student not found');
     }
-    if (!student.order_number || !student.order_number.trim()) {
-      student.order_number = await this.generateDossierNumber(student.id);
+    if (params.order_number !== undefined) {
+      const raw = params.order_number.trim();
+      if (raw) {
+        const existing = await this.studentRepo.findOne({ where: { order_number: raw } });
+        if (existing && existing.id !== id) {
+          throw new BadRequestException(`Un élève avec l'identifiant « ${raw} » existe déjà.`);
+        }
+        student.order_number = raw;
+      } else {
+        student.order_number = null;
+      }
     }
     if (params.first_name !== undefined) student.first_name = params.first_name.trim();
     if (params.last_name !== undefined) student.last_name = params.last_name.trim();
@@ -203,16 +207,13 @@ export class StudentsService {
     return this.studentRepo.save(student);
   }
 
-  async regenerateOrderNumber(id: string): Promise<Student> {
-    const student = await this.studentRepo.findOne({
-      where: { id },
+  async findByOrderNumber(orderNumber: string): Promise<Student | null> {
+    const raw = (orderNumber ?? '').trim();
+    if (!raw) return null;
+    return this.studentRepo.findOne({
+      where: { order_number: raw },
       relations: ['class'],
     });
-    if (!student) {
-      throw new NotFoundException('Student not found');
-    }
-    student.order_number = await this.generateDossierNumber(id);
-    return this.studentRepo.save(student);
   }
 
   async delete(id: string): Promise<void> {
@@ -221,5 +222,103 @@ export class StudentsService {
       throw new NotFoundException('Student not found');
     }
     await this.studentRepo.remove(student);
+  }
+
+  /** Import en masse depuis un CSV (UTF-8, séparateur ;). Première ligne = en-têtes. */
+  async importFromCsv(csvContent: string, academicYearId: string): Promise<ImportResult> {
+    const result: ImportResult = { created: 0, skipped: 0, errors: [] };
+    const lines = csvContent.split(/\r?\n/).map((line) => line.split(';').map((cell) => cell.trim()));
+    if (lines.length < 2) {
+      result.errors.push({ row: 0, message: 'Fichier vide ou une seule ligne (en-têtes requis).' });
+      return result;
+    }
+    const headerRow = lines[0].map((h) => h.toLowerCase().replace(/\s+/g, '_').normalize('NFD').replace(/\p{Diacritic}/gu, ''));
+    const idx = (names: string[]) => {
+      const i = headerRow.findIndex((h) => names.some((n) => h === n || h.includes(n)));
+      return i >= 0 ? i : -1;
+    };
+    const iOrder = idx(['identifiant', 'order_number', 'numero_ministere', 'numero']);
+    const iPrenom = idx(['prenom', 'first_name']);
+    const iNom = idx(['nom', 'last_name']);
+    const iClasse = idx(['classe', 'class']);
+    if (iOrder < 0 || iPrenom < 0 || iNom < 0 || iClasse < 0) {
+      result.errors.push({
+        row: 0,
+        message: 'En-têtes requis : Identifiant (ou N° ministère), Prénom, Nom, Classe. Voir le modèle.',
+      });
+      return result;
+    }
+    const iDate = idx(['date_naissance', 'date_naissance', 'birth_date', 'date']);
+    const iGenre = idx(['genre', 'gender']);
+    const iTel = idx(['telephone', 'tel', 'phone']);
+    const iEmail = idx(['email']);
+    const iNomMere = idx(['nom_mere', 'mere', 'mother_name']);
+    const iTelMere = idx(['tel_mere', 'telephone_mere']);
+    const iNomPere = idx(['nom_pere', 'pere', 'father_name']);
+    const iTelPere = idx(['tel_pere', 'telephone_pere']);
+
+    const allClasses = await this.classesService.findAll();
+    const classByName = new Map<string, string>(allClasses.map((c) => [c.name.trim(), c.id]));
+
+    for (let r = 1; r < lines.length; r++) {
+      const row = lines[r];
+      const rowNum = r + 1;
+      const get = (i: number) => (i >= 0 && i < row.length ? (row[i] ?? '').trim() : '');
+      const orderNumber = get(iOrder);
+      const first_name = get(iPrenom);
+      const last_name = get(iNom);
+      const className = get(iClasse);
+      if (!orderNumber) {
+        result.errors.push({ row: rowNum, message: 'Identifiant (n° ministère) manquant.' });
+        continue;
+      }
+      if (!first_name || !last_name) {
+        result.errors.push({ row: rowNum, message: 'Prénom et nom obligatoires.' });
+        continue;
+      }
+      if (!className) {
+        result.errors.push({ row: rowNum, message: 'Classe manquante.' });
+        continue;
+      }
+      const classId = classByName.get(className);
+      if (!classId) {
+        result.errors.push({ row: rowNum, message: `Classe « ${className} » introuvable. Créez-la d'abord.` });
+        continue;
+      }
+      const existing = await this.studentRepo.findOne({ where: { order_number: orderNumber } });
+      if (existing) {
+        result.skipped++;
+        continue;
+      }
+      const birth_date = get(iDate);
+      const gender = get(iGenre);
+      const phone = get(iTel);
+      const email = get(iEmail);
+      const mother_name = get(iNomMere);
+      const mother_phone = get(iTelMere);
+      const father_name = get(iNomPere);
+      const father_phone = get(iTelPere);
+      try {
+        await this.create({
+          order_number: orderNumber,
+          first_name,
+          last_name,
+          class_id: classId,
+          academic_year_id: academicYearId,
+          birth_date: birth_date && /^\d{4}-\d{2}-\d{2}$/.test(birth_date) ? birth_date : undefined,
+          gender: gender || undefined,
+          phone: phone || undefined,
+          email: email || undefined,
+          mother_name: mother_name || undefined,
+          mother_phone: mother_phone || undefined,
+          father_name: father_name || undefined,
+          father_phone: father_phone || undefined,
+        });
+        result.created++;
+      } catch (err: any) {
+        result.errors.push({ row: rowNum, message: err?.message || 'Erreur à l\'enregistrement.' });
+      }
+    }
+    return result;
   }
 }

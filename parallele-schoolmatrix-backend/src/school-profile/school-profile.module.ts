@@ -5,9 +5,23 @@ import { SchoolProfileService } from './school-profile.service';
 import { SchoolProfileController } from './school-profile.controller';
 import { AcademicYear } from '../academic-year/academic-year.entity';
 import { Period } from '../period/period.entity';
+import { Class } from '../classes/class.entity';
+import { Student } from '../students/student.entity';
+import { User } from '../users/user.entity';
+import { Role } from '../roles/role.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([SchoolProfile, AcademicYear, Period])],
+  imports: [
+    TypeOrmModule.forFeature([
+      SchoolProfile,
+      AcademicYear,
+      Period,
+      Class,
+      Student,
+      User,
+      Role,
+    ]),
+  ],
   controllers: [SchoolProfileController],
   providers: [SchoolProfileService],
   exports: [SchoolProfileService],

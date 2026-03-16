@@ -44,6 +44,8 @@ export default function UsersPage() {
   const [studentFilterClass, setStudentFilterClass] = useState("");
   const [students, setStudents] = useState<StudentOption[]>([]);
   const [studentsLoading, setStudentsLoading] = useState(false);
+  const [linkByOrderNumberInput, setLinkByOrderNumberInput] = useState("");
+  const [linkByOrderNumberLoading, setLinkByOrderNumberLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [resetPwdUser, setResetPwdUser] = useState<User | null>(null);
   const [newPassword, setNewPassword] = useState("");
@@ -118,6 +120,32 @@ export default function UsersPage() {
   useEffect(() => {
     loadFilteredStudents();
   }, [studentFilterYear, studentFilterClass, classes]);
+
+  async function addLinkedStudentByOrderNumber() {
+    const raw = linkByOrderNumberInput.trim();
+    if (!raw) return;
+    setLinkByOrderNumberLoading(true);
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/students/by-order-number/${encodeURIComponent(raw)}`);
+      const data = await res.json();
+      if (!data.ok || !data.student) {
+        setError(`Aucun élève trouvé avec l'identifiant « ${raw} ».`);
+        return;
+      }
+      const id = data.student.id;
+      if (linked_student_ids.includes(id)) {
+        setError("Cet élève est déjà lié à ce compte.");
+        return;
+      }
+      setLinked_student_ids((prev) => [...prev, id]);
+      setLinkByOrderNumberInput("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setLinkByOrderNumberLoading(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -489,6 +517,28 @@ export default function UsersPage() {
           </div>
           <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Dossiers élèves liés</label>
+              <p className="text-xs text-slate-500 mb-2">Le parent pourra voir le dossier de ces élèves via « Fiche élève » sur la page d&apos;accueil.</p>
+              <div className="flex flex-wrap items-end gap-2 mb-3 p-2 rounded-lg bg-slate-50 border border-slate-200">
+                <div className="flex-1 min-w-[160px]">
+                  <label className="block text-xs text-slate-500 mb-0.5">Lier par identifiant (n° ministère)</label>
+                  <input
+                    type="text"
+                    value={linkByOrderNumberInput}
+                    onChange={(e) => setLinkByOrderNumberInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addLinkedStudentByOrderNumber())}
+                    placeholder="Numéro ministère de l'élève"
+                    className="w-full text-sm border border-[var(--app-border)] rounded-lg px-3 py-2 font-mono"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={addLinkedStudentByOrderNumber}
+                  disabled={!linkByOrderNumberInput.trim() || linkByOrderNumberLoading}
+                  className="app-btn-secondary text-sm py-2 disabled:opacity-50"
+                >
+                  {linkByOrderNumberLoading ? "..." : "Ajouter"}
+                </button>
+              </div>
               <div className="flex flex-wrap gap-3 mb-3">
                 <div>
                   <label className="block text-xs text-slate-500 mb-0.5">Année académique</label>

@@ -86,7 +86,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         style={{ background: "var(--app-bg-gradient)" }}
       >
         <div className="app-container flex items-center justify-between gap-4 py-4">
-          <div className="flex items-center gap-5">
+          <Link
+            href="/dashboard"
+            className="flex items-center gap-5 hover:opacity-90 transition-opacity min-w-0"
+            aria-label="Retour à l'accueil"
+          >
             <div className="app-header-logo flex-shrink-0">
               {getImageUrl(school?.logo_url ?? undefined) ? (
                 <img
@@ -100,40 +104,44 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
               )}
             </div>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 uppercase">
+            <div className="min-w-0">
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 uppercase truncate">
                 {school?.name ?? "Parallele SchoolMatrix"}
               </h1>
             </div>
-          </div>
+          </Link>
           <div className="flex items-center gap-3 flex-shrink-0">
             {user ? (
-              <>
-                <div className="text-right hidden sm:block">
-                  <div className="text-sm font-medium text-slate-900 leading-tight">
-                    {user.first_name?.trim() || "—"}
+              <div className="flex flex-col items-center gap-2">
+                <div className="flex flex-col items-center text-center">
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full overflow-hidden flex-shrink-0 border-2 border-slate-200 bg-slate-100 flex items-center justify-center">
+                    {getImageUrl(user.profile_photo_url ?? undefined) ? (
+                      <img
+                        src={getImageUrl(user.profile_photo_url ?? undefined)!}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-lg sm:text-xl font-semibold text-slate-500">
+                        {(user.first_name?.trim() || user.last_name?.trim() || "?").charAt(0).toUpperCase()}
+                      </span>
+                    )}
                   </div>
-                  <div className="text-sm font-medium text-slate-900 uppercase leading-tight">
-                    {user.last_name?.trim() || "—"}
+                  <div className="text-sm font-medium text-slate-900 leading-tight mt-1.5 whitespace-nowrap max-w-[140px] sm:max-w-[180px] truncate">
+                    {[user.first_name?.trim() || "—", (user.last_name?.trim() || "—").toUpperCase()].join(" ")}
                   </div>
                 </div>
-                <Link
-                  href="/"
-                  className="app-btn-secondary text-sm py-2"
-                >
-                  Accueil
-                </Link>
                 <button
                   type="button"
                   onClick={() => {
                     localStorage.removeItem("token");
                     window.location.href = "/login";
                   }}
-                  className="app-btn-secondary text-sm py-2"
+                  className="text-xs py-1.5 px-2.5 rounded border border-slate-300 text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
                 >
                   Déconnexion
                 </button>
-              </>
+              </div>
             ) : (
               <>
                 <Link href="/login" className="app-btn-secondary text-sm py-2">

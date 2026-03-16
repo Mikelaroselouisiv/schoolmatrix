@@ -28,6 +28,7 @@ type UserMe = {
   email: string;
   first_name?: string;
   last_name?: string;
+  profile_photo_url?: string | null;
   role?: { name: string } | string;
   role_permissions?: string[];
 };

@@ -4,6 +4,16 @@ import { Repository } from 'typeorm';
 import { SchoolProfile } from './school-profile.entity';
 import { AcademicYear } from '../academic-year/academic-year.entity';
 import { Period } from '../period/period.entity';
+import { Class } from '../classes/class.entity';
+import { Student } from '../students/student.entity';
+import { User } from '../users/user.entity';
+import { Role } from '../roles/role.entity';
+
+export type DashboardStats = {
+  classesCount: number;
+  studentsCount: number;
+  teachersCount: number;
+};
 
 export type CurrentContext = {
   current_academic_year_id: string | null;
@@ -21,6 +31,14 @@ export class SchoolProfileService {
     private readonly academicYearRepo: Repository<AcademicYear>,
     @InjectRepository(Period)
     private readonly periodRepo: Repository<Period>,
+    @InjectRepository(Class)
+    private readonly classRepo: Repository<Class>,
+    @InjectRepository(Student)
+    private readonly studentRepo: Repository<Student>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
+    @InjectRepository(Role)
+    private readonly roleRepo: Repository<Role>,
   ) {}
 
   async getProfile(): Promise<SchoolProfile | null> {
@@ -91,5 +109,21 @@ export class SchoolProfileService {
       current_period_id: periodId,
       current_period_name: periodName,
     };
+  }
+
+  /** Statistiques tableau de bord (réservé directeurs / superadmin). */
+  async getDashboardStats(): Promise<DashboardStats> {
+    const [classesCount, studentsCount, teacherRole] = await Promise.all([
+      this.classRepo.count(),
+      this.studentRepo.count(),
+      this.roleRepo.findOne({ where: { name: 'TEACHER' } }),
+    ]);
+    let teachersCount = 0;
+    if (teacherRole) {
+      teachersCount = await this.userRepo.count({
+        where: { role: { id: teacherRole.id }, active: true },
+      });
+    }
+    return { classesCount, studentsCount, teachersCount };
   }
 }

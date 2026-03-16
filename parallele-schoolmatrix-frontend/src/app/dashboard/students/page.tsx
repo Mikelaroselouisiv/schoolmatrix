@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { fetchWithAuth } from "@/src/lib/api";
 import { ImageUpload } from "@/src/components/ImageUpload";
@@ -51,8 +52,8 @@ export default function StudentsPage() {
   const [editing, setEditing] = useState<Student | null>(null);
   const [createdOrderNumber, setCreatedOrderNumber] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
   const [form, setForm] = useState({
+    order_number: "",
     first_name: "",
     last_name: "",
     class_id: "",
@@ -128,11 +129,16 @@ export default function StudentsPage() {
     e.preventDefault();
     if (!form.first_name.trim() || !form.last_name.trim() || !form.class_id) return;
     if (!editing && !form.academic_year_id) return;
+    if (!editing && !form.order_number.trim()) {
+      setError("L'identifiant élève (numéro ministère) est obligatoire.");
+      return;
+    }
     setSaving(true);
     setError("");
     setCreatedOrderNumber(null);
     try {
       const body = {
+        ...(form.order_number.trim() || editing ? { order_number: form.order_number.trim() || null } : {}),
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
         class_id: form.class_id,
@@ -161,9 +167,6 @@ export default function StudentsPage() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || "Erreur");
-        if (data.student?.order_number && !editing.order_number) {
-          setCreatedOrderNumber(data.student.order_number);
-        }
         setShowForm(false);
         setEditing(null);
         load();
@@ -174,30 +177,14 @@ export default function StudentsPage() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || "Erreur");
-        const orderNum = data.student?.order_number;
-        setCreatedOrderNumber(orderNum ?? null);
-        setForm({ first_name: "", last_name: "", class_id: "", academic_year_id: academicYears[0]?.id ?? "", email: "", phone: "", address: "", birth_date: "", birth_place: "", gender: "", photo_identity_student: "", photo_identity_mother: "", photo_identity_father: "", photo_identity_responsible: "", mother_name: "", mother_phone: "", father_name: "", father_phone: "", responsible_name: "", responsible_phone: "" });
+        setCreatedOrderNumber(data.student?.order_number ?? (form.order_number.trim() || null));
+        setForm({ order_number: "", first_name: "", last_name: "", class_id: "", academic_year_id: academicYears[0]?.id ?? "", email: "", phone: "", address: "", birth_date: "", birth_place: "", gender: "", photo_identity_student: "", photo_identity_mother: "", photo_identity_father: "", photo_identity_responsible: "", mother_name: "", mother_phone: "", father_name: "", father_phone: "", responsible_name: "", responsible_phone: "" });
         load();
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function handleRegenerateOrderNumber(id: string) {
-    setRegeneratingId(id);
-    setError("");
-    try {
-      const res = await fetchWithAuth(`${API_BASE}/students/${id}/regenerate-order-number`, { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Erreur");
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Erreur");
-    } finally {
-      setRegeneratingId(null);
     }
   }
 
@@ -219,6 +206,7 @@ export default function StudentsPage() {
   function openEdit(s: Student) {
     setEditing(s);
     setForm({
+      order_number: s.order_number ?? "",
       academic_year_id: "",
       first_name: s.first_name ?? "",
       last_name: s.last_name ?? "",
@@ -247,7 +235,7 @@ export default function StudentsPage() {
   function openCreate() {
     setEditing(null);
     const defaultYearId = academicYears.length > 0 ? academicYears[0].id : "";
-    setForm({ first_name: "", last_name: "", class_id: "", academic_year_id: defaultYearId, email: "", phone: "", address: "", birth_date: "", birth_place: "", gender: "", photo_identity_student: "", photo_identity_mother: "", photo_identity_father: "", photo_identity_responsible: "", mother_name: "", mother_phone: "", father_name: "", father_phone: "", responsible_name: "", responsible_phone: "" });
+    setForm({ order_number: "", first_name: "", last_name: "", class_id: "", academic_year_id: defaultYearId, email: "", phone: "", address: "", birth_date: "", birth_place: "", gender: "", photo_identity_student: "", photo_identity_mother: "", photo_identity_father: "", photo_identity_responsible: "", mother_name: "", mother_phone: "", father_name: "", father_phone: "", responsible_name: "", responsible_phone: "" });
     setShowForm(true);
     setCreatedOrderNumber(null);
   }
@@ -258,16 +246,21 @@ export default function StudentsPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h2 className="text-2xl font-bold text-slate-900">Inscription des élèves</h2>
-        <button onClick={openCreate} className="app-btn-primary">Inscrire un élève</button>
+        <div className="flex gap-2">
+          <Link href="/dashboard/students/import" className="app-btn-secondary">
+            Inscription d&apos;anciens élèves
+          </Link>
+          <button onClick={openCreate} className="app-btn-primary">Inscrire un élève</button>
+        </div>
       </div>
 
       {createdOrderNumber && (
         <div className="p-4 rounded-xl bg-green-50 border border-green-200">
           <p className="font-semibold text-green-800">Élève inscrit</p>
           <p className="text-green-700 mt-1">
-            Numéro d&apos;ordre : <span className="font-mono font-bold">{createdOrderNumber}</span>
+            Identifiant (n° ministère) : <span className="font-mono font-bold">{createdOrderNumber}</span>
           </p>
-          <p className="text-sm text-green-600 mt-1">Donnez ce numéro au parent pour qu&apos;il puisse accéder au dossier de son enfant.</p>
+          <p className="text-sm text-green-600 mt-1">Utilisez ce numéro pour lier le compte parent à cet élève dans Gestion Utilisateurs (élèves liés). Le parent pourra alors voir le dossier de son enfant depuis la page d&apos;accueil.</p>
         </div>
       )}
 
@@ -300,6 +293,23 @@ export default function StudentsPage() {
               <label className="block text-sm font-medium text-slate-700 mb-1">Nom *</label>
               <input type="text" value={form.last_name} onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2" required />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Identifiant élève (numéro ministère) {!editing && "*"}
+            </label>
+            <input
+              type="text"
+              value={form.order_number}
+              onChange={(e) => setForm((f) => ({ ...f, order_number: e.target.value }))}
+              placeholder="Numéro attribué par le ministère de l'éducation"
+              className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 font-mono"
+              required={!editing}
+            />
+            {editing && (
+              <p className="text-xs text-slate-500 mt-1">Ce numéro sert à identifier l&apos;élève et à lier le compte parent pour « Voir mon élève ».</p>
+            )}
           </div>
 
           {!editing && (
@@ -399,7 +409,7 @@ export default function StudentsPage() {
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 border-b border-[var(--app-border)]">
             <tr>
-              <th className="px-4 py-3 font-medium text-slate-900">N° dossier</th>
+              <th className="px-4 py-3 font-medium text-slate-900">Identifiant (n° ministère)</th>
               <th className="px-4 py-3 font-medium text-slate-900">Nom</th>
               <th className="px-4 py-3 font-medium text-slate-900">Classe</th>
               <th className="px-4 py-3 font-medium text-slate-900">Téléphone</th>
@@ -420,9 +430,6 @@ export default function StudentsPage() {
                   <td className="px-4 py-3 text-slate-600">{[s.mother_name, s.father_name].filter(Boolean).join(" / ") || "—"}</td>
                   <td className="px-4 py-3 flex gap-2 flex-wrap">
                     <button onClick={() => openEdit(s)} className="text-[var(--school-accent-1)] hover:underline text-xs">Modifier</button>
-                    {roleName === "SUPER_ADMIN" && (
-                      <button onClick={() => handleRegenerateOrderNumber(s.id)} disabled={!!regeneratingId} className="text-amber-600 hover:underline text-xs disabled:opacity-50">{regeneratingId === s.id ? "..." : "Renuméroter"}</button>
-                    )}
                     <button onClick={() => handleDelete(s.id)} className="text-red-600 hover:underline text-xs">Supprimer</button>
                   </td>
                 </tr>

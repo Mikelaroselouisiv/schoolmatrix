@@ -117,7 +117,7 @@ export class StudentsController {
   @Post('import')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024 } }))
   async importCsv(
-    @UploadedFile() file: Express.Multer.File & { buffer?: Buffer },
+    @UploadedFile() file: { buffer?: Buffer; path?: string },
     @Body('academic_year_id') academicYearId: string,
   ) {
     if (!file) {
@@ -129,9 +129,9 @@ export class StudentsController {
     let csvContent: string;
     if (file.buffer) {
       csvContent = file.buffer.toString('utf-8');
-    } else if ((file as any).path) {
+    } else if (file.path) {
       const fs = require('fs');
-      csvContent = fs.readFileSync((file as any).path, 'utf-8');
+      csvContent = fs.readFileSync(file.path, 'utf-8');
     } else {
       throw new BadRequestException('Fichier CSV invalide.');
     }

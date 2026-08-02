@@ -1,10 +1,10 @@
-{
+﻿{
   "appId": "com.parallele.schoolmatrix.desktop.remote",
   "productName": "Parallele SchoolMatrix Remote",
   "artifactName": "Parallele-SchoolMatrix-Remote-${version}.${ext}",
   "copyright": "Copyright © 2026 Parallele SchoolMatrix",
   "directories": {
-    "output": "release",
+    "output": "release-out",
     "buildResources": "build"
   },
   "files": [

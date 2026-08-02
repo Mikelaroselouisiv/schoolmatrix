@@ -1,10 +1,10 @@
-{
+﻿{
   "appId": "com.parallele.schoolmatrix.desktop.server",
   "productName": "Parallele SchoolMatrix Server",
   "artifactName": "Parallele-SchoolMatrix-Server-${version}.${ext}",
   "copyright": "Copyright © 2026 Parallele SchoolMatrix",
   "directories": {
-    "output": "release",
+    "output": "release-server",
     "buildResources": "build"
   },
   "files": [
@@ -49,3 +49,4 @@
     "installerHeaderIcon": "build/icon.ico"
   }
 }
+

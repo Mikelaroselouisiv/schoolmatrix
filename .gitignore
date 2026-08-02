@@ -42,6 +42,7 @@ secrets/
 # Desktop build artifacts
 apps/desktop/next-runtime/
 apps/desktop/release/
+apps/desktop/release-out/
 apps/desktop/server-stack/images/*.tar
 apps/desktop/server-stack/defaults.env
 apps/desktop/server-stack/.env.server
@@ -51,4 +52,7 @@ apps/desktop/dist/
 
 # Installateurs locaux (binaires)
 /release/
+
+
+apps/desktop/release-server/
 

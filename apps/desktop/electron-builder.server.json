@@ -1,4 +1,4 @@
-﻿{
+{
   "appId": "com.parallele.schoolmatrix.desktop.server",
   "productName": "Parallele SchoolMatrix Server",
   "artifactName": "Parallele-SchoolMatrix-Server-${version}.${ext}",

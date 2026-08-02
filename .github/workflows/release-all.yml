@@ -1,0 +1,112 @@
+# Une seule entrée pour tout livrer : backend GCP + installateurs Remote/Server GCS.
+# Déclenché par :
+#   - workflow_dispatch (Actions → Release all)
+#   - tag release-v* (ex. release-v1.0.1)
+#
+# Pour desktop seul : workflow Desktop - release to GCS / tag desktop-v*
+# Pour backend seul : workflow Backend - build and push to GCP
+
+name: Release all
+
+on:
+  workflow_dispatch:
+    inputs:
+      desktop_edition:
+        description: "Desktop à publier"
+        required: true
+        default: both
+        type: choice
+        options: [both, remote, server, none]
+      deploy_backend:
+        description: "Déployer le backend sur la VM GCP"
+        required: true
+        default: true
+        type: boolean
+  push:
+    tags:
+      - "release-v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      editions: ${{ steps.set.outputs.editions }}
+      backend: ${{ steps.set.outputs.backend }}
+    steps:
+      - id: set
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            case "${{ github.event.inputs.desktop_edition }}" in
+              remote) echo 'editions=["remote"]' >> "$GITHUB_OUTPUT" ;;
+              server) echo 'editions=["server"]' >> "$GITHUB_OUTPUT" ;;
+              none)   echo 'editions=[]' >> "$GITHUB_OUTPUT" ;;
+              *)      echo 'editions=["remote","server"]' >> "$GITHUB_OUTPUT" ;;
+            esac
+            if [ "${{ github.event.inputs.deploy_backend }}" = "true" ]; then
+              echo "backend=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "backend=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo 'editions=["remote","server"]' >> "$GITHUB_OUTPUT"
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  backend:
+    needs: prepare
+    if: needs.prepare.outputs.backend == 'true'
+    uses: ./.github/workflows/backend-gcp.yml
+    secrets: inherit
+
+  desktop:
+    needs: prepare
+    if: needs.prepare.outputs.editions != '[]'
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        edition: ${{ fromJSON(needs.prepare.outputs.editions) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Install desktop deps
+        working-directory: apps/desktop
+        run: npm ci
+
+      - name: Configure Docker (server edition)
+        if: matrix.edition == 'server'
+        run: gcloud auth configure-docker northamerica-northeast1-docker.pkg.dev --quiet
+
+      - name: Build installer
+        working-directory: apps/desktop
+        shell: pwsh
+        run: |
+          if ("${{ matrix.edition }}" -eq "server") {
+            npm run dist:win:server
+          } else {
+            npm run dist:win:remote
+          }
+
+      - name: Upload to GCS
+        shell: pwsh
+        run: |
+          & ./infra/scripts/upload-desktop-installer.ps1 -Edition "${{ matrix.edition }}"

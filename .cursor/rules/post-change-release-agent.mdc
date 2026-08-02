@@ -1,0 +1,16 @@
+---
+description: Après modifications SchoolMatrix — ship-all (GitHub + GCP + installateurs MAJ)
+alwaysApply: true
+---
+
+# Agent post-modification — SchoolMatrix
+
+Quand l’utilisateur a **fini** des changements et demande de livrer / pousser / publier / mettre à jour partout, exécuter le skill `.cursor/skills/post-change-release/SKILL.md` et préférer :
+
+```powershell
+powershell -ExecutionPolicy Bypass -File infra/scripts/ship-all.ps1 -Bump patch -Commit
+```
+
+- Remote git : **origin** (`schoolmatrix`)
+- GCP : **parallele-schoolmatrix** seulement
+- Desktop Remote + Server : même version dans `apps/desktop/package.json` → feeds GCS → notifications de MAJ

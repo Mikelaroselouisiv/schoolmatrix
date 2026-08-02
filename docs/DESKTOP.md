@@ -54,6 +54,16 @@ Sortie : `apps/desktop/release/`.
 
 Les scripts packagent `dist/**` (renderer Vite) + `src/main/**`. L’édition Server embarque aussi `server-stack/` (images Docker + compose). Aucun `next-runtime` n’est embarqué.
 
+## Livraison (après développement)
+
+Une commande pour GitHub + backend GCP + installateurs (notifications MAJ) :
+
+```powershell
+powershell -ExecutionPolicy Bypass -File infra/scripts/ship-all.ps1 -Bump patch -Commit
+```
+
+Voir [RELEASE.md](./RELEASE.md).
+
 ## Mises à jour (notification → téléchargement → install)
 
 Les apps **installées** (Remote et Server) vérifient le feed GCS au démarrage (~8 s) puis toutes les 4 h.

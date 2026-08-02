@@ -15,6 +15,7 @@ on:
       - "infra/scripts/gcp-deploy-remote.sh"
       - ".github/workflows/backend-gcp.yml"
   workflow_dispatch:
+  workflow_call:
 
 env:
   GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}

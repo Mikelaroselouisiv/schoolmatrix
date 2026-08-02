@@ -13,6 +13,18 @@ Le produit desktop est **entièrement dans** `apps/desktop` (modèle Israel) :
 | **Server** | `http://127.0.0.1:3000` (+ stack Docker / sync-agent) |
 | **Remote** | `http://34.95.43.132` |
 
+### Machine Server (comme Israel)
+
+Après install de l’exe **Server**, **lancer l’app une fois**. Au premier lancement elle :
+
+1. Copie `server-stack` → `C:\ProgramData\Parallele SchoolMatrix\server-stack`
+2. Installe Docker Desktop si besoin (winget)
+3. Charge les images `.tar` (Postgres + backend + sync-agent)
+4. `docker compose up` (projet `schoolmatrix-server`)
+5. Crée une tâche planifiée pour remonter la stack à l’ouverture de session
+
+Docker reste vide tant que l’app Server n’a pas été ouverte (l’installeur NSIS n’orchestre pas Docker).
+
 ## Legacy / archive
 
 L’ancien frontend Next.js (`parallele-schoolmatrix-frontend`, éventuellement présent sous `apps/desktop/frontend`) est **legacy / archive** :

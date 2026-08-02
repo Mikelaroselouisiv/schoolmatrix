@@ -1,4 +1,9 @@
-# Stack locale Server (vérité) — embarquée dans l'installeur.
+# Stack locale Server — embarquee dans l'installeur.
+# name: unique (evite collision avec d'autres POS dont le dossier s'appelle aussi server-stack).
+# Postgres interne Docker uniquement (pas de bind 5432 hote).
+
+name: schoolmatrix-server
+
 services:
   postgres:
     image: schoolmatrix/postgres:bundle
@@ -8,8 +13,6 @@ services:
       POSTGRES_USER: ${DB_USER:-schoolmatrix}
       POSTGRES_PASSWORD: ${DB_PASS}
       POSTGRES_DB: ${DB_NAME:-schoolmatrix}
-    ports:
-      - "127.0.0.1:5432:5432"
     volumes:
       - schoolmatrix_pgdata_server:/var/lib/postgresql/data
     healthcheck:

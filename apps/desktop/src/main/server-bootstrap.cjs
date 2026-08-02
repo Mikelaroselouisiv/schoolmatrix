@@ -1,7 +1,8 @@
 /**
- * Édition Server : copie server-stack → ProgramData, bootstrap Docker.
+ * Édition Server : bootstrap automatique au 1er lancement (machine vierge).
+ * Copie server-stack → ProgramData, installe Docker si besoin, démarre Postgres + API + sync-agent.
  */
-const { app, dialog } = require('electron');
+const { dialog } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -37,8 +38,9 @@ function ensureStackInstalled() {
   const bundled = getBundledStackDir();
   const installed = getInstalledStackDir();
   if (!bundled) {
-    throw new Error('server-stack introuvable dans l’installateur.');
+    throw new Error('Fichiers server-stack introuvables dans l’installateur.');
   }
+  // Toujours resynchroniser images + scripts (mise à jour Server) ; préserver secrets/état.
   fs.mkdirSync(installed, { recursive: true });
   for (const entry of fs.readdirSync(bundled, { withFileTypes: true })) {
     if (entry.name === '.env.server' || entry.name === '.bootstrap-done') continue;
@@ -54,7 +56,7 @@ function runBootstrap(stackDir) {
   return new Promise((resolve, reject) => {
     const script = path.join(stackDir, 'bootstrap.ps1');
     if (!fs.existsSync(script)) {
-      reject(new Error(`bootstrap.ps1 introuvable: ${script}`));
+      reject(new Error(`Script bootstrap introuvable: ${script}`));
       return;
     }
     const child = spawn(
@@ -62,53 +64,65 @@ function runBootstrap(stackDir) {
       ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-StackDir', stackDir],
       { windowsHide: false },
     );
-    let stderr = '';
-    child.stderr.on('data', (c) => {
-      stderr += String(c);
+    let combined = '';
+    child.stdout.on('data', (chunk) => {
+      combined += String(chunk);
+    });
+    child.stderr.on('data', (chunk) => {
+      combined += String(chunk);
     });
     child.on('error', reject);
     child.on('close', (code) => {
       if (code === 0) resolve();
-      else reject(new Error(stderr.trim() || `bootstrap exit ${code}`));
+      else {
+        const tail = combined.trim().split(/\r?\n/).slice(-12).join('\n');
+        reject(new Error(tail || `bootstrap exit ${code}`));
+      }
     });
   });
 }
 
-function waitForApi(maxMs = 180000) {
-  const deadline = Date.now() + maxMs;
+function probeApi(pathname, timeoutMs) {
   return new Promise((resolve) => {
-    const tick = () => {
-      const req = http.get('http://127.0.0.1:3000/', (res) => {
-        res.resume();
-        if (res.statusCode >= 200 && res.statusCode < 500) resolve(true);
-        else if (Date.now() > deadline) resolve(false);
-        else setTimeout(tick, 2000);
-      });
-      req.on('error', () => {
-        if (Date.now() > deadline) resolve(false);
-        else setTimeout(tick, 2000);
-      });
-      req.setTimeout(3000, () => {
-        req.destroy();
-        if (Date.now() > deadline) resolve(false);
-        else setTimeout(tick, 2000);
-      });
-    };
-    tick();
+    const req = http.get(`http://127.0.0.1:3000${pathname}`, (res) => {
+      res.resume();
+      resolve(res.statusCode >= 200 && res.statusCode < 500);
+    });
+    req.on('error', () => resolve(false));
+    req.setTimeout(timeoutMs, () => {
+      req.destroy();
+      resolve(false);
+    });
   });
 }
 
-async function isApiUp() {
-  return waitForApi(4000);
+async function isApiUp(timeoutMs = 3000) {
+  if (await probeApi('/setup/status', timeoutMs)) return true;
+  return probeApi('/', timeoutMs);
+}
+
+async function waitForApi(maxMs = 180000) {
+  const deadline = Date.now() + maxMs;
+  while (Date.now() < deadline) {
+    if (await isApiUp(4000)) return true;
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  return false;
+}
+
+function markBootstrapDone(stackDir) {
+  const doneFile = path.join(stackDir, '.bootstrap-done');
+  if (!fs.existsSync(doneFile)) {
+    fs.writeFileSync(doneFile, new Date().toISOString(), 'utf8');
+  }
 }
 
 /**
  * @returns {Promise<{ ran: boolean, ok: boolean, message?: string }>}
  */
 async function ensureServerStack() {
-  if (getAppEdition() !== 'server') {
-    return { ran: false, ok: true };
-  }
+  if (getAppEdition() !== 'server') return { ran: false, ok: true };
+  if (process.env.VITE_DEV_SERVER_URL) return { ran: false, ok: true };
   if (process.argv.includes('--dev') || process.argv.includes('-d')) {
     const up = await isApiUp();
     return {
@@ -120,29 +134,58 @@ async function ensureServerStack() {
     };
   }
 
+  let stackDir;
   try {
-    if (await isApiUp()) {
-      return { ran: false, ok: true };
-    }
-    const stackDir = ensureStackInstalled();
+    stackDir = ensureStackInstalled();
+  } catch (err) {
+    return {
+      ran: false,
+      ok: false,
+      message: err?.message || String(err),
+    };
+  }
+
+  const doneFile = path.join(stackDir, '.bootstrap-done');
+  const envFile = path.join(stackDir, '.env.server');
+  const apiAlreadyUp = await isApiUp();
+  const firstRun = !fs.existsSync(doneFile) && !fs.existsSync(envFile) && !apiAlreadyUp;
+
+  if (firstRun) {
+    await dialog.showMessageBox({
+      type: 'info',
+      title: 'Configuration machine Server',
+      message:
+        'Premier lancement : démarrage du serveur local (Docker).\n\n' +
+        'Une fenêtre PowerShell peut s’afficher.\n' +
+        'Postgres + API + sync-agent vont démarrer — cela peut prendre plusieurs minutes.',
+      buttons: ['Continuer'],
+    });
+  }
+
+  try {
     await runBootstrap(stackDir);
-    const ok = await waitForApi(180000);
-    if (!ok) {
+    const apiUp = await waitForApi(180000);
+    if (!apiUp) {
       return {
         ran: true,
         ok: false,
-        message: 'Stack démarrée mais API non joignable sur :3000',
+        message:
+          'La stack Docker a démarré mais l’API ne répond pas encore sur http://127.0.0.1:3000. Réessayez dans quelques minutes ou redémarrez le PC.',
       };
     }
-    const done = path.join(stackDir, '.bootstrap-done');
-    if (!fs.existsSync(done)) {
-      fs.writeFileSync(done, new Date().toISOString(), 'utf8');
-    }
-    return { ran: true, ok: true };
+    markBootstrapDone(stackDir);
+    return { ran: firstRun, ok: true };
   } catch (err) {
-    const message = err?.message || String(err);
-    dialog.showErrorBox('SchoolMatrix Server — stack locale', message);
-    return { ran: true, ok: false, message };
+    if (await isApiUp(5000)) {
+      markBootstrapDone(stackDir);
+      return { ran: false, ok: true };
+    }
+    dialog.showErrorBox('SchoolMatrix Server — stack locale', err?.message || String(err));
+    return {
+      ran: true,
+      ok: false,
+      message: err?.message || String(err),
+    };
   }
 }
 

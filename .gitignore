@@ -48,3 +48,7 @@ apps/desktop/server-stack/.env.server
 apps/desktop/server-stack/.bootstrap-done
 
 apps/desktop/dist/
+
+# Installateurs locaux (binaires)
+/release/
+

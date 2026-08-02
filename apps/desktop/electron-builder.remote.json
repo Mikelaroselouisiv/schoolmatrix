@@ -27,6 +27,7 @@
     "url": "https://storage.googleapis.com/parallele-schoolmatrix-assets/installers/remote"
   },
   "win": {
+    "icon": "build/icon.ico",
     "forceCodeSigning": false,
     "signAndEditExecutable": false,
     "target": [{ "target": "nsis", "arch": ["x64"] }]
@@ -34,6 +35,9 @@
   "nsis": {
     "oneClick": false,
     "allowToChangeInstallationDirectory": true,
-    "createDesktopShortcut": true
+    "createDesktopShortcut": true,
+    "installerIcon": "build/icon.ico",
+    "uninstallerIcon": "build/icon.ico",
+    "installerHeaderIcon": "build/icon.ico"
   }
 }

@@ -47,6 +47,7 @@ apps/desktop/server-stack/images/*.tar
 apps/desktop/server-stack/defaults.env
 apps/desktop/server-stack/.env.server
 apps/desktop/server-stack/.bootstrap-done
+apps/desktop/server-stack/credentials/*.json
 
 apps/desktop/dist/
 
@@ -55,4 +56,7 @@ apps/desktop/dist/
 
 
 apps/desktop/release-server/
+
+
+apps/desktop/release-remote/
 

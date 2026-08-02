@@ -2,9 +2,9 @@
   "appId": "com.parallele.schoolmatrix.desktop.remote",
   "productName": "Parallele SchoolMatrix Remote",
   "artifactName": "Parallele-SchoolMatrix-Remote-${version}.${ext}",
-  "copyright": "Copyright © 2026 Parallele SchoolMatrix",
+  "copyright": "Copyright Â© 2026 Parallele SchoolMatrix",
   "directories": {
-    "output": "release-out",
+    "output": "release-remote",
     "buildResources": "build"
   },
   "files": [
@@ -29,7 +29,7 @@
   "win": {
     "icon": "build/icon.ico",
     "forceCodeSigning": false,
-    "signAndEditExecutable": false,
+    "signExecutable": false,
     "target": [{ "target": "nsis", "arch": ["x64"] }]
   },
   "nsis": {

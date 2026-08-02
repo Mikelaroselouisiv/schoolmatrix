@@ -41,4 +41,6 @@ Header `X-Sync-Key: <SYNC_API_KEY>` — même clé sur local, cloud et agent.
 
 Voir `ENTITY_ORDER` dans `apps/sync-agent/src/entities.js` et `SYNC_ENTITY_DEFS` dans le backend.
 
-Hors scope V1 : `users` / `role` (PK entiers), sync fichiers GCS (Phase 2/plus tard).
+Inclut **`User`** (login Server → Remote ; `password_hash` + `role_id`). Les rôles sont seedés identiquement (mêmes ids) des deux côtés — pas de sync `Role` en V1.
+
+Hors scope V1 : sync fichiers GCS (Phase 2/plus tard).

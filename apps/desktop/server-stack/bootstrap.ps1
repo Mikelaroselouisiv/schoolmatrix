@@ -1,7 +1,8 @@
 ﻿#Requires -Version 5.1
 <#
-  Bootstrap machine Server SchoolMatrix - appelé au 1er lancement (et à chaque relance).
-  Prérequis : dossier server-stack avec docker-compose.yml, images/*.tar, defaults.env*
+  Bootstrap machine Server SchoolMatrix - appelé automatiquement au lancement de l'app.
+  Tout est embarqué dans l'installeur : images .tar, docker-compose, defaults.env (SYNC_API_KEY cloud).
+  Aucune config manuelle sur site.
 #>
 param(
   [Parameter(Mandatory = $true)]
@@ -29,6 +30,33 @@ function New-RandomSecret([int]$ByteLength = 32) {
   -join ($bytes | ForEach-Object { '{0:x2}' -f $_ })
 }
 
+function Read-EnvMap([string]$Path) {
+  $map = @{}
+  if (-not (Test-Path -LiteralPath $Path)) { return $map }
+  foreach ($line in Get-Content -LiteralPath $Path) {
+    if ($line -match '^\s*([^#=]+)=(.*)$') {
+      $map[$Matches[1].Trim()] = $Matches[2].Trim()
+    }
+  }
+  return $map
+}
+
+function Write-EnvMap([string]$Path, [hashtable]$Map) {
+  $out = foreach ($key in @($Map.Keys | Sort-Object)) { "$key=$($Map[$key])" }
+  $utf8 = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllLines($Path, @($out), $utf8)
+}
+
+function Get-BundledDefaultsPath {
+  if (Test-Path -LiteralPath $DefaultsFile) { return $DefaultsFile }
+  if (Test-Path -LiteralPath $DefaultsExample) { return $DefaultsExample }
+  throw 'defaults.env manquant dans server-stack (installeur incomplet).'
+}
+
+function Test-Placeholder([string]$Value) {
+  return (-not $Value) -or ($Value -match '^CHANGE_ME')
+}
+
 function Test-DockerReady {
   if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { return $false }
   docker info 2>$null | Out-Null
@@ -38,7 +66,7 @@ function Test-DockerReady {
 function Install-DockerDesktop {
   if (Test-DockerReady) { return }
   if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-    throw 'Docker Desktop est requis. Installez-le manuellement puis relancez SchoolMatrix Server.'
+    throw 'Docker Desktop est requis. Installez Docker Desktop puis relancez SchoolMatrix Server (une seule fois).'
   }
   Write-Step 'Installation de Docker Desktop (winget)...'
   winget install -e --id Docker.DockerDesktop --accept-package-agreements --accept-source-agreements
@@ -47,42 +75,61 @@ function Install-DockerDesktop {
     if (Test-DockerReady) { return }
     Start-Sleep -Seconds 5
   }
-  throw 'Docker Desktop installé mais pas prêt. Redémarrez le PC puis relancez SchoolMatrix Server.'
+  throw 'Docker Desktop installe mais pas pret. Redemarrez le PC puis relancez SchoolMatrix Server.'
 }
 
 function Ensure-EnvFile {
-  if (Test-Path -LiteralPath $EnvFile) { return }
+  $source = Get-BundledDefaultsPath
+  $bundled = Read-EnvMap $source
 
-  $source = $null
-  if (Test-Path -LiteralPath $DefaultsFile) { $source = $DefaultsFile }
-  elseif (Test-Path -LiteralPath $DefaultsExample) { $source = $DefaultsExample }
-  else { throw 'defaults.env / defaults.env.example manquant dans server-stack' }
+  if (-not (Test-Path -LiteralPath $EnvFile)) {
+    $map = @{}
+    foreach ($k in $bundled.Keys) { $map[$k] = $bundled[$k] }
 
-  $lines = Get-Content -LiteralPath $source
-  $map = @{}
-  foreach ($line in $lines) {
-    if ($line -match '^\s*([^#=]+)=(.*)$') {
-      $map[$Matches[1].Trim()] = $Matches[2].Trim()
+    if (Test-Placeholder $map['DB_PASS']) { $map['DB_PASS'] = New-RandomSecret -ByteLength 18 }
+    if (Test-Placeholder $map['JWT_SECRET']) { $map['JWT_SECRET'] = New-RandomSecret -ByteLength 32 }
+
+    # SYNC_API_KEY : DOIT venir de l'installeur (defaults.env bake au build). Jamais de cle aleatoire.
+    if (Test-Placeholder $map['SYNC_API_KEY']) {
+      throw 'SYNC_API_KEY absente de defaults.env - rebuild l installateur Server (prepare:server-stack + secrets).'
     }
+
+    if (-not $map['DB_USER']) { $map['DB_USER'] = 'schoolmatrix' }
+    if (-not $map['DB_NAME']) { $map['DB_NAME'] = 'schoolmatrix' }
+    if (-not $map['REMOTE_API_URL']) { $map['REMOTE_API_URL'] = 'http://34.95.43.132' }
+    if (-not $map['NODE_ID']) { $map['NODE_ID'] = 'LOCAL' }
+
+    Write-EnvMap $EnvFile $map
+    Write-Step 'Fichier .env.server cree (SYNC_API_KEY cloud embarquee)'
+    return
   }
 
-  function Test-Placeholder([string]$Value) {
-    return (-not $Value) -or ($Value -match '^CHANGE_ME')
+  # Mise a jour / repair : realigner SYNC_API_KEY + REMOTE_API_URL depuis le bundle (MAJ installateur)
+  [void](Align-BundledCloudConfig)
+}
+
+function Align-BundledCloudConfig {
+  $source = Get-BundledDefaultsPath
+  $bundled = Read-EnvMap $source
+  $bundledKey = $bundled['SYNC_API_KEY']
+  $bundledRemote = $bundled['REMOTE_API_URL']
+  if (Test-Placeholder $bundledKey) { return $false }
+
+  $map = Read-EnvMap $EnvFile
+  $changed = $false
+  if ($map['SYNC_API_KEY'] -ne $bundledKey) {
+    $map['SYNC_API_KEY'] = $bundledKey
+    $changed = $true
   }
-
-  if (Test-Placeholder $map['DB_PASS']) { $map['DB_PASS'] = New-RandomSecret -ByteLength 18 }
-  if (Test-Placeholder $map['JWT_SECRET']) { $map['JWT_SECRET'] = New-RandomSecret -ByteLength 32 }
-  if (Test-Placeholder $map['SYNC_API_KEY']) { $map['SYNC_API_KEY'] = New-RandomSecret -ByteLength 32 }
-
-  if (-not $map.ContainsKey('DB_USER') -or -not $map['DB_USER']) { $map['DB_USER'] = 'schoolmatrix' }
-  if (-not $map.ContainsKey('DB_NAME') -or -not $map['DB_NAME']) { $map['DB_NAME'] = 'schoolmatrix' }
-  if (-not $map.ContainsKey('REMOTE_API_URL') -or -not $map['REMOTE_API_URL']) {
-    $map['REMOTE_API_URL'] = 'http://34.95.43.132'
+  if ($bundledRemote -and $map['REMOTE_API_URL'] -ne $bundledRemote) {
+    $map['REMOTE_API_URL'] = $bundledRemote
+    $changed = $true
   }
-
-  $out = foreach ($key in @($map.Keys)) { "$key=$($map[$key])" }
-  Set-Content -LiteralPath $EnvFile -Value ($out -join "`n") -Encoding UTF8
-  Write-Step 'Secrets locaux generes (.env.server) - alignez SYNC_API_KEY avec le cloud si besoin'
+  if ($changed) {
+    Write-EnvMap $EnvFile $map
+    Write-Step 'SYNC_API_KEY / REMOTE_API_URL realignes depuis l installateur'
+  }
+  return $changed
 }
 
 function Import-BundledImages {
@@ -91,24 +138,23 @@ function Import-BundledImages {
   }
   $tars = @(Get-ChildItem -LiteralPath $ImagesDir -Filter '*.tar' -File -ErrorAction SilentlyContinue)
   if ($tars.Count -eq 0) {
-    throw "Aucune image .tar dans $ImagesDir - rebuild l'installeur Server (prepare:server-stack)."
+    throw "Aucune image .tar dans $ImagesDir - installateur Server incomplet."
   }
   foreach ($tar in $tars) {
     Write-Step "Chargement image $($tar.Name)..."
     docker load -i $tar.FullName | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "docker load a échoué pour $($tar.Name)" }
+    if ($LASTEXITCODE -ne 0) { throw "docker load a echoue pour $($tar.Name)" }
   }
 }
 
 function Test-LocalApi {
   try {
-    $response = Invoke-WebRequest -Uri 'http://127.0.0.1:3000/setup/status' -UseBasicParsing -TimeoutSec 3
+    Invoke-WebRequest -Uri 'http://127.0.0.1:3000/setup/status' -UseBasicParsing -TimeoutSec 3 | Out-Null
     return $true
   } catch {
-    # 403 = setup déjà fait → API vivante
     if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -lt 500) { return $true }
     try {
-      $response = Invoke-WebRequest -Uri 'http://127.0.0.1:3000/' -UseBasicParsing -TimeoutSec 3
+      Invoke-WebRequest -Uri 'http://127.0.0.1:3000/' -UseBasicParsing -TimeoutSec 3 | Out-Null
       return $true
     } catch {
       if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -lt 500) { return $true }
@@ -125,23 +171,43 @@ function Test-PortInUse([int]$Port) {
 function Assert-PortsFree {
   if (-not (Test-PortInUse -Port 3000)) { return }
   if (Test-LocalApi) {
-    Write-Step 'API locale déjà active sur le port 3000'
+    Write-Step 'API locale deja active sur le port 3000'
     return
   }
-  throw "Le port 3000 est déjà utilisé. Arrêtez l'autre service puis relancez SchoolMatrix Server."
+  throw 'Le port 3000 est deja utilise. Fermez l autre service puis relancez SchoolMatrix Server.'
+}
+
+function Invoke-DockerCompose {
+  param(
+    [string[]] $ComposeArgs,
+    [switch] $Quiet
+  )
+  $prev = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    if (Get-Command docker -ErrorAction SilentlyContinue) {
+      if (docker compose version 2>$null) {
+        & docker compose @ComposeArgs
+      } else {
+        & docker-compose @ComposeArgs
+      }
+    } else {
+      throw 'docker introuvable'
+    }
+    if ($LASTEXITCODE -ne 0 -and -not $Quiet) {
+      throw "docker compose a echoue (code $LASTEXITCODE)"
+    }
+  } finally {
+    $ErrorActionPreference = $prev
+  }
 }
 
 function Start-Stack {
   Assert-PortsFree
-  Write-Step 'Démarrage Postgres + API + sync-agent...'
+  Write-Step 'Demarrage Postgres + API + sync-agent...'
   Push-Location $StackDir
   try {
-    if (docker compose version 2>$null) {
-      docker compose -f $ComposeFile --env-file $EnvFile up -d
-    } else {
-      docker-compose -f $ComposeFile --env-file $EnvFile up -d
-    }
-    if ($LASTEXITCODE -ne 0) { throw "docker compose up a échoué (code $LASTEXITCODE)" }
+    Invoke-DockerCompose -ComposeArgs @('-f', $ComposeFile, '--env-file', $EnvFile, 'up', '-d')
   } finally {
     Pop-Location
   }
@@ -150,7 +216,7 @@ function Start-Stack {
 function Write-StackStartScript {
   @"
 #Requires -Version 5.1
-`$ErrorActionPreference = 'Stop'
+`$ErrorActionPreference = 'Continue'
 `$StackDir = '$StackDir'
 `$ComposeFile = Join-Path `$StackDir 'docker-compose.yml'
 `$EnvFile = Join-Path `$StackDir '.env.server'
@@ -181,37 +247,53 @@ function Register-ScheduledTask {
   try {
     Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings `
       -Description 'Stack SchoolMatrix Server (Postgres + API + sync-agent)' | Out-Null
-    Write-Step "Tâche planifiée créée: $TaskName"
+    Write-Step "Tache planifiee creee: $TaskName"
   } catch {
-    Write-Warning 'Tâche planifiée non créée (droits admin). La stack tourne quand même.'
+    Write-Warning 'Tache planifiee non creee (droits admin). La stack tourne quand meme.'
   }
 }
 
-function Invoke-ComposeUpQuiet {
+function Invoke-ComposeUp {
+  param([switch]$Quiet)
   Push-Location $StackDir
   try {
-    if (docker compose version 2>$null) {
-      docker compose -f $ComposeFile --env-file $EnvFile up -d 2>$null | Out-Null
+    if ($Quiet) {
+      Invoke-DockerCompose -Quiet -ComposeArgs @('-f', $ComposeFile, '--env-file', $EnvFile, 'up', '-d', '--force-recreate', 'sync-agent')
+      Invoke-DockerCompose -Quiet -ComposeArgs @('-f', $ComposeFile, '--env-file', $EnvFile, 'up', '-d')
     } else {
-      docker-compose -f $ComposeFile --env-file $EnvFile up -d 2>$null | Out-Null
+      Invoke-DockerCompose -ComposeArgs @('-f', $ComposeFile, '--env-file', $EnvFile, 'up', '-d')
     }
   } finally {
     Pop-Location
   }
 }
 
+# --- main ---
+$cloudCfgChanged = $false
+if (Test-Path -LiteralPath $EnvFile) {
+  $cloudCfgChanged = [bool](Align-BundledCloudConfig)
+} else {
+  # cree .env.server au besoin meme si bootstrap-done existe (repair)
+}
+
 if (Test-Path -LiteralPath $StateFile) {
+  Ensure-EnvFile
   if (Test-DockerReady) {
     Import-BundledImages
-    Invoke-ComposeUpQuiet
+    if ($cloudCfgChanged) {
+      Write-Step 'Recreate sync-agent (nouvelle cle sync)'
+      Invoke-ComposeUp -Quiet
+    } else {
+      Invoke-ComposeUp -Quiet
+    }
   }
   exit 0
 }
 
-# Reprise après échec partiel : .env existe, stack déjà opérationnelle
 if ((Test-Path -LiteralPath $EnvFile) -and (Test-LocalApi)) {
+  Ensure-EnvFile
   if (Test-DockerReady) {
-    Invoke-ComposeUpQuiet
+    Invoke-ComposeUp -Quiet
   }
   Set-Content -LiteralPath $StateFile -Value (Get-Date).ToString('o') -Encoding UTF8
   exit 0

@@ -237,19 +237,20 @@ export class SyncService implements OnModuleInit {
     },
     sourceNodeId?: string,
   ): Promise<'created' | 'updated' | 'skipped'> {
+    const primaryId = this.coercePrimaryId(meta, record.uuid);
     const existing = await repo.findOne({
-      where: { id: record.uuid } as any,
+      where: { id: primaryId } as any,
       loadRelationIds: true,
     });
 
     if (APPEND_ONLY_ENTITIES.has(entityName)) {
       if (existing) return 'skipped';
-      await this.persist(repo, meta, record.uuid, record.data, record.updatedAt, timeField);
+      await this.persist(repo, meta, primaryId, record.data, record.updatedAt, timeField);
       return 'created';
     }
 
     if (!existing) {
-      await this.persist(repo, meta, record.uuid, record.data, record.updatedAt, timeField);
+      await this.persist(repo, meta, primaryId, record.data, record.updatedAt, timeField);
       return 'created';
     }
 
@@ -260,8 +261,37 @@ export class SyncService implements OnModuleInit {
       return 'skipped';
     }
 
-    await this.persist(repo, meta, record.uuid, record.data, record.updatedAt, timeField);
+    await this.persist(repo, meta, primaryId, record.data, record.updatedAt, timeField);
     return 'updated';
+  }
+
+  /** PK int (users) ou uuid string — le filaire est toujours string. */
+  private coercePrimaryId(meta: EntityMetadata, uuid: string): string | number {
+    const col = meta.primaryColumns[0];
+    const t = col?.type;
+    const numeric =
+      t === Number ||
+      t === 'int' ||
+      t === 'int2' ||
+      t === 'int4' ||
+      t === 'int8' ||
+      t === 'integer' ||
+      t === 'bigint' ||
+      t === 'smallint' ||
+      t === 'float' ||
+      t === 'float4' ||
+      t === 'float8' ||
+      t === 'double' ||
+      t === 'decimal' ||
+      t === 'numeric';
+    if (numeric) {
+      const n = Number(uuid);
+      if (!Number.isFinite(n)) {
+        throw new Error(`id numérique invalide: ${uuid}`);
+      }
+      return n;
+    }
+    return uuid;
   }
 
   /**
@@ -325,12 +355,12 @@ export class SyncService implements OnModuleInit {
   private async persist(
     repo: Repository<any>,
     meta: EntityMetadata,
-    uuid: string,
+    primaryId: string | number,
     data: Record<string, unknown>,
     updatedAt: string | undefined,
     timeField: 'updated_at' | 'created_at',
   ): Promise<void> {
-    const payload: Record<string, unknown> = { id: uuid };
+    const payload: Record<string, unknown> = { id: primaryId };
 
     for (const col of meta.columns) {
       if (col.relationMetadata) continue;
@@ -349,7 +379,9 @@ export class SyncService implements OnModuleInit {
       if (fk == null || fk === '') {
         payload[prop] = null;
       } else {
-        payload[prop] = { id: fk };
+        const fkId =
+          typeof fk === 'string' && /^\d+$/.test(fk) ? Number(fk) : fk;
+        payload[prop] = { id: fkId };
       }
     }
 
@@ -359,5 +391,17 @@ export class SyncService implements OnModuleInit {
 
     const entity = repo.create(payload as any);
     await repo.save(entity);
+
+    if (typeof primaryId === 'number') {
+      const table = meta.tableName.replace(/"/g, '');
+      const schema = (meta.schema || 'public').replace(/"/g, '');
+      await this.dataSource.query(
+        `SELECT setval(
+           pg_get_serial_sequence($1, 'id'),
+           (SELECT COALESCE(MAX(id), 1) FROM "${schema}"."${table}")
+         )`,
+        [`${schema}.${table}`],
+      );
+    }
   }
 }

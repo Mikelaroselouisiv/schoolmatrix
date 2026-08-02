@@ -21,9 +21,11 @@ import { ClassDecisionThreshold } from '../formation-classe/class-decision-thres
 import { Attendance } from '../discipline/attendance.entity';
 import { FileMetadata } from '../file-metadata/file-metadata.entity';
 import { ClassSubject } from '../classes/class-subject.entity';
+import { User } from '../users/user.entity';
 
 export type SyncEntityName =
   | 'SchoolProfile'
+  | 'User'
   | 'AcademicYear'
   | 'Period'
   | 'Room'
@@ -56,6 +58,8 @@ export type SyncEntityDef = {
 /** Ordre parents → enfants (agent + doc). */
 export const SYNC_ENTITY_DEFS: SyncEntityDef[] = [
   { name: 'SchoolProfile', target: SchoolProfile, timeField: 'updated_at' },
+  /** Comptes login Server → Remote (PK int acceptée comme uuid filaire). Roles seedés identiques des deux côtés. */
+  { name: 'User', target: User, timeField: 'updated_at' },
   { name: 'AcademicYear', target: AcademicYear, timeField: 'updated_at' },
   { name: 'Period', target: Period, timeField: 'created_at' },
   { name: 'Room', target: Room, timeField: 'updated_at' },

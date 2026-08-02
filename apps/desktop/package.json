@@ -1,10 +1,10 @@
-{
+﻿{
   "name": "parallele-schoolmatrix-desktop",
   "productName": "Parallele SchoolMatrix",
   "description": "Application desktop SchoolMatrix (Server / Remote)",
   "author": "Parallele SchoolMatrix",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.2",
   "main": "src/main/main.cjs",
   "scripts": {
     "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:electron\"",

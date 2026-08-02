@@ -41,6 +41,7 @@
     "oneClick": false,
     "allowToChangeInstallationDirectory": true,
     "createDesktopShortcut": true,
+    "runAfterFinish": true,
     "perMachine": true,
     "allowElevation": true,
     "selectPerMachineByDefault": true,

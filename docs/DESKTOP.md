@@ -15,15 +15,17 @@ Le produit desktop est **entièrement dans** `apps/desktop` (modèle Israel) :
 
 ### Machine Server (comme Israel)
 
-Après install de l’exe **Server**, **lancer l’app une fois**. Au premier lancement elle :
+Sur site : installer l’exe **Server** → l’app se lance → tout est automatique :
 
 1. Copie `server-stack` → `C:\ProgramData\Parallele SchoolMatrix\server-stack`
 2. Installe Docker Desktop si besoin (winget)
-3. Charge les images `.tar` (Postgres + backend + sync-agent)
-4. `docker compose up` (projet `schoolmatrix-server`)
-5. Crée une tâche planifiée pour remonter la stack à l’ouverture de session
+3. Crée `.env.server` depuis `defaults.env` **embarqué** (SYNC_API_KEY cloud déjà injectée au build)
+4. Charge les images `.tar` (Postgres + backend + sync-agent) et `docker compose up`
+5. Tâche planifiée pour remonter la stack à l’ouverture de session
 
-Docker reste vide tant que l’app Server n’a pas été ouverte (l’installeur NSIS n’orchestre pas Docker).
+**Aucune édition manuelle de `.env`.** Le build refuse de produire un exe Server sans `secrets/sync-api-key.txt`.
+
+Docker reste vide tant que l’app n’a pas démarré une fois (l’installeur NSIS lance l’app en fin d’install).
 
 ## Legacy / archive
 

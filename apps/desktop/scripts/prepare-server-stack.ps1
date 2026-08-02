@@ -1,23 +1,64 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
-  Prépare les images Docker tar pour l'installeur Server.
+  Prepare server-stack/ before dist:win:server :
+  - Docker images (postgres + backend + sync-agent) as .tar
+  - Complete defaults.env with cloud SYNC_API_KEY (required) - zero manual config on site
 #>
 $ErrorActionPreference = 'Stop'
-$StackImages = Join-Path $PSScriptRoot '..\server-stack\images'
+
+$DesktopRoot = Split-Path $PSScriptRoot -Parent
+$Root = Resolve-Path (Join-Path $PSScriptRoot '..\..\..')
+$StackDir = Join-Path $DesktopRoot 'server-stack'
+$StackImages = Join-Path $StackDir 'images'
+$DefaultsEnv = Join-Path $StackDir 'defaults.env'
+$SecretsKey = Join-Path $Root 'secrets\sync-api-key.txt'
+
 New-Item -ItemType Directory -Force -Path $StackImages | Out-Null
+
+if (-not (Test-Path -LiteralPath $SecretsKey)) {
+  throw 'secrets/sync-api-key.txt manquant - obligatoire pour builder l installateur Server.'
+}
+$SyncKey = (Get-Content -LiteralPath $SecretsKey -Raw).Trim()
+if (-not $SyncKey -or $SyncKey -match '^CHANGE_ME') {
+  throw 'secrets/sync-api-key.txt vide ou placeholder - refuse de builder un Server sterile.'
+}
+
+$defaultsLines = @(
+  'DB_USER=schoolmatrix',
+  'DB_PASS=CHANGE_ME',
+  'DB_NAME=schoolmatrix',
+  'JWT_SECRET=CHANGE_ME',
+  'NODE_ID=LOCAL',
+  "SYNC_API_KEY=$SyncKey",
+  'REMOTE_API_URL=http://34.95.43.132',
+  'SYNC_INTERVAL_MS=45000',
+  'GCS_BUCKET=parallele-schoolmatrix-assets',
+  'GCS_PREFIX=schoolmatrix',
+  'GCS_PROJECT_ID=parallele-schoolmatrix'
+)
+$utf8 = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllLines($DefaultsEnv, $defaultsLines, $utf8)
+Write-Host 'defaults.env pret (SYNC_API_KEY cloud injectee)'
 
 $Registry = 'northamerica-northeast1-docker.pkg.dev/parallele-schoolmatrix/schoolmatrix-backend'
 $Backend = "${Registry}/backend:latest"
 $Postgres = 'postgres:16'
 
+docker info 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) {
+  throw 'Docker requis pour prepare:server-stack (export images .tar).'
+}
+
 Write-Host '==> Pull images'
 docker pull $Backend
+if ($LASTEXITCODE -ne 0) { throw "docker pull backend a echoue: $Backend" }
 docker pull $Postgres
+if ($LASTEXITCODE -ne 0) { throw 'docker pull postgres:16 a echoue' }
 
-# sync-agent : build local
-$Root = Resolve-Path (Join-Path $PSScriptRoot '..\..\..')
 $AgentDir = Join-Path $Root 'apps\sync-agent'
+Write-Host '==> Build sync-agent'
 docker build -t schoolmatrix/sync-agent:bundle $AgentDir
+if ($LASTEXITCODE -ne 0) { throw 'docker build sync-agent a echoue' }
 
 docker tag $Backend schoolmatrix/backend:bundle
 docker tag $Postgres schoolmatrix/postgres:bundle
@@ -27,5 +68,11 @@ docker save schoolmatrix/backend:bundle -o (Join-Path $StackImages 'backend.tar'
 docker save schoolmatrix/postgres:bundle -o (Join-Path $StackImages 'postgres.tar')
 docker save schoolmatrix/sync-agent:bundle -o (Join-Path $StackImages 'sync-agent.tar')
 
-Copy-Item (Join-Path $PSScriptRoot '..\server-stack\defaults.env.example') (Join-Path $PSScriptRoot '..\server-stack\defaults.env') -Force
-Write-Host 'server-stack images prêts.'
+$missing = @('backend.tar', 'postgres.tar', 'sync-agent.tar') | Where-Object {
+  -not (Test-Path (Join-Path $StackImages $_))
+}
+if ($missing.Count -gt 0) {
+  throw "Images manquantes apres save: $($missing -join ', ')"
+}
+
+Write-Host 'server-stack pret pour dist:win:server (images + defaults.env + SYNC_API_KEY).'

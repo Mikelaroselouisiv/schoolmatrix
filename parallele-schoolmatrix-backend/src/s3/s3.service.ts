@@ -35,9 +35,8 @@ export class S3Service implements OnModuleInit {
     this.prefix = raw.replace(/\/?$/, '') + '/';
 
     if (!accessKey || !secretKey || !this.bucket) {
-      this.logger.warn(
-        'S3 désactivé: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY ou AWS_S3_BUCKET manquants',
-      );
+      // Normal : SchoolMatrix utilise GCS. S3 n’est plus le chemin principal.
+      this.logger.log('S3 inactif (attendu — stockage cloud = GCS)');
       return;
     }
     this.client = new S3Client({

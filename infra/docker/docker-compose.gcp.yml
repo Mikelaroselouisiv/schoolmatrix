@@ -1,0 +1,50 @@
+# Production miroir sur Google Compute Engine (pas la source de vérité).
+# Source de vérité = serveur LOCAL (machine Server + sync-agent).
+# La VM tire l'image depuis Artifact Registry.
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: schoolmatrix_postgres_cloud
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-schoolmatrix}
+      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_DB: ${DB_NAME:-schoolmatrix}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - schoolmatrix_pgdata_cloud:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    image: northamerica-northeast1-docker.pkg.dev/parallele-schoolmatrix/schoolmatrix-backend/backend:latest
+    container_name: schoolmatrix_api_cloud
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: ${DB_USER:-schoolmatrix}
+      DB_PASS: ${DB_PASS}
+      DB_NAME: ${DB_NAME:-schoolmatrix}
+      STORAGE_ROOT: /app/storage
+      NODE_ID: CLOUD
+      # SYNC_API_KEY / JWT / DB_* : via env_file .env.prod (ne pas écraser avec ${} vide)
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - schoolmatrix_storage_cloud:/app/storage
+    depends_on:
+      - postgres
+
+volumes:
+  schoolmatrix_pgdata_cloud:
+  schoolmatrix_storage_cloud:

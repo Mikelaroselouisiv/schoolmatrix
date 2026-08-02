@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { StorageService } from '../storage/storage.service';
+import { GcsService } from '../gcs/gcs.service';
 import { S3Service } from '../s3/s3.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -20,6 +21,7 @@ const EXT_BY_MIME: Record<string, string> = {
 export class UploadsService {
   constructor(
     private readonly storage: StorageService,
+    private readonly gcs: GcsService,
     private readonly s3: S3Service,
     @InjectRepository(FileMetadata)
     private readonly fileMetaRepo: Repository<FileMetadata>,
@@ -43,21 +45,20 @@ export class UploadsService {
     fs.writeFileSync(filepath, buffer);
 
     const relativePath = this.storage.getRelativePath('uploads', filename);
-    let s3Key: string | null = null;
-    if (this.s3.isEnabled()) {
-      s3Key = await this.s3.upload(
-        'uploads',
-        filename,
-        buffer,
-        mimetype,
-      );
+
+    // Priorité GCS (GCP). S3 conservé en secours legacy uniquement.
+    let remoteKey: string | null = null;
+    if (this.gcs.isEnabled()) {
+      remoteKey = await this.gcs.upload('uploads', filename, buffer, mimetype);
+    } else if (this.s3.isEnabled()) {
+      remoteKey = await this.s3.upload('uploads', filename, buffer, mimetype);
     }
 
     const meta = this.fileMetaRepo.create({
       local_path: relativePath,
-      s3_key: s3Key,
-      sync_status: s3Key ? 'synced' : 'local_only',
-      last_synced_at: s3Key ? new Date() : null,
+      s3_key: remoteKey, // colonne historique = clé objet cloud (GCS ou S3)
+      sync_status: remoteKey ? 'synced' : 'local_only',
+      last_synced_at: remoteKey ? new Date() : null,
       original_filename: originalName ?? null,
       mime_type: mimetype,
       size_bytes: buffer.length,

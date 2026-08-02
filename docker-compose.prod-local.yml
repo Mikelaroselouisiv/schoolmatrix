@@ -47,17 +47,15 @@ services:
   web:
     image: schoolmatrix-web
     build:
-      context: ./parallele-schoolmatrix-frontend
+      context: ./apps/desktop/frontend
       args:
         - CACHEBUST=${CACHEBUST:-0}
-        - NEXT_PUBLIC_API_URL=http://127.0.0.1:3000
     container_name: schoolmatrix-web
     restart: unless-stopped
     environment:
       NODE_ENV: production
       HOSTNAME: "0.0.0.0"
       PORT: "3001"
-      NEXT_PUBLIC_API_URL: http://127.0.0.1:3000
       API_INTERNAL_URL: http://schoolmatrix-api:3000
     depends_on:
       - api

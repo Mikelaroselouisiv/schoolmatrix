@@ -11,6 +11,10 @@ node_modules/
 # Build outputs
 dist/
 build/
+!.gitkeep
+# Ressources electron-builder (icônes) — pas des artefacts de compile
+!apps/desktop/build/
+!apps/desktop/build/**
 .next/
 out/
 
@@ -30,3 +34,17 @@ Thumbs.db
 
 # Docker
 *.log
+
+# Secrets locaux (clés GCP, bootstrap outputs)
+secrets/
+*.pem
+
+# Desktop build artifacts
+apps/desktop/next-runtime/
+apps/desktop/release/
+apps/desktop/server-stack/images/*.tar
+apps/desktop/server-stack/defaults.env
+apps/desktop/server-stack/.env.server
+apps/desktop/server-stack/.bootstrap-done
+
+apps/desktop/dist/

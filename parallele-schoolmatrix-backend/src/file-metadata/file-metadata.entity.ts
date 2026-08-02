@@ -1,6 +1,6 @@
 /**
  * Métadonnées de stockage des fichiers.
- * Préparé pour double stockage local + S3 et future resynchronisation.
+ * local + cloud (GCS prioritaire ; colonne s3_key = clé objet remote).
  */
 import {
   Entity,

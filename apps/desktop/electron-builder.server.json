@@ -1,0 +1,47 @@
+{
+  "appId": "com.parallele.schoolmatrix.desktop.server",
+  "productName": "Parallele SchoolMatrix Server",
+  "artifactName": "Parallele-SchoolMatrix-Server-${version}.${ext}",
+  "copyright": "Copyright © 2026 Parallele SchoolMatrix",
+  "directories": {
+    "output": "release",
+    "buildResources": "build"
+  },
+  "files": [
+    "dist/**/*",
+    "src/main/**/*",
+    "package.json"
+  ],
+  "extraMetadata": {
+    "edition": "server"
+  },
+  "extraResources": [
+    {
+      "from": "server-stack",
+      "to": "server-stack",
+      "filter": ["**/*", "!images/.gitkeep"]
+    },
+    {
+      "from": "build/icon.png",
+      "to": "icon.png",
+      "filter": ["**/*"]
+    }
+  ],
+  "publish": {
+    "provider": "generic",
+    "url": "https://storage.googleapis.com/parallele-schoolmatrix-assets/installers/server"
+  },
+  "win": {
+    "forceCodeSigning": false,
+    "signAndEditExecutable": false,
+    "target": [{ "target": "nsis", "arch": ["x64"] }]
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "perMachine": true,
+    "allowElevation": true,
+    "selectPerMachineByDefault": true
+  }
+}

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Mise à jour ECR</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 12px; background: #1e293b; color: #e2e8f0; }
+    h2 { margin: 0 0 8px 0; font-size: 14px; color: #94a3b8; }
+    #log { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px; height: 280px; overflow-y: auto; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
+    #status { margin-top: 12px; padding: 8px 12px; border-radius: 8px; font-size: 13px; }
+    #status.success { background: #14532d; color: #bbf7d0; }
+    #status.error { background: #7f1d1d; color: #fecaca; }
+    #status.running { background: #1e3a5f; color: #93c5fd; }
+    button { margin-top: 12px; padding: 8px 16px; border-radius: 6px; border: none; background: #3b82f6; color: white; cursor: pointer; font-size: 13px; }
+    button:hover { background: #2563eb; }
+  </style>
+</head>
+<body>
+  <h2>Journal de mise à jour</h2>
+  <pre id="log"></pre>
+  <div id="status" class="running">Mise à jour en cours…</div>
+  <button id="btnClose" style="display: none;">Fermer</button>
+  <script>
+    const { ipcRenderer } = require('electron');
+    const logEl = document.getElementById('log');
+    const statusEl = document.getElementById('status');
+    const btnClose = document.getElementById('btnClose');
+
+    function append(text) {
+      logEl.textContent += text;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    ipcRenderer.on('update-log', (e, data) => { append(data); });
+    ipcRenderer.on('update-done', (e, { code, error }) => {
+      statusEl.className = code === 0 ? 'success' : 'error';
+      statusEl.textContent = code === 0
+        ? 'Mise à jour terminée. Vous pouvez relancer l\'application.'
+        : (error || 'La mise à jour a échoué (code ' + code + ').');
+      btnClose.style.display = 'block';
+    });
+
+    btnClose.addEventListener('click', () => { ipcRenderer.send('update-window-close'); });
+  </script>
+</body>
+</html>

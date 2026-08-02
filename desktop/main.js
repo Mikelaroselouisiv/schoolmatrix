@@ -327,26 +327,64 @@ function createAppMenu(dataDir) {
 
 // --- Mise à jour ECR (script Node) ---
 
+let updateLogWindow = null;
+
 function runUpdateScript(dataDir) {
   const scriptPath = path.join(dataDir, 'scripts', 'update-prod-local-ecr.js');
   if (!fs.existsSync(scriptPath)) {
     dialog.showErrorBox('Erreur', 'Script introuvable : ' + scriptPath);
     return;
   }
+  // Fenêtre de log pour que l'utilisateur voie la sortie (sinon rien ne s'affiche en .exe)
+  if (updateLogWindow && !updateLogWindow.isDestroyed()) updateLogWindow.close();
+  updateLogWindow = new BrowserWindow({
+    width: 560,
+    height: 420,
+    title: 'Mise à jour depuis ECR',
+    icon: APP_LOGO,
+    webPreferences: { nodeIntegration: true, contextIsolation: false },
+  });
+  updateLogWindow.loadFile(path.join(__dirname, 'update-log.html'));
+  updateLogWindow.on('closed', () => { updateLogWindow = null; });
+
+  const logPath = path.join(dataDir, 'update-ecr.log');
+  function sendLog(text) {
+    const s = text.toString().replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    if (updateLogWindow && !updateLogWindow.isDestroyed()) {
+      updateLogWindow.webContents.send('update-log', s);
+    }
+    try {
+      fs.appendFileSync(logPath, s, 'utf8');
+    } catch (_) {}
+  }
+
   const child = spawn('node', [scriptPath], {
     cwd: dataDir,
     env: { ...process.env, SCHOOLMATRIX_DATA: dataDir },
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
-  child.stdout.on('data', (d) => process.stdout.write(d.toString()));
-  child.stderr.on('data', (d) => process.stderr.write(d.toString()));
+  child.stdout.on('data', (d) => sendLog(d.toString()));
+  child.stderr.on('data', (d) => sendLog(d.toString()));
   child.on('close', (code) => {
-    if (code === 0) {
-      dialog.showMessageBox(null, { type: 'info', title: 'Mise à jour', message: 'Mise à jour terminée. Vous pouvez relancer l\'application.' });
-    } else {
-      dialog.showErrorBox('Erreur', 'La mise à jour a échoué (code ' + code + '). Vérifiez le .env (ECR_REGISTRY, AWS) et que Node.js est installé.');
+    sendLog('\n[Sortie du script : code ' + code + ']\n');
+    const error = code !== 0 ? 'Code ' + code + '. Vérifiez le .env (ECR_REGISTRY, AWS), Node.js et Docker.' : null;
+    if (updateLogWindow && !updateLogWindow.isDestroyed()) {
+      updateLogWindow.webContents.send('update-done', { code, error });
+    } else if (code !== 0) {
+      dialog.showErrorBox('Erreur', error || 'La mise à jour a échoué.');
     }
   });
-  child.on('error', (err) => dialog.showErrorBox('Erreur', 'Impossible de lancer le script : ' + err.message));
+  child.on('error', (err) => {
+    sendLog('Erreur: ' + (err.message || err) + '\n');
+    if (updateLogWindow && !updateLogWindow.isDestroyed()) {
+      updateLogWindow.webContents.send('update-done', { code: 1, error: err.message });
+    }
+    dialog.showErrorBox('Erreur', 'Impossible de lancer le script : ' + err.message);
+  });
+}
+
+function closeUpdateLogWindow() {
+  if (updateLogWindow && !updateLogWindow.isDestroyed()) updateLogWindow.close();
 }
 
 // --- Installer (wizard) ---
@@ -501,10 +539,18 @@ async function runMainApp(dataDir) {
     const d = loadConfig().dataDir;
     if (d) shell.openPath(d);
   });
+  // Menu "Mettre à jour" utilise app.emit ; le bouton de la fenêtre instructions utilise ipcRenderer.send
+  app.on('run-update', () => {
+    const d = loadConfig().dataDir;
+    if (d) runUpdateScript(d);
+    else dialog.showErrorBox('Erreur', 'Aucun dossier de données configuré. Lancez l\'installation d\'abord.');
+  });
   ipcMain.on('run-update', () => {
     const d = loadConfig().dataDir;
     if (d) runUpdateScript(d);
+    else dialog.showErrorBox('Erreur', 'Aucun dossier de données configuré.');
   });
+  ipcMain.on('update-window-close', () => closeUpdateLogWindow());
   ipcMain.on('quit', () => app.quit());
 
   let cfg = loadConfig();

@@ -1,0 +1,71 @@
+# Production avec nginx — un seul point d'entrée (port 80)
+# Frontend universel : appels relatifs /api, pas de NEXT_PUBLIC_API_URL.
+#
+# Avec images ECR (comme prod-local-ecr) :
+#   export ECR_REGISTRY=... IMAGE_TAG=latest SCHOOLMATRIX_DATA=...
+#   docker compose -f docker-compose.prod-nginx.yml pull
+#   docker compose -f docker-compose.prod-nginx.yml up -d
+#
+# Avec build local : remplacer les services api/web par build: comme dans docker-compose.prod-local.yml
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: schoolmatrix-db-prod-local
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - ${SCHOOLMATRIX_DATA}/postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    image: ${ECR_REGISTRY}/schoolmatrix-api:${IMAGE_TAG:-latest}
+    container_name: schoolmatrix-api
+    restart: unless-stopped
+    env_file:
+      - ${SCHOOLMATRIX_DATA}/.env.prod
+    environment:
+      NODE_ENV: production
+      DB_HOST: db
+      DB_PORT: "5432"
+      STORAGE_ROOT: /app/storage
+    volumes:
+      - ${SCHOOLMATRIX_DATA}/storage:/app/storage
+    expose:
+      - "3000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    image: ${ECR_REGISTRY}/schoolmatrix-web:${IMAGE_TAG:-latest}
+    container_name: schoolmatrix-web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOSTNAME: "0.0.0.0"
+      PORT: "3001"
+      API_INTERNAL_URL: http://schoolmatrix-api:3000
+    depends_on:
+      - api
+    expose:
+      - "3001"
+
+  nginx:
+    image: nginx:alpine
+    container_name: schoolmatrix-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+      - web

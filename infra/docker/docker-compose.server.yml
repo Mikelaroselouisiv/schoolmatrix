@@ -1,0 +1,66 @@
+# Machine Server (source de vérité) : Postgres + API + sync-agent.
+# Le sync-agent pousse le local vers GCP et tire les nouveautés cloud.
+# En conflit : LOCAL gagne.
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: schoolmatrix_postgres_server
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-schoolmatrix}
+      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_DB: ${DB_NAME:-schoolmatrix}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - schoolmatrix_pgdata_server:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    image: ${GCP_ARTIFACT_IMAGE:-northamerica-northeast1-docker.pkg.dev/parallele-schoolmatrix/schoolmatrix-backend/backend:latest}
+    container_name: schoolmatrix_api_server
+    restart: unless-stopped
+    env_file:
+      - .env.server
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: ${DB_USER:-schoolmatrix}
+      DB_PASS: ${DB_PASS}
+      DB_NAME: ${DB_NAME:-schoolmatrix}
+      STORAGE_ROOT: /app/storage
+      NODE_ID: LOCAL
+      # SYNC_API_KEY / JWT / DB_* : via env_file .env.server
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - schoolmatrix_storage_server:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  sync-agent:
+    build:
+      context: ../../apps/sync-agent
+      dockerfile: Dockerfile
+    container_name: schoolmatrix_sync_agent
+    restart: unless-stopped
+    environment:
+      LOCAL_API_URL: http://backend:3000
+      REMOTE_API_URL: ${REMOTE_API_URL:-http://34.95.43.132}
+      SYNC_API_KEY: ${SYNC_API_KEY}
+      SYNC_INTERVAL_MS: ${SYNC_INTERVAL_MS:-45000}
+      SYNC_NODE_ID: ${SYNC_NODE_ID:-local-mother}
+    depends_on:
+      - backend
+
+volumes:
+  schoolmatrix_pgdata_server:
+  schoolmatrix_storage_server:

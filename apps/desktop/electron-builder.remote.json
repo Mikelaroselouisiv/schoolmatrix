@@ -1,0 +1,39 @@
+{
+  "appId": "com.parallele.schoolmatrix.desktop.remote",
+  "productName": "Parallele SchoolMatrix Remote",
+  "artifactName": "Parallele-SchoolMatrix-Remote-${version}.${ext}",
+  "copyright": "Copyright © 2026 Parallele SchoolMatrix",
+  "directories": {
+    "output": "release",
+    "buildResources": "build"
+  },
+  "files": [
+    "dist/**/*",
+    "src/main/**/*",
+    "package.json"
+  ],
+  "extraMetadata": {
+    "edition": "remote"
+  },
+  "extraResources": [
+    {
+      "from": "build/icon.png",
+      "to": "icon.png",
+      "filter": ["**/*"]
+    }
+  ],
+  "publish": {
+    "provider": "generic",
+    "url": "https://storage.googleapis.com/parallele-schoolmatrix-assets/installers/remote"
+  },
+  "win": {
+    "forceCodeSigning": false,
+    "signAndEditExecutable": false,
+    "target": [{ "target": "nsis", "arch": ["x64"] }]
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true
+  }
+}

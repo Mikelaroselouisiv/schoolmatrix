@@ -4,6 +4,8 @@ import { ConfigModule } from '@nestjs/config';
 import { SyncNode } from './sync-node.entity';
 import { SyncEvent } from './sync-event.entity';
 import { SyncService } from './sync.service';
+import { SyncController } from './sync.controller';
+import { SyncApiKeyGuard } from './sync-api-key.guard';
 
 @Global()
 @Module({
@@ -11,7 +13,8 @@ import { SyncService } from './sync.service';
     ConfigModule,
     TypeOrmModule.forFeature([SyncNode, SyncEvent]),
   ],
-  providers: [SyncService],
+  controllers: [SyncController],
+  providers: [SyncService, SyncApiKeyGuard],
   exports: [SyncService],
 })
 export class SyncModule {}

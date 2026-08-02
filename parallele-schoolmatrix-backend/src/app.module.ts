@@ -27,6 +27,7 @@ import { SetupModule } from './setup/setup.module';
 import { SystemSeedModule } from './system-seed/system-seed.module';
 import { SystemSeedService } from './system-seed/system-seed.service';
 import { S3Module } from './s3/s3.module';
+import { GcsModule } from './gcs/gcs.module';
 import { StorageModule } from './storage/storage.module';
 import { FileMetadataModule } from './file-metadata/file-metadata.module';
 import { SyncModule } from './sync/sync.module';
@@ -55,6 +56,7 @@ import { migrations } from './migrations';
       }),
     }),
     StorageModule,
+    GcsModule,
     S3Module,
     FileMetadataModule,
     SyncModule,

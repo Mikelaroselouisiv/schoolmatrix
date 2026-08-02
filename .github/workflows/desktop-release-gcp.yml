@@ -1,0 +1,92 @@
+# Build installers Windows Server/Remote → upload GCS (electron-updater feed).
+# Secrets: GCP_PROJECT_ID, GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT
+#
+# Déclencheurs :
+#   - Actions → Desktop - release to GCS (choix server | remote | both)
+#   - Tag git : desktop-v1.0.1 (publie les deux éditions)
+
+name: Desktop - release to GCS
+
+on:
+  workflow_dispatch:
+    inputs:
+      edition:
+        description: "server | remote | both"
+        required: true
+        default: both
+        type: choice
+        options: [server, remote, both]
+  push:
+    tags:
+      - "desktop-v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      editions: ${{ steps.set.outputs.editions }}
+    steps:
+      - id: set
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            case "${{ github.event.inputs.edition }}" in
+              server) echo 'editions=["server"]' >> "$GITHUB_OUTPUT" ;;
+              remote) echo 'editions=["remote"]' >> "$GITHUB_OUTPUT" ;;
+              *) echo 'editions=["server","remote"]' >> "$GITHUB_OUTPUT" ;;
+            esac
+          else
+            echo 'editions=["server","remote"]' >> "$GITHUB_OUTPUT"
+          fi
+
+  release:
+    needs: prepare
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        edition: ${{ fromJSON(needs.prepare.outputs.editions) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Install desktop deps
+        working-directory: apps/desktop
+        run: npm ci
+
+      - name: Configure Docker (server edition)
+        if: matrix.edition == 'server'
+        run: gcloud auth configure-docker northamerica-northeast1-docker.pkg.dev --quiet
+
+      - name: Build installer
+        working-directory: apps/desktop
+        shell: pwsh
+        run: |
+          if ("${{ matrix.edition }}" -eq "server") {
+            npm run dist:win:server
+          } else {
+            npm run dist:win:remote
+          }
+
+      - name: Upload to GCS (latest.yml + exe + blockmap)
+        shell: pwsh
+        run: |
+          & ./infra/scripts/upload-desktop-installer.ps1 -Edition "${{ matrix.edition }}"

@@ -1,0 +1,96 @@
+# Build Docker backend → Artifact Registry → deploy VM GCP (miroir cloud).
+# SCHOOLMATRIX ONLY — jamais Israel / Frères / Eau Cascade.
+#
+# Secrets: GCP_PROJECT_ID, GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT
+# Variables: GCP_REGION, GCP_ARTIFACT_REPO, GCP_VM_NAME, GCP_VM_ZONE
+
+name: Backend - build and push to GCP
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "parallele-schoolmatrix-backend/**"
+      - "infra/docker/docker-compose.gcp.yml"
+      - "infra/scripts/gcp-deploy-remote.sh"
+      - ".github/workflows/backend-gcp.yml"
+  workflow_dispatch:
+
+env:
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GCP_REGION: ${{ vars.GCP_REGION }}
+  GCP_ARTIFACT_REPO: ${{ vars.GCP_ARTIFACT_REPO }}
+  GCP_VM_NAME: ${{ vars.GCP_VM_NAME }}
+  GCP_VM_ZONE: ${{ vars.GCP_VM_ZONE }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (WIF — SchoolMatrix)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Configure Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker authentication
+        run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+
+      - name: Build and push
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          case "${{ secrets.GCP_PROJECT_ID }}" in
+            *freres*|*bazile*|*israel*|*eau-cascade*)
+              echo "ABORT: projet GCP interdit"; exit 1 ;;
+          esac
+          REGISTRY="${GCP_REGION}-docker.pkg.dev"
+          FULL_IMAGE="${REGISTRY}/${GCP_PROJECT_ID}/${GCP_ARTIFACT_REPO}/backend"
+          docker build \
+            -f parallele-schoolmatrix-backend/Dockerfile \
+            -t "${FULL_IMAGE}:${IMAGE_TAG}" \
+            -t "${FULL_IMAGE}:latest" \
+            parallele-schoolmatrix-backend
+          docker push "${FULL_IMAGE}:${IMAGE_TAG}"
+          docker push "${FULL_IMAGE}:latest"
+
+  deploy-gcp:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (WIF — SchoolMatrix)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Configure Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy to GCP VM
+        env:
+          GCP_VM_NAME: ${{ vars.GCP_VM_NAME != '' && vars.GCP_VM_NAME || 'schoolmatrix-api' }}
+          GCP_VM_ZONE: ${{ vars.GCP_VM_ZONE != '' && vars.GCP_VM_ZONE || 'northamerica-northeast1-a' }}
+        run: |
+          set -euo pipefail
+          case "${{ secrets.GCP_PROJECT_ID }}" in
+            *freres*|*bazile*|*israel*|*eau-cascade*)
+              echo "ABORT: projet GCP interdit"; exit 1 ;;
+          esac
+          bash infra/scripts/gcp-deploy-remote.sh

@@ -50,7 +50,6 @@ services:
       NODE_ENV: production
       HOSTNAME: "0.0.0.0"
       PORT: "3001"
-      NEXT_PUBLIC_API_URL: http://127.0.0.1:3000
       API_INTERNAL_URL: http://schoolmatrix-api:3000
     depends_on:
       - api

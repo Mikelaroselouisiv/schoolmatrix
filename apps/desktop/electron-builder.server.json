@@ -2,7 +2,7 @@
   "appId": "com.parallele.schoolmatrix.desktop.server",
   "productName": "Parallele SchoolMatrix Server",
   "artifactName": "Parallele-SchoolMatrix-Server-${version}.${ext}",
-  "copyright": "Copyright © 2026 Parallele SchoolMatrix",
+  "copyright": "Copyright Â© 2026 Parallele SchoolMatrix",
   "directories": {
     "output": "release-server",
     "buildResources": "build"

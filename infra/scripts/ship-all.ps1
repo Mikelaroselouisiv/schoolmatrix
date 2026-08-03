@@ -97,10 +97,18 @@ function Get-DesktopVersion {
 }
 
 function Set-DesktopVersion([string] $NewVersion) {
-  $raw = Get-Content -LiteralPath $DesktopPkg -Raw -Encoding UTF8
+  # Strip BOM éventuel (Vite/PostCSS refuse package.json avec BOM).
+  $bytes = [System.IO.File]::ReadAllBytes($DesktopPkg)
+  $offset = 0
+  if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+    $offset = 3
+  }
+  $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+  $raw = $utf8NoBom.GetString($bytes, $offset, $bytes.Length - $offset)
   $updated = [regex]::Replace($raw, '("version"\s*:\s*")[^"]+(")', "`${1}$NewVersion`${2}", 1)
   if ($updated -eq $raw) { throw "Bump version échoué ($NewVersion)" }
-  Set-Content -LiteralPath $DesktopPkg -Value $updated -Encoding UTF8 -NoNewline
+  # Set-Content -Encoding UTF8 (Windows PS 5.1) écrit un BOM — interdit ici.
+  [System.IO.File]::WriteAllText($DesktopPkg, $updated, $utf8NoBom)
 }
 
 function Bump-SemVer([string] $Current, [string] $Kind) {

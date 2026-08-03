@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SchoolProfile } from './school-profile.entity';
@@ -8,6 +8,7 @@ import { Class } from '../classes/class.entity';
 import { Student } from '../students/student.entity';
 import { User } from '../users/user.entity';
 import { Role } from '../roles/role.entity';
+import { SyncKickService } from '../sync/sync-kick.service';
 
 export type DashboardStats = {
   classesCount: number;
@@ -23,7 +24,7 @@ export type CurrentContext = {
 };
 
 @Injectable()
-export class SchoolProfileService {
+export class SchoolProfileService implements OnModuleInit {
   constructor(
     @InjectRepository(SchoolProfile)
     private readonly profileRepo: Repository<SchoolProfile>,
@@ -39,14 +40,59 @@ export class SchoolProfileService {
     private readonly userRepo: Repository<User>,
     @InjectRepository(Role)
     private readonly roleRepo: Repository<Role>,
+    private readonly syncKick: SyncKickService,
   ) {}
 
+  async onModuleInit() {
+    await this.dedupeProfiles();
+  }
+
+  /**
+   * Profil canonique = plus ancien créé. Fusionne les champs du plus récent
+   * puis supprime les doublons.
+   */
+  async dedupeProfiles(): Promise<SchoolProfile | null> {
+    const all = await this.profileRepo.find({
+      order: { created_at: 'ASC' },
+    });
+    if (all.length === 0) return null;
+    if (all.length === 1) return all[0];
+
+    const keep = all[0];
+    const newest = all.reduce((a, b) =>
+      a.updated_at.getTime() >= b.updated_at.getTime() ? a : b,
+    );
+    keep.name = newest.name;
+    keep.slogan = newest.slogan;
+    keep.domain = newest.domain;
+    keep.logo_url = newest.logo_url;
+    keep.primary_color = newest.primary_color;
+    keep.secondary_color = newest.secondary_color;
+    keep.active = newest.active;
+    keep.current_academic_year_id = newest.current_academic_year_id;
+    keep.current_period_id = newest.current_period_id;
+    keep.updated_at = newest.updated_at;
+    await this.profileRepo.save(keep);
+
+    await this.profileRepo
+      .createQueryBuilder()
+      .delete()
+      .where('id != :id', { id: keep.id })
+      .execute();
+
+    return keep;
+  }
+
   async getProfile(): Promise<SchoolProfile | null> {
-    const [p] = await this.profileRepo.find({ take: 1 });
+    const [p] = await this.profileRepo.find({
+      order: { created_at: 'ASC' },
+      take: 1,
+    });
     return p ?? null;
   }
 
   async ensureProfile(): Promise<SchoolProfile> {
+    await this.dedupeProfiles();
     const existing = await this.getProfile();
     if (existing) return existing;
     const profile = this.profileRepo.create({
@@ -86,7 +132,9 @@ export class SchoolProfileService {
     if (params.current_period_id !== undefined) {
       profile.current_period_id = params.current_period_id || null;
     }
-    return this.profileRepo.save(profile);
+    const saved = await this.profileRepo.save(profile);
+    this.syncKick.kick('school-profile');
+    return saved;
   }
 
   async getCurrentContext(): Promise<CurrentContext> {

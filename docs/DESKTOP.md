@@ -13,17 +13,21 @@ Le produit desktop est **entièrement dans** `apps/desktop` (modèle Israel) :
 | **Server** | `http://127.0.0.1:3000` (+ stack Docker / sync-agent) |
 | **Remote** | `http://34.95.43.132` |
 
-### Machine Server (comme Israel)
+### Machine Server (site école) ≠ machine de développement
+
+- **Dev** (`apps/desktop` + backend en local) : poste du développeur. Ce n’est **pas** la machine d’exploitation.
+- **Server école** : reçoit uniquement ce que l’**installeur Server** embarque (`server-stack` : images `.tar`, `defaults.env`, `bootstrap.ps1`, clé GCS). Aucun réglage manuel sur site.
 
 Sur site : installer l’exe **Server** → l’app se lance → tout est automatique :
 
 1. Copie `server-stack` → `C:\ProgramData\Parallele SchoolMatrix\server-stack`
 2. Installe Docker Desktop si besoin (winget)
-3. Crée `.env.server` depuis `defaults.env` **embarqué** (SYNC_API_KEY cloud déjà injectée au build)
-4. Charge les images `.tar` (Postgres + backend + sync-agent) et `docker compose up`
-5. Tâche planifiée pour remonter la stack à l’ouverture de session
+3. Crée / réaligne `.env.server` depuis `defaults.env` **embarqué** (SYNC_API_KEY, GCS, `SYNC_INTERVAL_MS`, `SYNC_KICK_URL`)
+4. Monte `credentials/gcs-sa.json` dans Docker (`GOOGLE_APPLICATION_CREDENTIALS`)
+5. Charge les images `.tar` (Postgres + backend + sync-agent) et recreate `backend` + `sync-agent`
+6. Tâche planifiée pour remonter la stack à l’ouverture de session
 
-**Aucune édition manuelle de `.env`.** Le build refuse de produire un exe Server sans `secrets/sync-api-key.txt`.
+**Aucune édition manuelle de `.env`.** Pour qu’un correctif sync / kick / backend vive à l’école : le **builder dans l’installeur** (`prepare:server-stack` + `dist:win:server` / `ship-all`), puis MAJ auto ou réinstall sur la machine école.
 
 Docker reste vide tant que l’app n’a pas démarré une fois (l’installeur NSIS lance l’app en fin d’install).
 

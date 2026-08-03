@@ -6,6 +6,7 @@ import { User } from './user.entity';
 import { UserLinkedStudent } from './user-linked-student.entity';
 import { Role } from '../roles/role.entity';
 import { Student } from '../students/student.entity';
+import { SyncKickService } from '../sync/sync-kick.service';
 
 @Injectable()
 export class UsersService {
@@ -18,6 +19,7 @@ export class UsersService {
     private readonly rolesRepo: Repository<Role>,
     @InjectRepository(Student)
     private readonly studentRepo: Repository<Student>,
+    private readonly syncKick: SyncKickService,
   ) {}
 
   async findByEmail(email: string): Promise<User | null> {
@@ -104,6 +106,7 @@ export class UsersService {
         }
       }
     }
+    this.syncKick.kick('user-create');
     return saved;
   }
 
@@ -113,7 +116,9 @@ export class UsersService {
     const role = await this.rolesRepo.findOne({ where: { name: roleName.toUpperCase().trim() } });
     if (!role) throw new BadRequestException(`Role not found: ${roleName}`);
     user.role = role;
-    return this.usersRepo.save(user);
+    const saved = await this.usersRepo.save(user);
+    this.syncKick.kick('user-role');
+    return saved;
   }
 
   async updateUser(userId: number, params: Partial<{
@@ -161,7 +166,9 @@ export class UsersService {
         }
       }
     }
-    return this.usersRepo.save(user);
+    const saved = await this.usersRepo.save(user);
+    this.syncKick.kick('user-update');
+    return saved;
   }
 
   async getLinkedStudentIds(userId: number): Promise<string[]> {
@@ -204,6 +211,8 @@ export class UsersService {
     const pwd = newPassword?.trim() ?? '';
     if (pwd.length < 6) throw new BadRequestException('Le mot de passe doit faire au moins 6 caractères');
     user.password_hash = await bcrypt.hash(pwd, 10);
-    return this.usersRepo.save(user);
+    const saved = await this.usersRepo.save(user);
+    this.syncKick.kick('user-password');
+    return saved;
   }
 }

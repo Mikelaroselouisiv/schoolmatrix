@@ -8,6 +8,7 @@ import { S3Service } from '../s3/s3.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { FileMetadata } from '../file-metadata/file-metadata.entity';
+import { SyncKickService } from '../sync/sync-kick.service';
 
 const EXT_BY_MIME: Record<string, string> = {
   'image/jpeg': '.jpg',
@@ -25,6 +26,7 @@ export class UploadsService {
     private readonly s3: S3Service,
     @InjectRepository(FileMetadata)
     private readonly fileMetaRepo: Repository<FileMetadata>,
+    private readonly syncKick: SyncKickService,
   ) {}
 
   async saveFile(
@@ -64,7 +66,12 @@ export class UploadsService {
       size_bytes: buffer.length,
     });
     await this.fileMetaRepo.save(meta);
+    this.syncKick.kick('upload');
 
+    // URL publique GCS si dispo — lisible depuis Remote et Server sans sync binaire.
+    if (remoteKey && this.gcs.isEnabled()) {
+      return this.gcs.publicUrl(remoteKey);
+    }
     return `uploads/${filename}`;
   }
 }

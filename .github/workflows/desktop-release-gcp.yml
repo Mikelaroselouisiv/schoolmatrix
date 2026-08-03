@@ -76,6 +76,16 @@ jobs:
         if: matrix.edition == 'server'
         run: gcloud auth configure-docker northamerica-northeast1-docker.pkg.dev --quiet
 
+      - name: Fetch Server build secrets (SYNC_API_KEY + GCS SA)
+        if: matrix.edition == 'server'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path secrets | Out-Null
+          & ./infra/scripts/gcp-provision-sync-key.ps1 -FetchOnly
+          if ($LASTEXITCODE -ne 0) { throw 'SYNC_API_KEY fetch failed' }
+          & ./infra/scripts/gcp-provision-desktop-gcs-key.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'GCS desktop key provision failed' }
+
       - name: Build installer
         working-directory: apps/desktop
         shell: pwsh

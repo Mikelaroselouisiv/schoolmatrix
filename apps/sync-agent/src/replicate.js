@@ -12,9 +12,20 @@ export function createApiClient(baseURL, syncKey) {
   });
 }
 
+function readCursor(cursors, entity) {
+  const cur = cursors[entity];
+  if (!cur) return { t: '1970-01-01T00:00:00.000000Z', id: null };
+  if (typeof cur === 'string') return { t: cur, id: null };
+  return {
+    t: cur.t || '1970-01-01T00:00:00.000000Z',
+    id: cur.id || null,
+  };
+}
+
 /**
  * Pull deltas from `from` and push them to `to`.
  * Curseur avancé seulement si le batch a 0 erreur.
+ * Curseur composite { t, id } pour éviter le blocage µs.
  */
 export async function replicateDirection({
   from,
@@ -26,7 +37,7 @@ export async function replicateDirection({
   const summary = { label, entities: {} };
 
   for (const entity of ENTITY_ORDER) {
-    let since = cursors[entity] || '1970-01-01T00:00:00.000Z';
+    let cursor = readCursor(cursors, entity);
     let pulled = 0;
     let applied = 0;
     let skipped = 0;
@@ -37,12 +48,22 @@ export async function replicateDirection({
 
     for (;;) {
       pages += 1;
-      const { data } = await from.get('/sync/pull', {
-        params: { entity, since, take: 200 },
-      });
+      const params = {
+        entity,
+        since: cursor.t,
+        take: 200,
+      };
+      if (cursor.id) params.afterId = cursor.id;
+
+      const { data } = await from.get('/sync/pull', { params });
       const records = data.records || [];
       if (records.length === 0) {
-        if (data.nextCursor) cursors[entity] = data.nextCursor;
+        if (data.nextCursor) {
+          cursors[entity] = {
+            t: data.nextCursor,
+            id: data.nextAfterId || null,
+          };
+        }
         break;
       }
 
@@ -69,8 +90,17 @@ export async function replicateDirection({
         break;
       }
 
-      since = data.nextCursor || records[records.length - 1]?.updatedAt || since;
-      cursors[entity] = since;
+      cursor = {
+        t:
+          data.nextCursor ||
+          records[records.length - 1]?.updatedAt ||
+          cursor.t,
+        id:
+          data.nextAfterId ||
+          records[records.length - 1]?.uuid ||
+          cursor.id,
+      };
+      cursors[entity] = cursor;
 
       if (records.length < 200 || pages > 50) break;
     }

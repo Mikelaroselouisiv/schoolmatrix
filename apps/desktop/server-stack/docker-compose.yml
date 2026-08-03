@@ -34,13 +34,16 @@ services:
       DB_PORT: "5432"
       STORAGE_ROOT: /app/storage
       NODE_ID: LOCAL
+      SYNC_KICK_URL: http://sync-agent:3911/kick
       GCS_BUCKET: ${GCS_BUCKET:-parallele-schoolmatrix-assets}
       GCS_PREFIX: ${GCS_PREFIX:-schoolmatrix}
       GCS_PROJECT_ID: ${GCS_PROJECT_ID:-parallele-schoolmatrix}
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/gcs-sa.json
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
       - schoolmatrix_storage_server:/app/storage
+      - ./credentials/gcs-sa.json:/run/secrets/gcs-sa.json:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,8 +56,9 @@ services:
       LOCAL_API_URL: http://backend:3000
       REMOTE_API_URL: ${REMOTE_API_URL:-http://34.95.43.132}
       SYNC_API_KEY: ${SYNC_API_KEY}
-      SYNC_INTERVAL_MS: ${SYNC_INTERVAL_MS:-45000}
+      SYNC_INTERVAL_MS: ${SYNC_INTERVAL_MS:-5000}
       SYNC_NODE_ID: ${SYNC_NODE_ID:-local-mother}
+      SYNC_KICK_PORT: "3911"
     depends_on:
       - backend
 

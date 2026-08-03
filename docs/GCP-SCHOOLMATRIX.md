@@ -7,7 +7,7 @@ Ne jamais opérer sur `pos-entrprise-israel`, `pos-freres-basiles`, `eau-cascade
 
 - **Source de vérité = serveur LOCAL** (logiciel Server) : Postgres + API + **sync-agent principal**.
 - **Cloud GCP** = miroir / API pour Remote, mobile, WordPress (et petit support offline côté clients).
-- **Conflits : LOCAL gagne.** Ce qui arrive online est réécrit en local ; en cas de conflit, le local prime.
+- **Conflits : last-write-wins** sur `updatedAt` (à égalité, biais local). Voir `docs/SYNC_RULES.md`.
 - Un seul agent sync « métier » sur la machine Server (pas deux sources de vérité).
 
 ## Ressources cibles

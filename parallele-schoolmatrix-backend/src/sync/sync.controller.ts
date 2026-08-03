@@ -17,9 +17,15 @@ export class SyncController {
     @Query('entity') entity: string,
     @Query('since') since?: string,
     @Query('take') take?: string,
+    @Query('afterId') afterId?: string,
   ) {
     const n = take ? parseInt(take, 10) : 200;
-    return this.syncService.pull(entity, since, Number.isFinite(n) ? n : 200);
+    return this.syncService.pull(
+      entity,
+      since,
+      Number.isFinite(n) ? n : 200,
+      afterId,
+    );
   }
 
   @Post('push')

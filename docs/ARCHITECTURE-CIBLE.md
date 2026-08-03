@@ -8,7 +8,7 @@ Inspiré de POS Entreprises Israel, avec une règle claire :
 [ Machine Server (école) ]
   Postgres + API Nest + sync-agent principal
            │
-           │  sync (local gagne les conflits)
+           │  sync (last-write-wins / updatedAt)
            ▼
 [ Cloud GCP — miroir ]
   Postgres + API (VM)
@@ -21,7 +21,7 @@ Inspiré de POS Entreprises Israel, avec une règle claire :
 
 - **Une** source de vérité : le serveur local.
 - **Un** agent sync principal : sur la machine Server.
-- Online peut recevoir des écritures (Remote / mobile / site) ; elles sont ramenées en local. **Conflit → local gagne.**
+- Online peut recevoir des écritures (Remote / mobile / site) ; elles sont ramenées en local. **Conflit → last-write-wins (`updatedAt`) ; à égalité, biais local.**
 - Le cloud sert aussi à offrir une API / capacité offline aux clients distants (pas une 2ᵉ vérité métier).
 
 ## Logiciels

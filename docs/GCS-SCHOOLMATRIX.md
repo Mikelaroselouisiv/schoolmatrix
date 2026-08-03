@@ -20,7 +20,7 @@ GCS_PROJECT_ID=parallele-schoolmatrix
 
 Sur la **VM GCP**, pas de clé JSON : le client utilise l’ADC du compte de service `schoolmatrix-vm@…` (rôle `roles/storage.objectAdmin`).
 
-Sur la **machine Server locale**, soit ADC utilisateur (`gcloud auth application-default login`), soit `GOOGLE_APPLICATION_CREDENTIALS` vers une clé SA avec accès écriture au bucket.
+Sur la **machine Server locale** (installeur) : la clé du SA `schoolmatrix-desktop@…` est **embarquée** au build (`credentials/gcs-sa.json` → `GOOGLE_APPLICATION_CREDENTIALS`). Aucune config manuelle sur site.
 
 ## Comportement upload
 

@@ -1,8 +1,8 @@
 ﻿#Requires -Version 5.1
 <#
   Bootstrap machine Server SchoolMatrix - appelé automatiquement au lancement de l'app.
-  Tout est embarqué dans l'installeur : images .tar, docker-compose, defaults.env (SYNC_API_KEY cloud).
-  Aucune config manuelle sur site.
+  Tout est embarqué dans l'installeur : images .tar, docker-compose, defaults.env
+  (SYNC_API_KEY + GCS), credentials/gcs-sa.json. Aucune config manuelle sur site.
 #>
 param(
   [Parameter(Mandatory = $true)]
@@ -78,6 +78,13 @@ function Install-DockerDesktop {
   throw 'Docker Desktop installe mais pas pret. Redemarrez le PC puis relancez SchoolMatrix Server.'
 }
 
+function Assert-GcsCredentials {
+  $cred = Join-Path $StackDir 'credentials\gcs-sa.json'
+  if (-not (Test-Path -LiteralPath $cred)) {
+    throw 'credentials/gcs-sa.json manquant dans server-stack (installeur incomplet — rebuild Server).'
+  }
+}
+
 function Ensure-EnvFile {
   $source = Get-BundledDefaultsPath
   $bundled = Read-EnvMap $source
@@ -98,13 +105,22 @@ function Ensure-EnvFile {
     if (-not $map['DB_NAME']) { $map['DB_NAME'] = 'schoolmatrix' }
     if (-not $map['REMOTE_API_URL']) { $map['REMOTE_API_URL'] = 'http://34.95.43.132' }
     if (-not $map['NODE_ID']) { $map['NODE_ID'] = 'LOCAL' }
+    if (-not $map['SYNC_INTERVAL_MS']) { $map['SYNC_INTERVAL_MS'] = '5000' }
+    if (-not $map['SYNC_KICK_URL']) { $map['SYNC_KICK_URL'] = 'http://sync-agent:3911/kick' }
+    if (-not $map['SYNC_NODE_ID']) { $map['SYNC_NODE_ID'] = 'local-mother' }
+    if (-not $map['GCS_BUCKET']) { $map['GCS_BUCKET'] = 'parallele-schoolmatrix-assets' }
+    if (-not $map['GCS_PREFIX']) { $map['GCS_PREFIX'] = 'schoolmatrix' }
+    if (-not $map['GCS_PROJECT_ID']) { $map['GCS_PROJECT_ID'] = 'parallele-schoolmatrix' }
+    if (-not $map['GOOGLE_APPLICATION_CREDENTIALS']) {
+      $map['GOOGLE_APPLICATION_CREDENTIALS'] = '/run/secrets/gcs-sa.json'
+    }
 
     Write-EnvMap $EnvFile $map
-    Write-Step 'Fichier .env.server cree (SYNC_API_KEY cloud embarquee)'
+    Write-Step 'Fichier .env.server cree (SYNC_API_KEY + GCS embarques)'
     return
   }
 
-  # Mise a jour / repair : realigner SYNC_API_KEY + REMOTE_API_URL depuis le bundle (MAJ installateur)
+  # Mise a jour / repair : realigner cloud config depuis le bundle (MAJ installateur)
   [void](Align-BundledCloudConfig)
 }
 
@@ -112,22 +128,35 @@ function Align-BundledCloudConfig {
   $source = Get-BundledDefaultsPath
   $bundled = Read-EnvMap $source
   $bundledKey = $bundled['SYNC_API_KEY']
-  $bundledRemote = $bundled['REMOTE_API_URL']
   if (Test-Placeholder $bundledKey) { return $false }
 
   $map = Read-EnvMap $EnvFile
   $changed = $false
-  if ($map['SYNC_API_KEY'] -ne $bundledKey) {
-    $map['SYNC_API_KEY'] = $bundledKey
-    $changed = $true
-  }
-  if ($bundledRemote -and $map['REMOTE_API_URL'] -ne $bundledRemote) {
-    $map['REMOTE_API_URL'] = $bundledRemote
-    $changed = $true
+  # Realigne aussi le rythme sync / kick (sinon une ancienne .env.server
+  # sur la machine ecole garde 45000ms apres MAJ installateur).
+  $keysToAlign = @(
+    'SYNC_API_KEY',
+    'REMOTE_API_URL',
+    'SYNC_INTERVAL_MS',
+    'SYNC_KICK_URL',
+    'SYNC_NODE_ID',
+    'GCS_BUCKET',
+    'GCS_PREFIX',
+    'GCS_PROJECT_ID',
+    'GOOGLE_APPLICATION_CREDENTIALS'
+  )
+  foreach ($k in $keysToAlign) {
+    $bv = $bundled[$k]
+    if (-not $bv) { continue }
+    if ($k -eq 'SYNC_API_KEY' -and (Test-Placeholder $bv)) { continue }
+    if ($map[$k] -ne $bv) {
+      $map[$k] = $bv
+      $changed = $true
+    }
   }
   if ($changed) {
     Write-EnvMap $EnvFile $map
-    Write-Step 'SYNC_API_KEY / REMOTE_API_URL realignes depuis l installateur'
+    Write-Step 'Config cloud realignee depuis l installateur (sync + GCS)'
   }
   return $changed
 }
@@ -254,11 +283,19 @@ function Register-ScheduledTask {
 }
 
 function Invoke-ComposeUp {
-  param([switch]$Quiet)
+  param(
+    [switch]$Quiet,
+    [switch]$ForceRecreateApp
+  )
   Push-Location $StackDir
   try {
-    if ($Quiet) {
-      Invoke-DockerCompose -Quiet -ComposeArgs @('-f', $ComposeFile, '--env-file', $EnvFile, 'up', '-d', '--force-recreate', 'sync-agent')
+    if ($ForceRecreateApp) {
+      # Backend (SYNC_KICK_URL) + sync-agent (intervalle / kick) — machine ecole apres MAJ
+      Invoke-DockerCompose -Quiet:$Quiet -ComposeArgs @(
+        '-f', $ComposeFile, '--env-file', $EnvFile,
+        'up', '-d', '--force-recreate', 'backend', 'sync-agent'
+      )
+    } elseif ($Quiet) {
       Invoke-DockerCompose -Quiet -ComposeArgs @('-f', $ComposeFile, '--env-file', $EnvFile, 'up', '-d')
     } else {
       Invoke-DockerCompose -ComposeArgs @('-f', $ComposeFile, '--env-file', $EnvFile, 'up', '-d')
@@ -277,14 +314,17 @@ if (Test-Path -LiteralPath $EnvFile) {
 }
 
 if (Test-Path -LiteralPath $StateFile) {
+  Assert-GcsCredentials
   Ensure-EnvFile
   if (Test-DockerReady) {
     Import-BundledImages
     if ($cloudCfgChanged) {
-      Write-Step 'Recreate sync-agent (nouvelle cle sync)'
-      Invoke-ComposeUp -Quiet
+      Write-Step 'Recreate backend + sync-agent (config sync / kick / GCS depuis installateur)'
+      Invoke-ComposeUp -Quiet -ForceRecreateApp
     } else {
-      Invoke-ComposeUp -Quiet
+      # Nouvelles images .tar (meme tags) : recreate pour prendre le code sync LWW / photos GCS
+      Write-Step 'Recreate backend + sync-agent (images embarquees)'
+      Invoke-ComposeUp -Quiet -ForceRecreateApp
     }
   }
   exit 0
@@ -301,6 +341,7 @@ if ((Test-Path -LiteralPath $EnvFile) -and (Test-LocalApi)) {
 
 Write-Step 'Configuration machine Server (premier lancement)'
 Install-DockerDesktop
+Assert-GcsCredentials
 Ensure-EnvFile
 Import-BundledImages
 Start-Stack

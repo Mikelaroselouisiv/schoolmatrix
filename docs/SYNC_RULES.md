@@ -2,28 +2,37 @@
 
 ## Topologie
 
-- **Source de vérité = LOCAL** (machine Server : Postgres + API + **un** sync-agent).
-- **Cloud GCP = miroir** (API + Postgres) pour Remote, mobile, WordPress.
-- **Un seul agent sync métier**, sur la machine Server.
+- **Machine Server** : Postgres + API + **un** sync-agent (seul moteur de sync métier).
+- **Cloud GCP** : miroir (API + Postgres) pour Remote, mobile, WordPress.
+- Édition possible des deux côtés ; convergence par **last-write-wins**.
 
-## Cycle agent (~45s)
+## Cycle agent
 
 1. Pull cloud → local  
 2. Push local → cloud  
 
-## Conflits : LOCAL gagne
+- Intervalle par défaut : **~5s** (`SYNC_INTERVAL_MS`).
+- Kick immédiat : l’API locale POST `SYNC_KICK_URL` (agent `:3911/kick`) après écritures école / utilisateur / upload.
 
-| Nœud qui applique | Provenance | Règle |
-|-------------------|------------|--------|
-| LOCAL | cloud (`sourceNodeId=gcp`) | Crée si absent ; **ne jamais écraser** une ligne existante |
-| CLOUD | local (`local-mother`) | Upsert si `incoming.updatedAt >= existing` (local gagne les égalités) |
+## Conflits : last-write-wins
 
-Les écritures Remote/mobile sur le cloud apparaissent en local **seulement** si l’uuid n’existe pas encore localement (sinon local conserve sa version).
+| Situation | Règle |
+|-----------|--------|
+| `incoming.updatedAt > existing` | Appliquer (créé ou mis à jour) |
+| `incoming.updatedAt < existing` | Skip |
+| Égalité + apply sur LOCAL depuis cloud | Skip (biais local) |
+| Égalité + apply sur CLOUD depuis local | Appliquer |
+
+## SchoolProfile (singleton)
+
+Une seule ligne métier. À l’apply sync : LWW adopte l’UUID gagnant et **supprime les doublons**.  
+`getProfile()` lit toujours le plus ancien `created_at` après dédup au démarrage.
 
 ## Identité
 
-- UUID métier (`id`) = clé de sync.
+- UUID métier (`id`) = clé de sync (sauf SchoolProfile singleton qui peut changer d’UUID gagnant).
 - Filaire : colonnes scalaires + FK ManyToOne comme uuid (via `loadRelationIds`).
+- Curseur composite `{ since, afterId }` + horodatage µs Postgres (pas de blocage sur skip).
 - Pas de soft-delete généralisé en V1 (`deletedAt` toujours `null`).
 
 ## Append-only
@@ -37,10 +46,16 @@ Ne jamais écraser si uuid déjà présent :
 
 Header `X-Sync-Key: <SYNC_API_KEY>` — même clé sur local, cloud et agent.
 
+## Fichiers / photos
+
+Si GCS est activé, l’upload enregistre une **URL publique**  
+`https://storage.googleapis.com/<bucket>/schoolmatrix/uploads/...`  
+dans `profile_photo_url` / `logo_url` — lisible Remote et Server sans sync binaire.
+
+Hors GCS : chemin relatif `uploads/...` (servi par l’API du nœud uniquement).
+
 ## Entités V1
 
 Voir `ENTITY_ORDER` dans `apps/sync-agent/src/entities.js` et `SYNC_ENTITY_DEFS` dans le backend.
 
-Inclut **`User`** (login Server → Remote ; `password_hash` + `role_id`). Les rôles sont seedés identiquement (mêmes ids) des deux côtés — pas de sync `Role` en V1.
-
-Hors scope V1 : sync fichiers GCS (Phase 2/plus tard).
+Inclut **`User`** (`password_hash`, photos, `role_id`). Les rôles sont seedés identiquement (mêmes ids) des deux côtés — pas de sync `Role` en V1.

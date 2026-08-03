@@ -1,6 +1,5 @@
-# Machine Server (source de vérité) : Postgres + API + sync-agent.
-# Le sync-agent pousse le local vers GCP et tire les nouveautés cloud.
-# En conflit : LOCAL gagne.
+# Machine Server : Postgres + API + sync-agent.
+# Sync LWW (updatedAt) + kick immédiat ; intervalle ~5s.
 
 services:
   postgres:
@@ -37,6 +36,7 @@ services:
       DB_NAME: ${DB_NAME:-schoolmatrix}
       STORAGE_ROOT: /app/storage
       NODE_ID: LOCAL
+      SYNC_KICK_URL: http://sync-agent:3911/kick
       # SYNC_API_KEY / JWT / DB_* : via env_file .env.server
     ports:
       - "127.0.0.1:3000:3000"
@@ -56,8 +56,9 @@ services:
       LOCAL_API_URL: http://backend:3000
       REMOTE_API_URL: ${REMOTE_API_URL:-http://34.95.43.132}
       SYNC_API_KEY: ${SYNC_API_KEY}
-      SYNC_INTERVAL_MS: ${SYNC_INTERVAL_MS:-45000}
+      SYNC_INTERVAL_MS: ${SYNC_INTERVAL_MS:-5000}
       SYNC_NODE_ID: ${SYNC_NODE_ID:-local-mother}
+      SYNC_KICK_PORT: "3911"
     depends_on:
       - backend
 

@@ -1,0 +1,7 @@
+{
+  "name": "parallele-schoolmatrix-desktop",
+  "version": "1.0.9",
+  "description": "Application desktop Electron pour Parallele SchoolMatrix",
+  "main": "main.js",
+  "author": "Parallele SchoolMatrix"
+}

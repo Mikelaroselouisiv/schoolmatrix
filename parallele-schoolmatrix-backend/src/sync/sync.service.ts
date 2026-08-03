@@ -1,6 +1,7 @@
 /**
- * Sync SchoolMatrix — protocole état (uuid + curseur temporel).
- * Source de vérité = nœud LOCAL. En conflit, LOCAL gagne.
+ * Sync SchoolMatrix — protocole état (uuid + curseur temporel composite).
+ * Conflits : last-write-wins (updatedAt) ; à horodatage égal, le local gagne.
+ * SchoolProfile est un singleton (dédup + adoption UUID gagnant).
  */
 import {
   BadRequestException,
@@ -102,34 +103,56 @@ export class SyncService implements OnModuleInit {
     return s === 'GCP' || s === 'CLOUD' || s.includes('GCP');
   }
 
-  async pull(entityName: string, since?: string, take = 200) {
+  /**
+   * Pull deltas. Curseur composite (since + afterId) pour ne jamais rester
+   * bloqué sur la même ligne (précision µs Postgres vs ms ISO).
+   */
+  async pull(
+    entityName: string,
+    since?: string,
+    take = 200,
+    afterId?: string,
+  ) {
     const def = SYNC_ENTITY_MAP.get(entityName as SyncEntityName);
     if (!def) {
       throw new BadRequestException(`Entité sync inconnue: ${entityName}`);
     }
     const limit = Math.min(Math.max(take || 200, 1), 1000);
-    const sinceDate = new Date(since || '1970-01-01T00:00:00.000Z');
-    if (Number.isNaN(sinceDate.getTime())) {
+    const sinceStr = (since || '1970-01-01T00:00:00.000000Z').trim();
+    if (Number.isNaN(new Date(sinceStr).getTime())) {
       throw new BadRequestException('since ISO8601 invalide');
     }
 
     const repo = this.dataSource.getRepository(def.target);
     const meta = repo.metadata;
     const timeProp = def.timeField;
+    const after = (afterId ?? '').trim();
 
-    const rows = await repo
+    const qb = repo
       .createQueryBuilder('e')
-      .where(`e.${timeProp} > :since`, { since: sinceDate })
       .orderBy(`e.${timeProp}`, 'ASC')
       .addOrderBy('e.id', 'ASC')
-      .take(limit)
-      .getMany();
+      .take(limit);
+
+    if (after) {
+      qb.where(
+        `(e.${timeProp} > CAST(:since AS timestamptz) OR (e.${timeProp} = CAST(:since AS timestamptz) AND CAST(e.id AS varchar) > :afterId))`,
+        { since: sinceStr, afterId: after },
+      );
+    } else {
+      qb.where(`e.${timeProp} > CAST(:since AS timestamptz)`, {
+        since: sinceStr,
+      });
+    }
+
+    const rows = await qb.getMany();
 
     if (rows.length === 0) {
       return {
         entity: entityName,
         records: [] as SyncWireRecord[],
-        nextCursor: sinceDate.toISOString(),
+        nextCursor: sinceStr,
+        nextAfterId: after || null,
         count: 0,
       };
     }
@@ -138,27 +161,63 @@ export class SyncService implements OnModuleInit {
       where: { id: In(rows.map((r: any) => r.id)) } as any,
       loadRelationIds: true,
     });
-    const byId = new Map(withIds.map((r: any) => [r.id, r]));
+    const byId = new Map(withIds.map((r: any) => [String(r.id), r]));
+
+    const cursorTsById = await this.loadCursorTimestamps(
+      meta,
+      timeProp,
+      rows.map((r: any) => r.id),
+    );
 
     const records: SyncWireRecord[] = rows.map((row: any) => {
-      const full = byId.get(row.id) ?? row;
-      const t = full[timeProp] ?? row[timeProp];
-      const updatedAt =
-        t instanceof Date ? t.toISOString() : new Date(t).toISOString();
+      const full = byId.get(String(row.id)) ?? row;
+      const cursorTs =
+        cursorTsById.get(String(full.id)) ||
+        this.toIso(full[timeProp] ?? row[timeProp]);
       return {
         uuid: String(full.id),
-        updatedAt,
+        updatedAt: cursorTs,
         deletedAt: null,
         data: this.toWireData(full, meta),
       };
     });
 
+    const last = records[records.length - 1];
     return {
       entity: entityName,
       records,
-      nextCursor: records[records.length - 1].updatedAt,
+      nextCursor: last.updatedAt,
+      nextAfterId: last.uuid,
       count: records.length,
     };
+  }
+
+  /** Horodatage pleine précision (µs) pour le curseur — via to_json Postgres. */
+  private async loadCursorTimestamps(
+    meta: EntityMetadata,
+    timeProp: string,
+    ids: Array<string | number>,
+  ): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    if (ids.length === 0) return map;
+    const table = meta.tableName.replace(/"/g, '');
+    const schema = (meta.schema || 'public').replace(/"/g, '');
+    const col =
+      meta.columns.find((c) => c.propertyName === timeProp)?.databaseName ||
+      timeProp;
+    const idTexts = ids.map((id) => String(id));
+    const rows: Array<{ id: string; ts: string }> =
+      await this.dataSource.query(
+        `SELECT id::text AS id,
+                trim(both '"' from to_json("${col}")::text) AS ts
+         FROM "${schema}"."${table}"
+         WHERE id::text = ANY($1::text[])`,
+        [idTexts],
+      );
+    for (const r of rows) {
+      if (r.ts) map.set(String(r.id), r.ts);
+    }
+    return map;
   }
 
   async push(body: {
@@ -190,14 +249,23 @@ export class SyncService implements OnModuleInit {
         continue;
       }
       try {
-        const action = await this.applyOne(
-          def.name,
-          repo,
-          meta,
-          def.timeField,
-          record,
-          body.sourceNodeId,
-        );
+        const action =
+          def.name === 'SchoolProfile'
+            ? await this.applySchoolProfileSingleton(
+                repo,
+                meta,
+                def.timeField,
+                record,
+                body.sourceNodeId,
+              )
+            : await this.applyOne(
+                def.name,
+                repo,
+                meta,
+                def.timeField,
+                record,
+                body.sourceNodeId,
+              );
         results.push({ uuid, action });
       } catch (err: any) {
         results.push({
@@ -224,6 +292,75 @@ export class SyncService implements OnModuleInit {
     };
   }
 
+  /**
+   * SchoolProfile = une seule ligne. LWW adopte l’UUID gagnant et
+   * supprime les doublons locaux.
+   */
+  private async applySchoolProfileSingleton(
+    repo: Repository<any>,
+    meta: EntityMetadata,
+    timeField: 'updated_at' | 'created_at',
+    record: {
+      uuid: string;
+      updatedAt?: string;
+      deletedAt?: string | null;
+      data: Record<string, unknown>;
+    },
+    sourceNodeId?: string,
+  ): Promise<'created' | 'updated' | 'skipped'> {
+    const all = await repo.find({ order: { created_at: 'ASC' } as any });
+    const incomingAt = this.parseTime(record.updatedAt);
+    const keepId = String(record.uuid);
+
+    if (all.length === 0) {
+      await this.persist(
+        repo,
+        meta,
+        keepId,
+        record.data,
+        record.updatedAt,
+        timeField,
+      );
+      return 'created';
+    }
+
+    const newestLocal = all.reduce((a, b) =>
+      this.parseTime(a[timeField]).getTime() >=
+      this.parseTime(b[timeField]).getTime()
+        ? a
+        : b,
+    );
+    const existingAt = this.parseTime(newestLocal[timeField]);
+
+    if (!this.shouldApply(incomingAt, existingAt, sourceNodeId)) {
+      await this.deleteProfilesExcept(repo, String(newestLocal.id));
+      return 'skipped';
+    }
+
+    const existed = all.some((p) => String(p.id) === keepId);
+    await this.deleteProfilesExcept(repo, keepId);
+    await this.persist(
+      repo,
+      meta,
+      keepId,
+      record.data,
+      record.updatedAt,
+      timeField,
+    );
+    return existed ? 'updated' : 'created';
+  }
+
+  private async deleteProfilesExcept(
+    repo: Repository<any>,
+    keepId: string,
+  ): Promise<void> {
+    await repo
+      .createQueryBuilder()
+      .delete()
+      .where('id != :keepId', { keepId })
+      .execute();
+  }
+
   private async applyOne(
     entityName: SyncEntityName,
     repo: Repository<any>,
@@ -245,12 +382,26 @@ export class SyncService implements OnModuleInit {
 
     if (APPEND_ONLY_ENTITIES.has(entityName)) {
       if (existing) return 'skipped';
-      await this.persist(repo, meta, primaryId, record.data, record.updatedAt, timeField);
+      await this.persist(
+        repo,
+        meta,
+        primaryId,
+        record.data,
+        record.updatedAt,
+        timeField,
+      );
       return 'created';
     }
 
     if (!existing) {
-      await this.persist(repo, meta, primaryId, record.data, record.updatedAt, timeField);
+      await this.persist(
+        repo,
+        meta,
+        primaryId,
+        record.data,
+        record.updatedAt,
+        timeField,
+      );
       return 'created';
     }
 
@@ -261,7 +412,14 @@ export class SyncService implements OnModuleInit {
       return 'skipped';
     }
 
-    await this.persist(repo, meta, primaryId, record.data, record.updatedAt, timeField);
+    await this.persist(
+      repo,
+      meta,
+      primaryId,
+      record.data,
+      record.updatedAt,
+      timeField,
+    );
     return 'updated';
   }
 
@@ -295,25 +453,24 @@ export class SyncService implements OnModuleInit {
   }
 
   /**
-   * LOCAL (vérité) : n’écrase jamais une ligne existante venant du cloud.
-   * CLOUD (miroir) : accepte le local y compris à horodatage égal.
+   * Last-write-wins sur updatedAt.
+   * À égalité : le nœud local conserve ; le cloud accepte le local.
    */
   private shouldApply(
     incomingAt: Date,
     existingAt: Date,
     sourceNodeId?: string,
   ): boolean {
+    const incoming = incomingAt.getTime();
+    const existing = existingAt.getTime();
+    if (incoming > existing) return true;
+    if (incoming < existing) return false;
+
     const localTruth = this.isLocalTruthNode();
     const fromCloud = this.isCloudSource(sourceNodeId);
-
-    if (localTruth && fromCloud) {
-      return false;
-    }
-    if (!localTruth && !fromCloud) {
-      // miroir reçoit le local
-      return incomingAt.getTime() >= existingAt.getTime();
-    }
-    return incomingAt.getTime() > existingAt.getTime();
+    if (localTruth && fromCloud) return false;
+    if (!localTruth && !fromCloud) return true;
+    return false;
   }
 
   private parseTime(value: unknown): Date {
@@ -323,6 +480,11 @@ export class SyncService implements OnModuleInit {
       if (!Number.isNaN(d.getTime())) return d;
     }
     return new Date(0);
+  }
+
+  private toIso(value: unknown): string {
+    const d = this.parseTime(value);
+    return d.toISOString();
   }
 
   private toWireData(entity: any, meta: EntityMetadata): Record<string, unknown> {

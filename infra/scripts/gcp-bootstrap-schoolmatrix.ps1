@@ -8,7 +8,7 @@
   Architecture cible (rappel) :
   - Source de verite = serveur LOCAL (machine Server + sync-agent principal).
   - Cloud GCP = miroir / API pour Remote, mobile, WordPress.
-  - En conflit : LOCAL gagne.
+  - Sync : last-write-wins (updatedAt) ; voir docs/SYNC_RULES.md.
 #>
 param(
   [string] $ProjectId = 'parallele-schoolmatrix',
@@ -120,14 +120,17 @@ function Ensure-Sa([string] $Name, [string] $Display) {
 
 $ciSa = Ensure-Sa $CiSaName 'GitHub Actions SchoolMatrix'
 $vmSa = Ensure-Sa $VmSaName 'Compute VM SchoolMatrix'
+$desktopSa = Ensure-Sa 'schoolmatrix-desktop' 'SchoolMatrix Desktop Server (GCS)'
 
 $ciRoles = @(
   'roles/artifactregistry.writer',
   'roles/storage.admin',
   'roles/compute.instanceAdmin.v1',
   'roles/iam.serviceAccountUser',
+  'roles/iam.serviceAccountKeyAdmin',
   'roles/iap.tunnelResourceAccessor',
-  'roles/logging.logWriter'
+  'roles/logging.logWriter',
+  'roles/secretmanager.admin'
 )
 foreach ($role in $ciRoles) {
   gcloud projects add-iam-policy-binding $ProjectId `
@@ -150,6 +153,9 @@ foreach ($role in $vmRoles) {
     --condition=None `
     --quiet | Out-Null
 }
+
+Write-Host "==> Desktop Server SA bucket IAM" -ForegroundColor Cyan
+gsutil iam ch "serviceAccount:${desktopSa}:roles/storage.objectAdmin" $bucketUri 2>$null
 
 $projectNumber = (& gcloud projects describe $ProjectId --format='value(projectNumber)' | Out-String).Trim()
 $wifProviderResource = ''

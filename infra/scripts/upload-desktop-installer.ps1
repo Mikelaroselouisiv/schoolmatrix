@@ -27,14 +27,16 @@ $RepoRoot = (Resolve-Path -LiteralPath (Join-Path $ScriptDir '..\..')).Path
 $ResolvedReleaseDir = if ($ReleaseDir) {
   (Resolve-Path -LiteralPath $ReleaseDir).Path
 } else {
-  # electron-builder.server.json -> release-server ; electron-builder.remote.json -> release-out
+  # electron-builder.server.json -> release-server ; remote -> release-remote
   $candidates = if ($Edition -eq 'server') {
     @(
       (Join-Path $RepoRoot 'apps\desktop\release-server'),
+      (Join-Path $RepoRoot 'apps\desktop\release-server-b'),
       (Join-Path $RepoRoot 'apps\desktop\release')
     )
   } else {
     @(
+      (Join-Path $RepoRoot 'apps\desktop\release-remote'),
       (Join-Path $RepoRoot 'apps\desktop\release-out'),
       (Join-Path $RepoRoot 'apps\desktop\release')
     )

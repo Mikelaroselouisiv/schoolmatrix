@@ -19,6 +19,7 @@ import {
   SyncEntityName,
   listSyncEntityNames,
 } from './sync.entities';
+import { normalizeMediaFieldsInPlace } from '../uploads/media-url';
 
 export type SyncWireRecord = {
   uuid: string;
@@ -523,6 +524,8 @@ export class SyncService implements OnModuleInit {
     timeField: 'updated_at' | 'created_at',
   ): Promise<void> {
     const payload: Record<string, unknown> = { id: primaryId };
+    // Chemins uploads/… → URL GCS publique (affichage Server ↔ Remote).
+    normalizeMediaFieldsInPlace(data);
 
     for (const col of meta.columns) {
       if (col.relationMetadata) continue;

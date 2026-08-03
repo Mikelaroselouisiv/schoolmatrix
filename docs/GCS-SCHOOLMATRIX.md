@@ -25,7 +25,12 @@ Sur la **machine Server locale** (installeur) : la clé du SA `schoolmatrix-desk
 ## Comportement upload
 
 1. Écriture locale (`STORAGE_ROOT`)
-2. Copie vers GCS si `GCS_BUCKET` défini
+2. Copie vers GCS si `GCS_BUCKET` défini (**obligatoire** en prod multi-nœuds)
 3. Métadonnée `file_metadata.s3_key` = clé objet GCS (nom de colonne historique)
+4. Valeur renvoyée / stockée en base = **URL publique GCS**  
+   `https://storage.googleapis.com/parallele-schoolmatrix-assets/schoolmatrix/uploads/<fichier>`
+5. Chemins legacy `uploads/…` : normalisés au boot + à la sync ; `GET /uploads/<fichier>` redirige vers GCS si absent du disque local
+
+Ainsi Remote et Server affichent la même image sans sync binaire.
 
 S3 AWS n’est plus utilisé sauf si les variables AWS_* sont encore renseignées (legacy).

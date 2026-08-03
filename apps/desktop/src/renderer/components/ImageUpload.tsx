@@ -2,7 +2,7 @@
 import { API_BASE, getImageUrl, initApi } from "@/services/api";
 
 type ImageUploadProps = {
-  /** Valeur actuelle (chemin stocké en base : uploads/xxx.jpg) */
+  /** Valeur actuelle (URL GCS publique ou legacy uploads/xxx.jpg) */
   value?: string | null;
   /** Callback avec le nouveau chemin après upload */
   onChange: (url: string) => void;

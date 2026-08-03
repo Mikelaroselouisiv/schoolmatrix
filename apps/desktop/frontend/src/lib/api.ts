@@ -22,17 +22,21 @@ function resolveApiBase(): string {
 
 const API_BASE = resolveApiBase();
 
+const GCS_PUBLIC_UPLOADS =
+  "https://storage.googleapis.com/parallele-schoolmatrix-assets/schoolmatrix/uploads";
+
 /**
- * URL d’image uploads. En Electron : API absolue. Navigateur web : /api/uploads/...
+ * URL d’image : GCS publique (Server ↔ Remote), sinon API locale.
  */
 function getImageUrl(storedUrl: string | null | undefined): string | null {
   if (!storedUrl || !storedUrl.trim()) return null;
   const trimmed = storedUrl.trim();
   if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed;
+  const rel = trimmed.match(/^(?:\/)?uploads\/([^/?#]+)$/i);
+  if (rel) return `${GCS_PUBLIC_UPLOADS}/${rel[1]}`;
   const path = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
   if (typeof window !== "undefined" && window.schoolmatrixDesktop?.apiBase) {
     const base = window.schoolmatrixDesktop.apiBase.replace(/\/$/, "");
-    // Backend sert /uploads/... (pas /api/uploads)
     const uploadPath = path.startsWith("/uploads")
       ? path
       : path.startsWith("/api/")

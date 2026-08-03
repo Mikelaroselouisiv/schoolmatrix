@@ -120,13 +120,22 @@ export async function getMe(): Promise<SessionUser | null> {
   return (data as SessionUser) ?? null;
 }
 
+/** Bucket / préfixe GCS SchoolMatrix — même règle que le backend (media-url.ts). */
+const GCS_PUBLIC_UPLOADS =
+  'https://storage.googleapis.com/parallele-schoolmatrix-assets/schoolmatrix/uploads';
+
 /**
- * URL d’image uploads. En Electron : API absolue.
+ * URL d’image. Préfère l’URL publique GCS pour que Server et Remote
+ * voient la même image (les chemins relatifs `uploads/…` ne vivent que sur un disque).
  */
 export function getImageUrl(storedUrl: string | null | undefined): string | null {
   if (!storedUrl || !storedUrl.trim()) return null;
   const trimmed = storedUrl.trim();
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
+
+  const rel = trimmed.match(/^(?:\/)?uploads\/([^/?#]+)$/i);
+  if (rel) return `${GCS_PUBLIC_UPLOADS}/${rel[1]}`;
+
   const path = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
   const base = (apiBaseUrl || window.schoolmatrixDesktop?.apiBase || '').replace(/\/$/, '');
   if (!base) return path;
@@ -135,6 +144,7 @@ export function getImageUrl(storedUrl: string | null | undefined): string | null
     : path.startsWith('/api/')
       ? path.slice(4)
       : `/uploads${path.startsWith('/') ? path : `/${path}`}`;
+  // Fallback API : le backend redirige vers GCS si le fichier n’est pas local.
   return `${base}${uploadPath.startsWith('/') ? uploadPath : `/${uploadPath}`}`;
 }
 

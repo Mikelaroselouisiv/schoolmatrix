@@ -48,11 +48,9 @@ Header `X-Sync-Key: <SYNC_API_KEY>` — même clé sur local, cloud et agent.
 
 ## Fichiers / photos
 
-Si GCS est activé, l’upload enregistre une **URL publique**  
-`https://storage.googleapis.com/<bucket>/schoolmatrix/uploads/...`  
-dans `profile_photo_url` / `logo_url` — lisible Remote et Server sans sync binaire.
-
-Hors GCS : chemin relatif `uploads/...` (servi par l’API du nœud uniquement).
+- Upload → GCS + **URL publique** stockée en base (même valeur des deux côtés).
+- Legacy `uploads/...` : réécrit en URL GCS au boot / à la sync ; `GET /uploads/x` redirige vers GCS si le fichier n’est pas sur le disque local.
+- UI (`getImageUrl`) résout aussi `uploads/...` vers GCS directement.
 
 ## Entités V1
 

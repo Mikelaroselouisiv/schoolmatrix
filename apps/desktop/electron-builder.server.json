@@ -4,7 +4,7 @@
   "artifactName": "Parallele-SchoolMatrix-Server-${version}.${ext}",
   "copyright": "Copyright Â© 2026 Parallele SchoolMatrix",
   "directories": {
-    "output": "release-server",
+    "output": "release-server-b",
     "buildResources": "build"
   },
   "files": [

@@ -30,8 +30,9 @@ $ResolvedReleaseDir = if ($ReleaseDir) {
   # electron-builder.server.json -> release-server ; remote -> release-remote
   $candidates = if ($Edition -eq 'server') {
     @(
-      (Join-Path $RepoRoot 'apps\desktop\release-server'),
+      # Prefer release-server-b: Cursor often locks release-server\...\app.asar (EBUSY)
       (Join-Path $RepoRoot 'apps\desktop\release-server-b'),
+      (Join-Path $RepoRoot 'apps\desktop\release-server'),
       (Join-Path $RepoRoot 'apps\desktop\release')
     )
   } else {

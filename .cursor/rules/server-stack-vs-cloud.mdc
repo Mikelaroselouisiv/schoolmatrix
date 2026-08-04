@@ -1,0 +1,38 @@
+---
+description: CRITIQUE — Server école (Docker embarqué) ≠ VM GCP ≠ machine de dev
+alwaysApply: true
+---
+
+# Server école ≠ cloud GCP ≠ poste de développement
+
+## Trois cibles distinctes (ne jamais les confondre)
+
+| Cible | Rôle | Comment ça se met à jour |
+|-------|------|---------------------------|
+| **Poste de développement** (cette machine) | Code + tests locaux | `npm run dev`, Docker local optionnel — **jamais** la source de vérité pour une école |
+| **VM GCP** `schoolmatrix-api` (`34.95.43.132`) | Miroir cloud pour les apps **Remote** | Workflow `Backend - build and push to GCP` → Artifact Registry → deploy VM |
+| **Machine Server (école)** | Source de vérité locale (Postgres + API + sync-agent) | Uniquement via l’**installateur Server** (NSIS) qui embarque `server-stack/*.tar` |
+
+## Règle absolue pour les agents
+
+1. **Déployer le backend sur la VM GCP / Docker de la machine de dev ne met PAS à jour les écoles.**
+2. Pour qu’une école reçoive backend + DB image + sync-agent à jour :
+   - `prepare-server-stack.ps1` doit **pull** `backend:latest` depuis Artifact Registry, builder sync-agent, `docker save` → `apps/desktop/server-stack/images/*.tar`
+   - puis `dist:win:server` / `ship-all` uploade l’exe sur GCS
+   - l’école **télécharge la MAJ** → au prochain lancement, `bootstrap.ps1` fait `docker load` + recreate containers sur **le Docker de l’école**
+3. **Toujours attendre** que le CI backend ait poussé la nouvelle image AR **avant** de builder l’installateur Server (sinon on embarque l’ancien `:latest`). `ship-all.ps1` le fait par défaut.
+4. Un ship `-Desktop none` (backend cloud seul) **ne suffit pas** si l’utilisateur veut les écoles à jour — il faut aussi un build Server + feed GCS.
+
+## Anti-patterns (erreurs graves)
+
+- Traiter le Docker Desktop de la machine de **dev** comme le serveur de production école
+- Croire que `gh workflow run "Backend - build and push to GCP"` met à jour les Servers installés
+- Builder `dist:win:server` **en parallèle** / **avant** la fin du push Artifact Registry
+- Modifier seulement `infra/docker/docker-compose.gcp.yml` en pensant que ça change le stack école (`apps/desktop/server-stack/`)
+
+## Fichiers clés
+
+- Bundle installateur : `apps/desktop/server-stack/` + `scripts/prepare-server-stack.ps1`
+- Appliqué sur site : `server-stack/bootstrap.ps1` (via `src/main/server-bootstrap.cjs`)
+- Cloud only : `infra/scripts/gcp-deploy-on-vm.sh`, workflow backend GCP
+- Livraison : `infra/scripts/ship-all.ps1` + skill `post-change-release`

@@ -29,6 +29,8 @@ Sur site : installer l’exe **Server** → l’app se lance → tout est automa
 
 **Aucune édition manuelle de `.env`.** Pour qu’un correctif sync / kick / backend vive à l’école : le **builder dans l’installeur** (`prepare:server-stack` + `dist:win:server` / `ship-all`), puis MAJ auto ou réinstall sur la machine école.
 
+**Piège fréquent :** pousser le backend sur la VM GCP (ou lancer des conteneurs Docker sur le PC de développement) **ne met pas à jour** les Servers école. Seul le contenu de `server-stack/images/*.tar` dans l’exe Server compte. `ship-all` attend donc le CI Artifact Registry avant `dist:win:server`.
+
 Docker reste vide tant que l’app n’a pas démarré une fois (l’installeur NSIS lance l’app en fin d’install).
 
 ## Legacy / archive

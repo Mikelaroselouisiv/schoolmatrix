@@ -6,8 +6,12 @@
 2. **Quand c’est fini** → une seule commande : `ship-all.ps1`
 3. Le pipeline met **à jour partout** :
    - code sur **GitHub** (`origin` → `Mikelaroselouisiv/schoolmatrix`)
-   - **API cloud** (Artifact Registry + VM `schoolmatrix-api`)
-   - **installateurs Remote + Server** sur GCS → notifications de MAJ sur les machines installées
+   - **API cloud** (Artifact Registry + VM `schoolmatrix-api`) — pour les apps **Remote**
+   - **installateurs Remote + Server** sur GCS → notifications de MAJ
+
+**Server école ≠ VM GCP ≠ Docker du poste de dev.**  
+Le backend/Postgres/sync-agent d’une école ne change que si l’installateur Server embarque de nouveaux `server-stack/images/*.tar` (après CI Artifact Registry), puis l’école installe la MAJ (`bootstrap.ps1` → `docker load`).  
+Voir `docs/DESKTOP.md` et `.cursor/rules/server-stack-vs-cloud.mdc`.
 
 ## Commande unique
 

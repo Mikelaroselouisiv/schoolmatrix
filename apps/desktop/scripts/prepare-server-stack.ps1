@@ -1,7 +1,20 @@
 ﻿#Requires -Version 5.1
 <#
   Prepare server-stack/ before dist:win:server :
-  - Docker images (postgres + backend + sync-agent) as .tar
+
+  Ce script EMBARQUE le stack pour les machines Server ÉCOLE (installateur NSIS).
+  Ce n'est PAS un deploy sur la VM GCP ni sur le Docker de la machine de développement.
+
+  Flux prod école :
+    AR backend:latest + postgres + sync-agent build
+      → docker save → server-stack/images/*.tar
+      → electron-builder extraResources
+      → école télécharge la MAJ → bootstrap.ps1 → docker load + recreate sur LE Docker de l'école
+
+  Prérequis : Artifact Registry backend:latest doit déjà être la version voulue
+  (ship-all.ps1 attend le CI backend avant d'appeler ce script).
+
+  Aussi :
   - defaults.env with cloud SYNC_API_KEY + GCS (required) — zero manual config on site
   - credentials/gcs-sa.json for GOOGLE_APPLICATION_CREDENTIALS in Docker
 #>

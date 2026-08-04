@@ -38,6 +38,11 @@
 .PARAMETER SkipBackend
   Ne pas déclencher le workflow backend (le push main le fera quand même si paths match).
 
+.PARAMETER SkipWaitBackend
+  Do not wait for backend CI before dist:win:server.
+  Not recommended: prepare-server-stack pulls backend:latest; without wait you may ship a stale image.
+  (Dev-machine Docker / GCP VM do NOT update school Servers.)
+
 .PARAMETER DryRun
   Affiche les actions sans les exécuter.
 
@@ -65,6 +70,7 @@ param(
   [switch] $UseCI,
   [switch] $SkipPush,
   [switch] $SkipBackend,
+  [switch] $SkipWaitBackend,
   [switch] $DryRun
 )
 
@@ -88,6 +94,55 @@ function Invoke-OrDry([string] $Label, [scriptblock] $Action) {
   }
   Write-Host "→ $Label" -ForegroundColor Gray
   & $Action
+}
+
+function Wait-BackendGcpCi {
+  # Wait for Backend CI success before dist:win:server so school .tar pull AR :latest (not stale).
+  $gh = Get-Command gh -ErrorAction SilentlyContinue
+  if (-not $gh) {
+    Write-Host "gh missing - cannot wait for CI. Confirm AR backend:latest manually." -ForegroundColor Yellow
+    return
+  }
+
+  $deadline = (Get-Date).AddMinutes(30)
+  Write-Host "Waiting for backend CI (Artifact Registry) before Server bundle..." -ForegroundColor Cyan
+  $fields = 'databaseId,status,conclusion,createdAt,url'
+
+  while ((Get-Date) -lt $deadline) {
+    $json = & gh run list --workflow 'Backend - build and push to GCP' --limit 5 --json $fields
+    if ($LASTEXITCODE -ne 0 -or -not $json) {
+      Start-Sleep -Seconds 8
+      continue
+    }
+    $runs = @($json | ConvertFrom-Json)
+    if ($runs.Count -eq 0) {
+      Start-Sleep -Seconds 8
+      continue
+    }
+
+    $active = @($runs | Where-Object { $_.status -ne 'completed' } | Select-Object -First 1)
+    if ($active.Count -gt 0) {
+      $runId = $active[0].databaseId
+      Write-Host ("-> gh run watch {0} ({1}) {2}" -f $runId, $active[0].status, $active[0].url) -ForegroundColor Gray
+      & gh run watch $runId --exit-status
+      if ($LASTEXITCODE -ne 0) {
+        throw "Backend CI failed (run $runId). Abort Server build to avoid stale image."
+      }
+      Write-Host "Backend CI OK - AR backend:latest ready for prepare-server-stack." -ForegroundColor Green
+      return
+    }
+
+    $done = $runs[0]
+    if ($done.conclusion -eq 'success') {
+      Write-Host ("Backend CI already success (run {0})." -f $done.databaseId) -ForegroundColor Green
+      return
+    }
+    if ($done.conclusion -and $done.conclusion -ne 'success') {
+      throw ("Latest backend CI = {0} (run {1}). Fix before Server build." -f $done.conclusion, $done.databaseId)
+    }
+    Start-Sleep -Seconds 8
+  }
+  throw 'Timeout 30 min waiting for backend GCP CI.'
 }
 
 function Get-DesktopVersion {
@@ -223,8 +278,19 @@ if (-not $SkipBackend) {
 }
 
 # --- 5. Desktop Remote / Server ---
+# Server école = images .tar dans l'installateur (pas le Docker de cette machine, pas la VM GCP).
+$needsServerBundle = ($Desktop -eq 'both' -or $Desktop -eq 'server')
+if ($needsServerBundle -and -not $SkipBackend -and -not $SkipWaitBackend -and -not $UseCI) {
+  Write-Step "Attendre backend AR avant bundle Server école"
+  Invoke-OrDry "Wait-BackendGcpCi (pull :latest → server-stack/images/*.tar)" {
+    Wait-BackendGcpCi
+  }
+} elseif ($needsServerBundle -and $SkipWaitBackend) {
+  Write-Host "ATTENTION: -SkipWaitBackend — le Server peut embarquer un backend:latest périmé." -ForegroundColor Yellow
+}
+
 if ($Desktop -eq 'none') {
-  Write-Host "Desktop: skip (-Desktop none)"
+  Write-Host "Desktop: skip (-Desktop none) — les Servers école ne seront PAS mis à jour."
 } elseif ($UseCI) {
   Write-Step "Desktop via GitHub Actions (tag desktop-v$version)"
   $tag = "desktop-v$version"

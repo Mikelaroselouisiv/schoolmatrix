@@ -15,10 +15,21 @@ Ne lance ce workflow **que sur demande explicite** (ex. « ship », « publie »
 
 ```
 Post-change SchoolMatrix:
-- [ ] 1. Diff + périmètre
-- [ ] 2. ship-all.ps1 (ou étapes manuelles équivalentes)
-- [ ] 3. Rapport (version, URLs feeds, CI)
+- [ ] 1. Diff + périmètre (cloud vs Server école vs UI)
+- [ ] 2. ship-all.ps1 (attend CI backend AR avant build Server)
+- [ ] 3. Rapport (version, URLs feeds, digest backend embarqué si Server)
 ```
+
+## Modèle mental (CRITIQUE)
+
+| Cible | Mis à jour par |
+|-------|----------------|
+| Apps **Remote** (API cloud) | CI backend → VM GCP `34.95.43.132` |
+| Apps **Server** (école) | Installateur NSIS qui embarque `server-stack/images/*.tar` → GCS → MAJ auto → `bootstrap.ps1` sur **le Docker de l’école** |
+| Docker sur le **poste de dev** | Ignoré pour la prod école |
+
+**Ne jamais** considérer que déployer la VM GCP ou toucher Docker sur la machine de développement met à jour un Server école.  
+Voir règle `.cursor/rules/server-stack-vs-cloud.mdc`.
 
 ## Commande préférée
 
@@ -26,23 +37,27 @@ Post-change SchoolMatrix:
 powershell -ExecutionPolicy Bypass -File infra/scripts/ship-all.ps1 -Bump patch -Commit
 ```
 
+Par défaut, si Desktop inclut **server** : déclenche le backend GCP, **attend le succès CI** (image AR), puis `prepare-server-stack` + build + upload GCS.
+
 | Besoin | Flags |
 |--------|--------|
-| Fix / UI | `-Bump patch -Commit` |
+| Fix / UI + stacks | `-Bump patch -Commit` |
 | Feature | `-Bump minor -Commit` |
-| Backend only | `-Bump none -Desktop none -Commit -Message "…"` |
+| Backend cloud **seul** (Remote only ; écoles inchangées) | `-Bump none -Desktop none -Commit -Message "…"` |
+| Backend + écoles | `-Bump patch -Commit` (Desktop both/server — attend AR) |
 | CI build desktop | `-Bump patch -Commit -UseCI` |
 | Simulation | `-DryRun` |
+| Skip attente CI (déconseillé) | `-SkipWaitBackend` |
 
-Détails : [docs/RELEASE.md](../../../docs/RELEASE.md).
+Détails : [docs/RELEASE.md](../../../docs/RELEASE.md), [docs/DESKTOP.md](../../../docs/DESKTOP.md).
 
 ## Périmètre
 
 | Chemins | Effet via ship / CI |
 |---------|---------------------|
-| `parallele-schoolmatrix-backend/**`, `infra/docker/**` | Deploy VM GCP |
+| `parallele-schoolmatrix-backend/**`, `infra/docker/**` | Image AR + deploy VM GCP (**Remote**). Pour les **écoles** : aussi rebuild installateur Server après AR. |
 | `apps/desktop/**` | Bump + installers GCS → notif MAJ |
-| `apps/sync-agent/**` | Commit/push ; rebuild Server si stack |
+| `apps/sync-agent/**` | Doit être re-bundlé dans Server (`prepare-server-stack`) |
 | `docs/**`, `.github/**` | Push GitHub |
 
 Remote Git : **`origin`** → `https://github.com/Mikelaroselouisiv/schoolmatrix.git`  
@@ -53,3 +68,5 @@ GCP : projet **`parallele-schoolmatrix`** uniquement (`assert-schoolmatrix-gcp.p
 - Pousser vers un projet Israel / Frères / Eau Cascade
 - Committer `secrets/`, `*.pem`, `.env`, `release/*.exe`
 - Builder sans bump si on publie un nouvel installateur (les clients ne verraient pas de MAJ)
+- Builder Server **avant** que `backend:latest` soit poussé sur Artifact Registry
+- Confondre Docker local (dev) / VM GCP / stack embarqué Server école

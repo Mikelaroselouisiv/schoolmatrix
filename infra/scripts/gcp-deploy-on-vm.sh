@@ -38,10 +38,12 @@ fi
 
 # Backend : docker run (évite le bug ContainerConfig de docker-compose 1.29)
 docker pull "${IMAGE}"
-OLD_API=$(docker ps -aq --filter name=schoolmatrix_api || true)
-if [[ -n "${OLD_API}" ]]; then
-  docker rm -f ${OLD_API} || true
-fi
+# Nom exact — évite les courses CI (deux deploys concurrent) et les filtres substring Docker
+docker rm -f schoolmatrix_api_cloud 2>/dev/null || true
+# Anciens noms éventuels
+docker ps -aq --filter name=schoolmatrix_api | while read -r cid; do
+  [[ -n "${cid}" ]] && docker rm -f "${cid}" 2>/dev/null || true
+done
 
 docker network inspect "${NETWORK}" >/dev/null 2>&1 || docker network create "${NETWORK}"
 # Attacher postgres au network si besoin

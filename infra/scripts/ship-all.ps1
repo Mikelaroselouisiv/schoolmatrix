@@ -92,7 +92,7 @@ function Invoke-OrDry([string] $Label, [scriptblock] $Action) {
     Write-Host "[dry-run] $Label" -ForegroundColor Yellow
     return
   }
-  Write-Host "→ $Label" -ForegroundColor Gray
+  Write-Host ("-> {0}" -f $Label) -ForegroundColor Gray
   & $Action
 }
 
@@ -120,10 +120,12 @@ function Wait-BackendGcpCi {
       continue
     }
 
-    $active = @($runs | Where-Object { $_.status -ne 'completed' } | Select-Object -First 1)
-    if ($active.Count -gt 0) {
-      $runId = $active[0].databaseId
-      Write-Host ("-> gh run watch {0} ({1}) {2}" -f $runId, $active[0].status, $active[0].url) -ForegroundColor Gray
+    $activeRun = $runs | Where-Object { $_.status -ne 'completed' } | Select-Object -First 1
+    if ($null -ne $activeRun) {
+      $runId = [string]$activeRun.databaseId
+      $runStatus = [string]$activeRun.status
+      $runUrl = [string]$activeRun.url
+      Write-Host ("-> gh run watch {0} ({1}) {2}" -f $runId, $runStatus, $runUrl) -ForegroundColor Gray
       & gh run watch $runId --exit-status
       if ($LASTEXITCODE -ne 0) {
         throw "Backend CI failed (run $runId). Abort Server build to avoid stale image."
@@ -132,13 +134,15 @@ function Wait-BackendGcpCi {
       return
     }
 
-    $done = $runs[0]
-    if ($done.conclusion -eq 'success') {
-      Write-Host ("Backend CI already success (run {0})." -f $done.databaseId) -ForegroundColor Green
+    $done = $runs | Select-Object -First 1
+    $doneConclusion = [string]$done.conclusion
+    $doneId = [string]$done.databaseId
+    if ($doneConclusion -eq 'success') {
+      Write-Host ("Backend CI already success (run {0})." -f $doneId) -ForegroundColor Green
       return
     }
-    if ($done.conclusion -and $done.conclusion -ne 'success') {
-      throw ("Latest backend CI = {0} (run {1}). Fix before Server build." -f $done.conclusion, $done.databaseId)
+    if ($doneConclusion -and $doneConclusion -ne 'success') {
+      throw ("Latest backend CI = {0} (run {1}). Fix before Server build." -f $doneConclusion, $doneId)
     }
     Start-Sleep -Seconds 8
   }
@@ -281,16 +285,18 @@ if (-not $SkipBackend) {
 # Server école = images .tar dans l'installateur (pas le Docker de cette machine, pas la VM GCP).
 $needsServerBundle = ($Desktop -eq 'both' -or $Desktop -eq 'server')
 if ($needsServerBundle -and -not $SkipBackend -and -not $SkipWaitBackend -and -not $UseCI) {
-  Write-Step "Attendre backend AR avant bundle Server école"
-  Invoke-OrDry "Wait-BackendGcpCi (pull :latest → server-stack/images/*.tar)" {
+  Write-Step "Wait backend AR before school Server bundle"
+  Invoke-OrDry "Wait-BackendGcpCi (pull latest into server-stack images)" {
     Wait-BackendGcpCi
   }
 } elseif ($needsServerBundle -and $SkipWaitBackend) {
-  Write-Host "ATTENTION: -SkipWaitBackend — le Server peut embarquer un backend:latest périmé." -ForegroundColor Yellow
+  Write-Host "WARNING: -SkipWaitBackend - Server may embed a stale backend:latest." -ForegroundColor Yellow
 }
 
+Write-Host ("Desktop build gate: Desktop={0} UseCI={1}" -f $Desktop, [bool]$UseCI) -ForegroundColor Cyan
+
 if ($Desktop -eq 'none') {
-  Write-Host "Desktop: skip (-Desktop none) — les Servers école ne seront PAS mis à jour."
+  Write-Host "Desktop: skip (-Desktop none) - school Servers will NOT be updated."
 } elseif ($UseCI) {
   Write-Step "Desktop via GitHub Actions (tag desktop-v$version)"
   $tag = "desktop-v$version"

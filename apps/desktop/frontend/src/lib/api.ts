@@ -3,6 +3,9 @@ declare global {
     schoolmatrixDesktop?: {
       edition: "server" | "remote";
       apiBase: string;
+      fetchMedia?: (
+        url: string,
+      ) => Promise<{ base64: string; contentType: string } | null>;
     };
   }
 }

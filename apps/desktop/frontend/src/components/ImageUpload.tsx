@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { API_BASE, getImageUrl } from "@/src/lib/api";
+import { SquareCropModal } from "@/src/components/SquareCropModal";
 
 type ImageUploadProps = {
   /** Valeur actuelle (chemin stocké en base : uploads/xxx.jpg) */
@@ -20,6 +21,12 @@ type ImageUploadProps = {
   token: string | null;
   /** Classe CSS pour le conteneur de l'aperçu */
   previewClassName?: string;
+  /**
+   * Recadrage avant envoi.
+   * - square (défaut) : photos identité / profil → JPEG carré
+   * - none : logo, signature PNG, etc.
+   */
+  crop?: "square" | "none";
 };
 
 export function ImageUpload({
@@ -31,17 +38,17 @@ export function ImageUpload({
   disabled = false,
   token,
   previewClassName = "w-24 h-24 rounded-lg object-cover border border-slate-200",
+  crop = "square",
 }: ImageUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
 
   const imageUrl = getImageUrl(value ?? undefined);
 
-  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file || !token) return;
+  async function uploadFile(file: File) {
+    if (!token) return;
     setError(null);
     setUploading(true);
     try {
@@ -63,6 +70,31 @@ export function ImageUpload({
     } finally {
       setUploading(false);
     }
+  }
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !token) return;
+    setError(null);
+
+    if (crop === "square") {
+      const url = URL.createObjectURL(file);
+      setCropSrc(url);
+      return;
+    }
+
+    void uploadFile(file);
+  }
+
+  function closeCrop() {
+    if (cropSrc) URL.revokeObjectURL(cropSrc);
+    setCropSrc(null);
+  }
+
+  async function handleCropConfirm(file: File) {
+    closeCrop();
+    await uploadFile(file);
   }
 
   return (
@@ -98,6 +130,9 @@ export function ImageUpload({
           >
             {uploading ? "Envoi…" : buttonLabel}
           </button>
+          {crop === "square" && (
+            <p className="text-xs text-slate-500">Format carré — recadrage à l’import</p>
+          )}
           {value && (
             <button
               type="button"
@@ -111,6 +146,14 @@ export function ImageUpload({
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
       </div>
+
+      {cropSrc && (
+        <SquareCropModal
+          src={cropSrc}
+          onCancel={closeCrop}
+          onConfirm={handleCropConfirm}
+        />
+      )}
     </div>
   );
 }

@@ -23,6 +23,15 @@ export class SchoolProfile {
   @Column({ type: 'varchar', length: 512, nullable: true })
   logo_url: string | null = null;
 
+  @Column({ type: 'varchar', length: 512, nullable: true })
+  address: string | null = null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  phone: string | null = null;
+
+  @Column({ type: 'varchar', length: 256, nullable: true })
+  email: string | null = null;
+
   @Column({ default: '#1e293b' })
   primary_color: string;
 

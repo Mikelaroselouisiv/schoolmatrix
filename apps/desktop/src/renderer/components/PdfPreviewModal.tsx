@@ -11,7 +11,12 @@ export function PdfPreviewModal({ blob, filename, onClose }: PdfPreviewModalProp
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    const url = URL.createObjectURL(blob);
+    // Type MIME explicite pour l’aperçu PDF (Electron / Chromium)
+    const pdfBlob =
+      blob.type === "application/pdf"
+        ? blob
+        : new Blob([blob], { type: "application/pdf" });
+    const url = URL.createObjectURL(pdfBlob);
     setObjectUrl(url);
     return () => URL.revokeObjectURL(url);
   }, [blob]);

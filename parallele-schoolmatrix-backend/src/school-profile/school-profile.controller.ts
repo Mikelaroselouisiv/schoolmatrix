@@ -1,4 +1,13 @@
-import { Controller, Get, Patch, Body, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Put,
+  Patch,
+  Delete,
+  Param,
+  Body,
+  UseGuards,
+} from '@nestjs/common';
 import { SchoolProfileService } from './school-profile.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -16,16 +25,7 @@ export class SchoolProfileController {
     }
     return {
       ok: true,
-      school: {
-        id: profile.id,
-        name: profile.name,
-        slogan: profile.slogan ?? null,
-        domain: profile.domain ?? null,
-        logo_url: profile.logo_url ?? null,
-        primary_color: profile.primary_color,
-        secondary_color: profile.secondary_color,
-        active: profile.active,
-      },
+      school: this.schoolProfileService.toSchoolDto(profile),
     };
   }
 
@@ -46,6 +46,41 @@ export class SchoolProfileController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get('signatures')
+  async listSignatures() {
+    const signatures = await this.schoolProfileService.listSignatures();
+    return { ok: true, signatures };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Put('signatures')
+  async replaceSignatures(
+    @Body()
+    body: {
+      signatures?: Array<{
+        id?: string;
+        slot_key: string;
+        signer_name?: string;
+        signer_role?: string;
+        image_url?: string | null;
+        sort_order?: number;
+      }>;
+    },
+  ) {
+    const signatures = await this.schoolProfileService.replaceSignatures(
+      body.signatures ?? [],
+    );
+    return { ok: true, signatures };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('signatures/:id')
+  async deleteSignature(@Param('id') id: string) {
+    await this.schoolProfileService.deleteSignature(id);
+    return { ok: true, deleted: true };
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Patch('profile')
   async updateProfile(
     @Body()
@@ -54,28 +89,35 @@ export class SchoolProfileController {
       slogan?: string;
       domain?: string;
       logo_url?: string | null;
+      address?: string | null;
+      phone?: string | null;
+      email?: string | null;
       primary_color?: string;
       secondary_color?: string;
       active?: boolean;
       current_academic_year_id?: string | null;
       current_period_id?: string | null;
+      /** Optionnel : enregistre les signatures dans le même appel. */
+      signatures?: Array<{
+        id?: string;
+        slot_key: string;
+        signer_name?: string;
+        signer_role?: string;
+        image_url?: string | null;
+        sort_order?: number;
+      }>;
     },
   ) {
-    const profile = await this.schoolProfileService.updateProfile(body);
+    const { signatures: sigBody, ...profileBody } = body;
+    const profile = await this.schoolProfileService.updateProfile(profileBody);
+    const signatures =
+      sigBody !== undefined
+        ? await this.schoolProfileService.replaceSignatures(sigBody)
+        : await this.schoolProfileService.listSignatures();
     return {
       ok: true,
-      school: {
-        id: profile.id,
-        name: profile.name,
-        slogan: profile.slogan ?? null,
-        domain: profile.domain ?? null,
-        logo_url: profile.logo_url ?? null,
-        primary_color: profile.primary_color,
-        secondary_color: profile.secondary_color,
-        active: profile.active,
-        current_academic_year_id: profile.current_academic_year_id ?? null,
-        current_period_id: profile.current_period_id ?? null,
-      },
+      school: this.schoolProfileService.toSchoolDto(profile),
+      signatures,
     };
   }
 }

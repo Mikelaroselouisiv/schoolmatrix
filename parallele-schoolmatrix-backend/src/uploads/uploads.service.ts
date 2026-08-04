@@ -59,6 +59,7 @@ export class UploadsService implements OnModuleInit {
     const tables: Array<{ table: string; cols: string[] }> = [
       { table: 'users', cols: ['profile_photo_url', 'cover_photo_url'] },
       { table: 'school_profile', cols: ['logo_url'] },
+      { table: 'school_signature', cols: ['image_url'] },
       {
         table: 'student',
         cols: [

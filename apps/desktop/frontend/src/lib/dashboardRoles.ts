@@ -45,6 +45,7 @@ function canSeeByPermissions(permissionKey: string, rolePermissions: string[]): 
   if (rolePermissions.includes("full_access")) return true;
   if (permissionKey === "dashboard") return true;
   if (permissionKey === "finance") return rolePermissions.includes("finance") || rolePermissions.includes("economat");
+  if (permissionKey === "rooms") return rolePermissions.includes("rooms") || rolePermissions.includes("classes");
   return rolePermissions.includes(permissionKey);
 }
 
@@ -63,6 +64,7 @@ export const DASHBOARD_NAV: NavItem[] = [
   { href: "/dashboard", label: "Tableau de bord", allowedRoles: [], permissionKey: "dashboard", block: "configuration" },
   // Bloc Configuration : Matière, Classes, Années et périodes, Professeurs, Horaires
   { href: "/dashboard/subjects", label: "Matières", allowedRoles: [...ROLES_FULL], permissionKey: "subjects", block: "configuration" },
+  { href: "/dashboard/rooms", label: "Salles", allowedRoles: [...ROLES_FULL], permissionKey: "rooms", block: "configuration" },
   { href: "/dashboard/classes", label: "Classes", allowedRoles: [...ROLES_FULL], permissionKey: "classes", block: "configuration" },
   { href: "/dashboard/academic-years", label: "Années et périodes", allowedRoles: [...ROLES_FULL], permissionKey: "academic-years", block: "configuration" },
   { href: "/dashboard/teachers", label: "Professeurs", allowedRoles: [...ROLES_FULL], permissionKey: "teachers", block: "configuration" },

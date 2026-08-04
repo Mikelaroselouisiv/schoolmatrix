@@ -12,7 +12,10 @@
         font-src 'self' data: https://fonts.gstatic.com;
         img-src 'self' data: blob: http: https:;
         connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* https: http:;
-        object-src 'none';
+        frame-src 'self' blob:;
+        child-src 'self' blob:;
+        object-src 'self' blob:;
+        worker-src 'self' blob:;
       "
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />

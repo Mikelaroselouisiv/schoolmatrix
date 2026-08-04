@@ -1,5 +1,6 @@
 import { EntityTarget } from 'typeorm';
 import { SchoolProfile } from '../school-profile/school-profile.entity';
+import { SchoolSignature } from '../school-profile/school-signature.entity';
 import { AcademicYear } from '../academic-year/academic-year.entity';
 import { Period } from '../period/period.entity';
 import { Room } from '../rooms/room.entity';
@@ -25,6 +26,7 @@ import { User } from '../users/user.entity';
 
 export type SyncEntityName =
   | 'SchoolProfile'
+  | 'SchoolSignature'
   | 'User'
   | 'AcademicYear'
   | 'Period'
@@ -58,6 +60,7 @@ export type SyncEntityDef = {
 /** Ordre parents → enfants (agent + doc). */
 export const SYNC_ENTITY_DEFS: SyncEntityDef[] = [
   { name: 'SchoolProfile', target: SchoolProfile, timeField: 'updated_at' },
+  { name: 'SchoolSignature', target: SchoolSignature, timeField: 'updated_at' },
   /** Comptes login Server → Remote (PK int acceptée comme uuid filaire). Roles seedés identiques des deux côtés. */
   { name: 'User', target: User, timeField: 'updated_at' },
   { name: 'AcademicYear', target: AcademicYear, timeField: 'updated_at' },

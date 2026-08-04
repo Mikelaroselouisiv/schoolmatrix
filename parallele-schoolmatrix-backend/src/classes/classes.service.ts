@@ -12,7 +12,18 @@ export class ClassesService {
     private readonly classRepo: Repository<Class>,
     @InjectRepository(ClassSubject)
     private readonly classSubjectRepo: Repository<ClassSubject>,
+    @InjectRepository(Room)
+    private readonly roomRepo: Repository<Room>,
   ) {}
+
+  private async resolveRoom(roomId?: string | null): Promise<Room | undefined> {
+    if (!roomId) return undefined;
+    const room = await this.roomRepo.findOne({ where: { id: roomId } });
+    if (!room) {
+      throw new BadRequestException('Salle introuvable');
+    }
+    return room;
+  }
 
   async findAll(): Promise<Class[]> {
     return this.classRepo.find({
@@ -78,12 +89,13 @@ export class ClassesService {
     if (exists) {
       throw new BadRequestException('Class name already exists');
     }
+    const room = await this.resolveRoom(params.room_id);
     const cls = this.classRepo.create({
       name,
       description: params.description?.trim(),
       level: params.level?.trim(),
       section: params.section,
-      room: params.room_id ? { id: params.room_id } : undefined,
+      room,
       active: true,
     });
     const saved = await this.classRepo.save(cls);
@@ -126,7 +138,7 @@ export class ClassesService {
     if (params.level !== undefined) cls.level = params.level.trim() || undefined;
     if (params.section !== undefined) cls.section = params.section;
     if (params.room_id !== undefined) {
-      cls.room = params.room_id ? ({ id: params.room_id } as Room) : undefined;
+      cls.room = (await this.resolveRoom(params.room_id)) ?? (null as unknown as Room);
     }
     if (params.active !== undefined) cls.active = params.active;
     if (params.subject_ids !== undefined) {

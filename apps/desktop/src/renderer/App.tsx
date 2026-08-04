@@ -17,6 +17,7 @@ import { DashboardSchedulePage } from './pages/DashboardSchedulePage';
 import { DashboardSchoolPage } from './pages/DashboardSchoolPage';
 import { DashboardStudentsImportPage } from './pages/DashboardStudentsImportPage';
 import { DashboardStudentsPage } from './pages/DashboardStudentsPage';
+import { DashboardRoomsPage } from './pages/DashboardRoomsPage';
 import { DashboardSubjectsPage } from './pages/DashboardSubjectsPage';
 import { DashboardTeachersPage } from './pages/DashboardTeachersPage';
 import { DashboardUsersPage } from './pages/DashboardUsersPage';
@@ -44,6 +45,7 @@ export default function App() {
               <Route path="students" element={<DashboardStudentsPage />} />
               <Route path="students/import" element={<DashboardStudentsImportPage />} />
               <Route path="classes" element={<DashboardClassesPage />} />
+              <Route path="rooms" element={<DashboardRoomsPage />} />
               <Route path="teachers" element={<DashboardTeachersPage />} />
               <Route path="subjects" element={<DashboardSubjectsPage />} />
               <Route path="school" element={<DashboardSchoolPage />} />

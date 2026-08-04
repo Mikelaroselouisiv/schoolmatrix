@@ -6,6 +6,7 @@ const ROUTE_LABELS: Record<string, string> = {
   students: "Inscription",
   "formation-classe": "Formation de classe",
   subjects: "Matières",
+  rooms: "Salles",
   schedule: "Horaires",
   economat: "Économat",
   depenses: "Dépenses",

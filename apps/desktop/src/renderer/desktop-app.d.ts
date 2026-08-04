@@ -11,6 +11,9 @@ declare global {
     schoolmatrixDesktop?: {
       edition: 'server' | 'remote' | string;
       apiBase: string;
+      fetchMedia?: (
+        url: string,
+      ) => Promise<{ base64: string; contentType: string } | null>;
       updater?: {
         getState: () => Promise<DesktopUpdaterState>;
         check: () => Promise<DesktopUpdaterState>;

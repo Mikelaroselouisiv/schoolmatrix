@@ -1,6 +1,7 @@
 /** Ordre parents → enfants (doit matcher le backend SYNC_ENTITY_DEFS). */
 export const ENTITY_ORDER = [
   'SchoolProfile',
+  'SchoolSignature',
   'User',
   'AcademicYear',
   'Period',

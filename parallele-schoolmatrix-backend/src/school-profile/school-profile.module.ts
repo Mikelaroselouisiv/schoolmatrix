@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SchoolProfile } from './school-profile.entity';
+import { SchoolSignature } from './school-signature.entity';
 import { SchoolProfileService } from './school-profile.service';
 import { SchoolProfileController } from './school-profile.controller';
 import { AcademicYear } from '../academic-year/academic-year.entity';
@@ -14,6 +15,7 @@ import { Role } from '../roles/role.entity';
   imports: [
     TypeOrmModule.forFeature([
       SchoolProfile,
+      SchoolSignature,
       AcademicYear,
       Period,
       Class,

@@ -17,6 +17,9 @@ export type SchoolProfile = {
   slogan: string | null;
   domain: string | null;
   logo_url: string | null;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
   primary_color: string;
   secondary_color: string;
   active: boolean;

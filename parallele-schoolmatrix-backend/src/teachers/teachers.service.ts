@@ -26,7 +26,18 @@ export class TeachersService {
     private readonly teacherClassSubjectRepo: Repository<TeacherClassSubject>,
     @InjectRepository(ScheduleSlot)
     private readonly scheduleSlotRepo: Repository<ScheduleSlot>,
+    @InjectRepository(Room)
+    private readonly roomRepo: Repository<Room>,
   ) {}
+
+  private async resolveRoom(roomId?: string | null): Promise<Room | undefined> {
+    if (!roomId) return undefined;
+    const room = await this.roomRepo.findOne({ where: { id: roomId } });
+    if (!room) {
+      throw new BadRequestException('Salle introuvable');
+    }
+    return room;
+  }
 
   async findTeachers(): Promise<User[]> {
     const teacherRole = await this.roleRepo.findOne({ where: { name: 'TEACHER' } });
@@ -325,12 +336,13 @@ export class TeachersService {
     start_time: string;
     end_time: string;
   }): Promise<ScheduleSlot> {
+    const room = await this.resolveRoom(params.room_id);
     const slot = this.scheduleSlotRepo.create({
       academic_year: params.academic_year?.trim() || undefined,
       class: { id: params.class_id },
       subject: { id: params.subject_id },
       teacher: { id: params.teacher_id },
-      room: params.room_id ? { id: params.room_id } : undefined,
+      room,
       day_of_week: params.day_of_week,
       start_time: params.start_time,
       end_time: params.end_time,
@@ -363,7 +375,7 @@ export class TeachersService {
     if (params.subject_id !== undefined) slot.subject = { id: params.subject_id } as Subject;
     if (params.teacher_id !== undefined) slot.teacher = { id: params.teacher_id } as User;
     if (params.room_id !== undefined) {
-      slot.room = params.room_id ? ({ id: params.room_id } as Room) : undefined;
+      slot.room = (await this.resolveRoom(params.room_id)) ?? (null as unknown as Room);
     }
     if (params.day_of_week !== undefined) slot.day_of_week = params.day_of_week;
     if (params.start_time !== undefined) slot.start_time = params.start_time;

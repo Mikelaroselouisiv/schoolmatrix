@@ -6,6 +6,8 @@ const apiBase = ipcRenderer.sendSync('app:get-api-base-sync');
 contextBridge.exposeInMainWorld('schoolmatrixDesktop', {
   edition,
   apiBase,
+  /** Télécharge une image (GCS / API) depuis le process principal — sans CORS. */
+  fetchMedia: (url) => ipcRenderer.invoke('app:fetch-media', url),
   updater: {
     getState: () => ipcRenderer.invoke('updater:get-state'),
     check: () => ipcRenderer.invoke('updater:check'),

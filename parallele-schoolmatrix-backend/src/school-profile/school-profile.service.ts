@@ -1,7 +1,12 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { SchoolProfile } from './school-profile.entity';
+import { SchoolSignature } from './school-signature.entity';
+import {
+  EXTRA_SIGNATURE_SLOT,
+  FIXED_SIGNATURE_SLOTS,
+} from './signature-slots';
 import { AcademicYear } from '../academic-year/academic-year.entity';
 import { Period } from '../period/period.entity';
 import { Class } from '../classes/class.entity';
@@ -23,11 +28,32 @@ export type CurrentContext = {
   current_period_name: string | null;
 };
 
+export type SignatureInput = {
+  id?: string;
+  slot_key: string;
+  signer_name?: string;
+  signer_role?: string;
+  image_url?: string | null;
+  sort_order?: number;
+};
+
+export type SignatureDto = {
+  id: string | null;
+  slot_key: string;
+  signer_name: string;
+  signer_role: string;
+  image_url: string | null;
+  sort_order: number;
+  is_fixed: boolean;
+};
+
 @Injectable()
 export class SchoolProfileService implements OnModuleInit {
   constructor(
     @InjectRepository(SchoolProfile)
     private readonly profileRepo: Repository<SchoolProfile>,
+    @InjectRepository(SchoolSignature)
+    private readonly signatureRepo: Repository<SchoolSignature>,
     @InjectRepository(AcademicYear)
     private readonly academicYearRepo: Repository<AcademicYear>,
     @InjectRepository(Period)
@@ -66,6 +92,9 @@ export class SchoolProfileService implements OnModuleInit {
     keep.slogan = newest.slogan;
     keep.domain = newest.domain;
     keep.logo_url = newest.logo_url;
+    keep.address = newest.address;
+    keep.phone = newest.phone;
+    keep.email = newest.email;
     keep.primary_color = newest.primary_color;
     keep.secondary_color = newest.secondary_color;
     keep.active = newest.active;
@@ -73,6 +102,14 @@ export class SchoolProfileService implements OnModuleInit {
     keep.current_period_id = newest.current_period_id;
     keep.updated_at = newest.updated_at;
     await this.profileRepo.save(keep);
+
+    const dropIds = all.filter((p) => p.id !== keep.id).map((p) => p.id);
+    if (dropIds.length) {
+      await this.signatureRepo.update(
+        { school_profile_id: In(dropIds) },
+        { school_profile_id: keep.id },
+      );
+    }
 
     await this.profileRepo
       .createQueryBuilder()
@@ -105,11 +142,32 @@ export class SchoolProfileService implements OnModuleInit {
     return this.profileRepo.save(profile);
   }
 
+  toSchoolDto(profile: SchoolProfile) {
+    return {
+      id: profile.id,
+      name: profile.name,
+      slogan: profile.slogan ?? null,
+      domain: profile.domain ?? null,
+      logo_url: profile.logo_url ?? null,
+      address: profile.address ?? null,
+      phone: profile.phone ?? null,
+      email: profile.email ?? null,
+      primary_color: profile.primary_color,
+      secondary_color: profile.secondary_color,
+      active: profile.active,
+      current_academic_year_id: profile.current_academic_year_id ?? null,
+      current_period_id: profile.current_period_id ?? null,
+    };
+  }
+
   async updateProfile(params: {
     name?: string;
     slogan?: string;
     domain?: string;
     logo_url?: string | null;
+    address?: string | null;
+    phone?: string | null;
+    email?: string | null;
     primary_color?: string;
     secondary_color?: string;
     active?: boolean;
@@ -123,6 +181,15 @@ export class SchoolProfileService implements OnModuleInit {
     }
     if (params.domain !== undefined) profile.domain = params.domain;
     if (params.logo_url !== undefined) profile.logo_url = params.logo_url ?? null;
+    if (params.address !== undefined) {
+      profile.address = params.address === '' ? null : params.address ?? null;
+    }
+    if (params.phone !== undefined) {
+      profile.phone = params.phone === '' ? null : params.phone ?? null;
+    }
+    if (params.email !== undefined) {
+      profile.email = params.email === '' ? null : params.email ?? null;
+    }
     if (params.primary_color !== undefined) profile.primary_color = params.primary_color;
     if (params.secondary_color !== undefined) profile.secondary_color = params.secondary_color;
     if (params.active !== undefined) profile.active = params.active;
@@ -135,6 +202,130 @@ export class SchoolProfileService implements OnModuleInit {
     const saved = await this.profileRepo.save(profile);
     this.syncKick.kick('school-profile');
     return saved;
+  }
+
+  private mapSignature(s: SchoolSignature): SignatureDto {
+    const isFixed = FIXED_SIGNATURE_SLOTS.some((f) => f.slot_key === s.slot_key);
+    return {
+      id: s.id,
+      slot_key: s.slot_key,
+      signer_name: s.signer_name ?? '',
+      signer_role: s.signer_role ?? '',
+      image_url: s.image_url ?? null,
+      sort_order: s.sort_order,
+      is_fixed: isFixed,
+    };
+  }
+
+  /**
+   * Liste les signatures : 5 emplacements fixes (même vides) + extras enregistrés.
+   */
+  async listSignatures(): Promise<SignatureDto[]> {
+    const profile = await this.ensureProfile();
+    const rows = await this.signatureRepo.find({
+      where: { school_profile_id: profile.id },
+      order: { sort_order: 'ASC', created_at: 'ASC' },
+    });
+    const bySlot = new Map<string, SchoolSignature>();
+    const extras: SchoolSignature[] = [];
+    for (const row of rows) {
+      if (row.slot_key === EXTRA_SIGNATURE_SLOT) {
+        extras.push(row);
+      } else if (!bySlot.has(row.slot_key)) {
+        bySlot.set(row.slot_key, row);
+      }
+    }
+
+    const result: SignatureDto[] = FIXED_SIGNATURE_SLOTS.map((slot) => {
+      const existing = bySlot.get(slot.slot_key);
+      if (existing) return this.mapSignature(existing);
+      return {
+        id: null,
+        slot_key: slot.slot_key,
+        signer_name: '',
+        signer_role: slot.default_role,
+        image_url: null,
+        sort_order: slot.sort_order,
+        is_fixed: true,
+      };
+    });
+
+    for (const extra of extras) {
+      result.push(this.mapSignature(extra));
+    }
+    return result;
+  }
+
+  /**
+   * Remplace / upsert les signatures envoyées par le formulaire.
+   * Les lignes absentes de la liste (vidées ou retirées) sont supprimées.
+   */
+  async replaceSignatures(inputs: SignatureInput[]): Promise<SignatureDto[]> {
+    const profile = await this.ensureProfile();
+    const existing = await this.signatureRepo.find({
+      where: { school_profile_id: profile.id },
+    });
+    const existingById = new Map(existing.map((s) => [s.id, s]));
+    const keepIds = new Set<string>();
+    const fixedKeys = new Set<string>(
+      FIXED_SIGNATURE_SLOTS.map((s) => s.slot_key),
+    );
+
+    let extraOrder = 100;
+    for (const input of inputs) {
+      const isFixed = fixedKeys.has(input.slot_key);
+      const slotKey = isFixed ? input.slot_key : EXTRA_SIGNATURE_SLOT;
+      const defaultRole =
+        FIXED_SIGNATURE_SLOTS.find((s) => s.slot_key === slotKey)
+          ?.default_role ?? '';
+      const signerName = (input.signer_name ?? '').trim();
+      const signerRole = (input.signer_role ?? '').trim() || defaultRole;
+      const imageUrl = input.image_url ? input.image_url : null;
+      const sortOrder =
+        input.sort_order ??
+        (isFixed
+          ? FIXED_SIGNATURE_SLOTS.find((s) => s.slot_key === slotKey)!.sort_order
+          : extraOrder++);
+
+      // Emplacement vide : ne pas persister (sera supprimé s'il existait)
+      if (!signerName && !imageUrl) continue;
+
+      let row: SchoolSignature | undefined;
+      if (input.id && existingById.has(input.id)) {
+        row = existingById.get(input.id);
+      } else if (isFixed) {
+        row = existing.find((e) => e.slot_key === slotKey);
+      }
+
+      if (!row) {
+        row = this.signatureRepo.create({
+          school_profile_id: profile.id,
+          slot_key: slotKey,
+        });
+      }
+      row.slot_key = slotKey;
+      row.signer_name = signerName;
+      row.signer_role = signerRole;
+      row.image_url = imageUrl;
+      row.sort_order = sortOrder;
+      const saved = await this.signatureRepo.save(row);
+      keepIds.add(saved.id);
+    }
+
+    const toDelete = existing.filter((e) => !keepIds.has(e.id));
+    if (toDelete.length) {
+      await this.signatureRepo.remove(toDelete);
+    }
+
+    this.syncKick.kick('school-signature');
+    return this.listSignatures();
+  }
+
+  async deleteSignature(id: string): Promise<void> {
+    const row = await this.signatureRepo.findOne({ where: { id } });
+    if (!row) throw new NotFoundException('Signature introuvable');
+    await this.signatureRepo.remove(row);
+    this.syncKick.kick('school-signature');
   }
 
   async getCurrentContext(): Promise<CurrentContext> {

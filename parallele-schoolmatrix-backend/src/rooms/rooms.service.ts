@@ -17,16 +17,19 @@ export class RoomsService {
   async findOne(id: string): Promise<Room> {
     const room = await this.roomRepo.findOne({ where: { id } });
     if (!room) {
-      throw new NotFoundException('Room not found');
+      throw new NotFoundException('Salle introuvable');
     }
     return room;
   }
 
   async create(params: { name: string; description?: string }): Promise<Room> {
-    const name = params.name.trim();
+    const name = (params.name ?? '').trim();
+    if (!name) {
+      throw new BadRequestException('Le nom de la salle est requis');
+    }
     const exists = await this.roomRepo.findOne({ where: { name } });
     if (exists) {
-      throw new BadRequestException('Room name already exists');
+      throw new BadRequestException('Ce nom de salle existe déjà');
     }
     const room = this.roomRepo.create({
       name,
@@ -42,13 +45,16 @@ export class RoomsService {
   ): Promise<Room> {
     const room = await this.roomRepo.findOne({ where: { id } });
     if (!room) {
-      throw new NotFoundException('Room not found');
+      throw new NotFoundException('Salle introuvable');
     }
     if (params.name !== undefined) {
       const name = params.name.trim();
+      if (!name) {
+        throw new BadRequestException('Le nom de la salle est requis');
+      }
       const exists = await this.roomRepo.findOne({ where: { name } });
       if (exists && exists.id !== id) {
-        throw new BadRequestException('Room name already exists');
+        throw new BadRequestException('Ce nom de salle existe déjà');
       }
       room.name = name;
     }
@@ -62,7 +68,7 @@ export class RoomsService {
   async delete(id: string): Promise<void> {
     const room = await this.roomRepo.findOne({ where: { id } });
     if (!room) {
-      throw new NotFoundException('Room not found');
+      throw new NotFoundException('Salle introuvable');
     }
     await this.roomRepo.remove(room);
   }

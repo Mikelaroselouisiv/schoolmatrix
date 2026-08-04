@@ -23,6 +23,8 @@ function canSeeNavItem(roleName: string, allowedRoles: string[]): boolean {
 function canSeeByPermissions(permissionKey: string, rolePermissions: string[]): boolean {
   if (rolePermissions.includes("full_access")) return true;
   if (permissionKey === "dashboard") return true;
+  if (permissionKey === "finance") return rolePermissions.includes("finance") || rolePermissions.includes("economat");
+  if (permissionKey === "rooms") return rolePermissions.includes("rooms") || rolePermissions.includes("classes");
   return rolePermissions.includes(permissionKey);
 }
 

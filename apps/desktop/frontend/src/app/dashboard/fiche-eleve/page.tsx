@@ -7,6 +7,8 @@ import { API_BASE, fetchWithAuth, getImageUrl } from "@/src/lib/api";
 import { useSchoolProfile } from "@/src/contexts/SchoolProfileContext";
 import { ROLES_FULL } from "@/src/lib/dashboardRoles";
 import { ExportPdfButton } from "@/src/components/ExportPdfButton";
+import { ExportBadgePdfButton } from "@/src/components/ExportBadgePdfButton";
+import { buildBadgesPdfBlob, fetchRoomNameForClass } from "@/src/lib/badgeProduction";
 import { formatDateJJMMAAAA } from "@/src/lib/format";
 
 type Student = {
@@ -143,7 +145,7 @@ type ExtracurricularActivityItem = {
 export default function FicheElevePage() {
   const searchParams = useSearchParams();
   const initialStudentId = searchParams.get("student_id") ?? "";
-  const { roleName } = useSchoolProfile() ?? { roleName: "" };
+  const { roleName, school } = useSchoolProfile() ?? { roleName: "", school: null };
 
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [students, setStudents] = useState<{ id: string; order_number: string | null; first_name: string; last_name: string; class_id: string }[]>([]);
@@ -458,14 +460,36 @@ export default function FicheElevePage() {
                 <p className="text-slate-500 text-sm">{student.class_name}</p>
               </div>
             </div>
-            {ROLES_FULL.includes(roleName) && (
-              <Link
-                href={`/dashboard/students?edit_id=${student.id}`}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--school-accent-1)] text-[var(--school-accent-1)] hover:bg-[var(--school-accent-1)]/10 font-medium text-sm transition-colors"
-              >
-                Modifier l&apos;élève
-              </Link>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <ExportBadgePdfButton
+                label="Produire le badge"
+                filename={`badge-${student.first_name}-${student.last_name}`}
+                getBlob={async () => {
+                  const room_name = await fetchRoomNameForClass(student.class_id);
+                  return buildBadgesPdfBlob({
+                    school,
+                    students: [
+                      {
+                        first_name: student.first_name,
+                        last_name: student.last_name,
+                        order_number: student.order_number,
+                        class_name: student.class_name,
+                        room_name,
+                        photo_url: student.photo_identity_student,
+                      },
+                    ],
+                  });
+                }}
+              />
+              {ROLES_FULL.includes(roleName) && (
+                <Link
+                  href={`/dashboard/students?edit_id=${student.id}`}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--school-accent-1)] text-[var(--school-accent-1)] hover:bg-[var(--school-accent-1)]/10 font-medium text-sm transition-colors"
+                >
+                  Modifier l&apos;élève
+                </Link>
+              )}
+            </div>
           </div>
 
           {/* Parents : minimal (photo, nom, tél) */}

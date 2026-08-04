@@ -8,6 +8,7 @@ import { User } from '../users/user.entity';
 import { Role } from '../roles/role.entity';
 import { Subject } from '../subjects/subject.entity';
 import { Class } from '../classes/class.entity';
+import { Room } from '../rooms/room.entity';
 import { TeachersService } from './teachers.service';
 import { TeachersController } from './teachers.controller';
 import { ScheduleSlotsController } from './schedule-slots.controller';
@@ -23,6 +24,7 @@ import { ScheduleSlotsController } from './schedule-slots.controller';
       Role,
       Subject,
       Class,
+      Room,
     ]),
   ],
   controllers: [TeachersController, ScheduleSlotsController],

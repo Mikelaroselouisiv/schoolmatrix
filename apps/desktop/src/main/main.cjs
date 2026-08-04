@@ -88,6 +88,23 @@ ipcMain.on('app:get-api-base-sync', (event) => {
   event.returnValue = apiBase;
 });
 
+/** Fetch binaire hors renderer (pas de CORS) — logos / photos badges PDF. */
+ipcMain.handle('app:fetch-media', async (_event, url) => {
+  try {
+    if (typeof url !== 'string' || !/^https?:\/\//i.test(url.trim())) return null;
+    const res = await fetch(url.trim(), { redirect: 'follow' });
+    if (!res.ok) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (!buf.length) return null;
+    return {
+      base64: buf.toString('base64'),
+      contentType: res.headers.get('content-type') || 'application/octet-stream',
+    };
+  } catch {
+    return null;
+  }
+});
+
 async function boot() {
   app.setName(
     edition === 'server'

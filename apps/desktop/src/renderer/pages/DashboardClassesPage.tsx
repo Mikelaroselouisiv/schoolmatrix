@@ -1,9 +1,14 @@
 ﻿import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { API_BASE, fetchWithAuth } from "@/services/api";
+import { useSchoolProfile } from "@/context/SchoolProfileContext";
+import { ExportBadgePdfButton } from "@/components/ExportBadgePdfButton";
+import { buildBadgesPdfBlob, fetchStudentsForClassBadges } from "@/lib/badgeProduction";
 
 type Room = {
   id: string;
   name: string;
+  active?: boolean;
 };
 
 type ClassItem = {
@@ -18,6 +23,7 @@ type ClassItem = {
 };
 
 export function DashboardClassesPage() {
+  const { school } = useSchoolProfile();
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
@@ -168,10 +174,20 @@ export function DashboardClassesPage() {
             <label className="block text-sm font-medium text-slate-700 mb-1">Salle</label>
             <select value={room_id} onChange={(e) => setRoom_id(e.target.value)} className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40">
               <option value="">— Aucune —</option>
-              {rooms.map((r) => (
-                <option key={r.id} value={r.id}>{r.name}</option>
-              ))}
+              {rooms
+                .filter((r) => r.active !== false || r.id === room_id)
+                .map((r) => (
+                  <option key={r.id} value={r.id}>{r.name}</option>
+                ))}
             </select>
+            {rooms.length === 0 && (
+              <p className="mt-1.5 text-xs text-slate-500">
+                Aucune salle disponible.{" "}
+                <Link to="/dashboard/rooms" className="text-[var(--school-accent-1)] hover:underline">
+                  Créer une salle
+                </Link>
+              </p>
+            )}
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-3">
@@ -191,7 +207,7 @@ export function DashboardClassesPage() {
               <th className="px-4 py-3 font-medium text-slate-900">Niveau / Section</th>
               <th className="px-4 py-3 font-medium text-slate-900">Salle</th>
               <th className="px-4 py-3 font-medium text-slate-900">Élèves</th>
-              <th className="px-4 py-3 font-medium text-slate-900 w-48">Actions</th>
+              <th className="px-4 py-3 font-medium text-slate-900 w-64">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -206,7 +222,17 @@ export function DashboardClassesPage() {
                   </td>
                   <td className="px-4 py-3 text-slate-600">{c.room_name ?? "-"}</td>
                   <td className="px-4 py-3 text-slate-600">{c.student_count ?? "-"}</td>
-                  <td className="px-4 py-3 flex gap-2">
+                  <td className="px-4 py-3 flex flex-wrap items-center gap-2">
+                    <ExportBadgePdfButton
+                      label="Badges"
+                      filename={`badges-${c.name}`}
+                      disabled={!c.student_count}
+                      className="text-sm text-[var(--school-accent-1)] hover:underline border-0 bg-transparent px-0 py-0"
+                      getBlob={async () => {
+                        const students = await fetchStudentsForClassBadges(c.id);
+                        return buildBadgesPdfBlob({ school, students });
+                      }}
+                    />
                     <button onClick={() => openEdit(c)} className="text-sm text-[var(--school-accent-1)] hover:underline">Modifier</button>
                     <button onClick={() => handleDelete(c.id)} className="text-sm text-red-600 hover:underline">Supprimer</button>
                   </td>

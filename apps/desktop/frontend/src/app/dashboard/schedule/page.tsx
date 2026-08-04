@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { API_BASE, fetchWithAuth } from "@/src/lib/api";
 import { formatDateJJMMAAAA } from "@/src/lib/format";
 import { DateInputJJMMAAAA } from "@/src/components/DateInputJJMMAAAA";
@@ -52,7 +53,7 @@ type ExtracurricularActivity = {
 type ClassItem = { id: string; name: string };
 type Subject = { id: string; name: string };
 type Teacher = { id: number; first_name: string | null; last_name: string | null; email: string };
-type Room = { id: string; name: string };
+type Room = { id: string; name: string; active?: boolean };
 type AcademicYear = { id: string; name: string };
 type Period = { id: string; name: string };
 
@@ -132,6 +133,11 @@ export default function SchedulePage() {
       const tData = await tRes.json();
       const rData = await rRes.json();
       const ayData = await ayRes.json();
+      if (!cRes.ok) throw new Error(cData.message || "Erreur classes");
+      if (!sRes.ok) throw new Error(sData.message || "Erreur matières");
+      if (!tRes.ok) throw new Error(tData.message || "Erreur professeurs");
+      if (!rRes.ok) throw new Error(rData.message || "Erreur salles");
+      if (!ayRes.ok) throw new Error(ayData.message || "Erreur années scolaires");
       setClasses(cData.classes ?? []);
       setSubjects(sData.subjects ?? []);
       setTeachers(tData.teachers ?? []);
@@ -479,8 +485,16 @@ export default function SchedulePage() {
                   <label className="block text-sm font-medium text-slate-700 mb-1">Salle</label>
                   <select value={slotForm.room_id} onChange={(e) => setSlotForm((f) => ({ ...f, room_id: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm">
                     <option value="">—</option>
-                    {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    {rooms
+                      .filter((r) => r.active !== false || r.id === slotForm.room_id)
+                      .map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                   </select>
+                  {rooms.length === 0 && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Aucune salle.{" "}
+                      <Link href="/dashboard/rooms" className="text-[var(--school-accent-1)] hover:underline">Créer</Link>
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Jour *</label>

@@ -28,6 +28,11 @@
 Une seule ligne métier. À l’apply sync : LWW adopte l’UUID gagnant et **supprime les doublons**.  
 `getProfile()` lit toujours le plus ancien `created_at` après dédup au démarrage.
 
+## SchoolSignature
+
+Signatures d’établissement (image PNG idéalement sans fond, nom, rôle), enfants de `SchoolProfile` (`school_profile_id`).  
+Sync après `SchoolProfile` dans `ENTITY_ORDER`. Les images (`image_url`) suivent le même pipeline GCS / URL publique que les logos.
+
 ## Identité
 
 - UUID métier (`id`) = clé de sync (sauf SchoolProfile singleton qui peut changer d’UUID gagnant).

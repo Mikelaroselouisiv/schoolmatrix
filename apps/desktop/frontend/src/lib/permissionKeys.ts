@@ -5,6 +5,7 @@
 export const PERMISSION_OPTIONS: { key: string; label: string }[] = [
   { key: "full_access", label: "Accès total (tous les modules)" },
   { key: "subjects", label: "Matières" },
+  { key: "rooms", label: "Salles" },
   { key: "classes", label: "Classes" },
   { key: "academic-years", label: "Années et périodes" },
   { key: "teachers", label: "Professeurs" },

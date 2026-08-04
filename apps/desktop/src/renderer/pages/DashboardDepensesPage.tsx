@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { API_BASE, fetchWithAuth } from "@/services/api";
 import { formatDateJJMMAAAA, getTodayLocalYYYYMMDD } from "@/lib/format";
 import { DateInputJJMMAAAA } from "@/components/DateInputJJMMAAAA";
@@ -15,14 +15,17 @@ type Expense = {
   document_ref: string | null;
   statut: string;
   fee_service_id: string | null;
+  bank_account_id: string | null;
   created_at: string;
 };
+type BankAccountOption = { id: string; label: string };
 
 export function DashboardDepensesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [bankAccounts, setBankAccounts] = useState<BankAccountOption[]>([]);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -36,6 +39,7 @@ export function DashboardDepensesPage() {
     category: "",
     document_ref: "",
     fee_service_id: "" as string,
+    bank_account_id: "" as string,
   });
 
   useEffect(() => {
@@ -48,11 +52,17 @@ export function DashboardDepensesPage() {
 
   async function loadActivities() {
     try {
-      const res = await fetchWithAuth(`${API_BASE}/finance/activities`);
-      const data = await res.json();
+      const [actRes, banksRes] = await Promise.all([
+        fetchWithAuth(`${API_BASE}/finance/activities`),
+        fetchWithAuth(`${API_BASE}/finance/bank-accounts`),
+      ]);
+      const data = await actRes.json();
+      const banksData = await banksRes.json().catch(() => ({}));
       setActivities(data.activities ?? []);
+      setBankAccounts(banksRes.ok ? banksData.accounts ?? [] : []);
     } catch {
       setActivities([]);
+      setBankAccounts([]);
     }
   }
 
@@ -97,12 +107,22 @@ export function DashboardDepensesPage() {
           category: form.category.trim() || undefined,
           document_ref: form.document_ref.trim() || undefined,
           fee_service_id: form.fee_service_id || null,
+          bank_account_id: form.bank_account_id || null,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Erreur");
       setShowForm(false);
-      setForm({ expense_date: getTodayLocalYYYYMMDD(), amount: "", label: "", beneficiary: "", category: "", document_ref: "", fee_service_id: "" });
+      setForm({
+        expense_date: getTodayLocalYYYYMMDD(),
+        amount: "",
+        label: "",
+        beneficiary: "",
+        category: "",
+        document_ref: "",
+        fee_service_id: "",
+        bank_account_id: "",
+      });
       loadExpenses();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur");
@@ -146,6 +166,11 @@ export function DashboardDepensesPage() {
   const activityName = (id: string | null) => {
     if (!id) return "Trésorerie générale";
     return activities.find((a) => a.id === id)?.name ?? id;
+  };
+
+  const bankLabel = (id: string | null) => {
+    if (!id) return "Caisse";
+    return bankAccounts.find((a) => a.id === id)?.label ?? "Banque";
   };
 
   return (
@@ -197,6 +222,19 @@ export function DashboardDepensesPage() {
             </select>
           </div>
           <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Mode de paiement</label>
+            <select
+              value={form.bank_account_id}
+              onChange={(e) => setForm((f) => ({ ...f, bank_account_id: e.target.value }))}
+              className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
+            >
+              <option value="">Caisse</option>
+              {bankAccounts.map((a) => (
+                <option key={a.id} value={a.id}>{a.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">N° pièce (optionnel)</label>
             <input type="text" value={form.document_ref} onChange={(e) => setForm((f) => ({ ...f, document_ref: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2" />
           </div>
@@ -214,6 +252,7 @@ export function DashboardDepensesPage() {
               <th className="px-4 py-3 font-medium text-slate-900 text-left">Date</th>
               <th className="px-4 py-3 font-medium text-slate-900 text-left">Libellé</th>
               <th className="px-4 py-3 font-medium text-slate-900 text-left">Imputé à</th>
+              <th className="px-4 py-3 font-medium text-slate-900 text-left">Mode</th>
               <th className="px-4 py-3 font-medium text-slate-900 text-right">Montant</th>
               <th className="px-4 py-3 font-medium text-slate-900 text-center">Statut</th>
               <th className="px-4 py-3 font-medium text-slate-900 w-40">Actions</th>
@@ -221,15 +260,16 @@ export function DashboardDepensesPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">Chargement...</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">Chargement...</td></tr>
             ) : expenses.length === 0 ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">Aucune dépense</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">Aucune dépense</td></tr>
             ) : (
               expenses.map((exp) => (
                 <tr key={exp.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
                   <td className="px-4 py-3 text-slate-600">{formatDateJJMMAAAA(exp.expense_date)}</td>
                   <td className="px-4 py-3 font-medium text-slate-900">{exp.label}</td>
                   <td className="px-4 py-3 text-slate-600">{activityName(exp.fee_service_id)}</td>
+                  <td className="px-4 py-3 text-slate-600">{bankLabel(exp.bank_account_id)}</td>
                   <td className="px-4 py-3 text-right font-medium text-slate-900">{exp.amount.toLocaleString("fr-FR")}</td>
                   <td className="px-4 py-3 text-center">
                     <span className={exp.statut === "VALIDEE" ? "text-green-600 font-medium" : "text-amber-600"}>{exp.statut === "VALIDEE" ? "Validée" : "Brouillon"}</span>

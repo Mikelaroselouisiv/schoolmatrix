@@ -28,6 +28,7 @@ export class Class {
   @Column({ type: 'varchar', length: 20, nullable: true })
   section: string;
 
+  /** @deprecated Preférer room.class_id (plusieurs salles par classe). Conservé pour compat. */
   @ManyToOne(() => Room, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'room_id' })
   room: Room;
@@ -43,4 +44,7 @@ export class Class {
 
   @OneToMany(() => Student, (student) => student.class)
   students: Student[];
+
+  @OneToMany(() => Room, (room) => room.class)
+  rooms: Room[];
 }

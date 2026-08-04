@@ -29,10 +29,19 @@ type Student = {
   responsible_phone: string | null;
   class_id: string;
   class_name: string;
+  room_id: string | null;
+  room_name: string | null;
   active: boolean;
 };
 
 type ClassItem = { id: string; name: string };
+type RoomItem = {
+  id: string;
+  name: string;
+  class_id: string | null;
+  capacity: number | null;
+  student_count: number;
+};
 type AcademicYearItem = { id: string; name: string };
 
 export function DashboardStudentsPage() {
@@ -42,10 +51,12 @@ export function DashboardStudentsPage() {
   const { roleName } = useSchoolProfile() ?? { roleName: "" };
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [rooms, setRooms] = useState<RoomItem[]>([]);
   const [academicYears, setAcademicYears] = useState<AcademicYearItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [classFilter, setClassFilter] = useState("");
+  const [roomFilter, setRoomFilter] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
   const [createdOrderNumber, setCreatedOrderNumber] = useState<string | null>(null);
@@ -55,6 +66,7 @@ export function DashboardStudentsPage() {
     first_name: "",
     last_name: "",
     class_id: "",
+    room_id: "",
     academic_year_id: "",
     email: "",
     phone: "",
@@ -74,24 +86,37 @@ export function DashboardStudentsPage() {
     responsible_phone: "",
   });
 
+  const roomsForFilter = classFilter
+    ? rooms.filter((r) => r.class_id === classFilter)
+    : rooms;
+  const roomsForForm = form.class_id
+    ? rooms.filter((r) => r.class_id === form.class_id)
+    : [];
+
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
   async function load() {
     setLoading(true);
     setError("");
     try {
-      const params = classFilter ? `?class_id=${classFilter}` : "";
-      const [studentsRes, classesRes, yearsRes] = await Promise.all([
-        fetchWithAuth(`${API_BASE}/students${params}`),
+      const qs = new URLSearchParams();
+      if (classFilter) qs.set("class_id", classFilter);
+      if (roomFilter) qs.set("room_id", roomFilter);
+      const q = qs.toString() ? `?${qs}` : "";
+      const [studentsRes, classesRes, roomsRes, yearsRes] = await Promise.all([
+        fetchWithAuth(`${API_BASE}/students${q}`),
         fetchWithAuth(`${API_BASE}/classes`),
+        fetchWithAuth(`${API_BASE}/rooms`),
         fetchWithAuth(`${API_BASE}/academic-years`),
       ]);
       const studentsData = await studentsRes.json();
       const classesData = await classesRes.json();
+      const roomsData = await roomsRes.json();
       const yearsData = await yearsRes.json();
       if (!studentsRes.ok) throw new Error(studentsData.message || "Erreur");
       setStudents(studentsData.students ?? []);
       setClasses(classesData.classes ?? []);
+      setRooms(roomsData.rooms ?? []);
       const years = yearsData.academic_years ?? [];
       setAcademicYears(years);
     } catch (e) {
@@ -103,7 +128,14 @@ export function DashboardStudentsPage() {
 
   useEffect(() => {
     load();
-  }, [classFilter]);
+  }, [classFilter, roomFilter]);
+
+  useEffect(() => {
+    if (roomFilter && classFilter) {
+      const ok = rooms.some((r) => r.id === roomFilter && r.class_id === classFilter);
+      if (!ok) setRoomFilter("");
+    }
+  }, [classFilter, rooms, roomFilter]);
 
   useEffect(() => {
     if (!editIdFromUrl || !classes.length || handledEditId.current === editIdFromUrl) return;
@@ -139,6 +171,7 @@ export function DashboardStudentsPage() {
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
         class_id: form.class_id,
+        room_id: form.room_id || null,
         ...(form.academic_year_id ? { academic_year_id: form.academic_year_id } : {}),
         email: form.email.trim() || undefined,
         phone: form.phone.trim() || undefined,
@@ -175,7 +208,7 @@ export function DashboardStudentsPage() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || "Erreur");
         setCreatedOrderNumber(data.student?.order_number ?? (form.order_number.trim() || null));
-        setForm({ order_number: "", first_name: "", last_name: "", class_id: "", academic_year_id: academicYears[0]?.id ?? "", email: "", phone: "", address: "", birth_date: "", birth_place: "", gender: "", photo_identity_student: "", photo_identity_mother: "", photo_identity_father: "", photo_identity_responsible: "", mother_name: "", mother_phone: "", father_name: "", father_phone: "", responsible_name: "", responsible_phone: "" });
+        setForm({ order_number: "", first_name: "", last_name: "", class_id: "", room_id: "", academic_year_id: academicYears[0]?.id ?? "", email: "", phone: "", address: "", birth_date: "", birth_place: "", gender: "", photo_identity_student: "", photo_identity_mother: "", photo_identity_father: "", photo_identity_responsible: "", mother_name: "", mother_phone: "", father_name: "", father_phone: "", responsible_name: "", responsible_phone: "" });
         load();
       }
     } catch (e) {
@@ -208,6 +241,7 @@ export function DashboardStudentsPage() {
       first_name: s.first_name ?? "",
       last_name: s.last_name ?? "",
       class_id: s.class_id ?? "",
+      room_id: s.room_id ?? "",
       email: s.email ?? "",
       phone: s.phone ?? "",
       address: s.address ?? "",
@@ -232,7 +266,7 @@ export function DashboardStudentsPage() {
   function openCreate() {
     setEditing(null);
     const defaultYearId = academicYears.length > 0 ? academicYears[0].id : "";
-    setForm({ order_number: "", first_name: "", last_name: "", class_id: "", academic_year_id: defaultYearId, email: "", phone: "", address: "", birth_date: "", birth_place: "", gender: "", photo_identity_student: "", photo_identity_mother: "", photo_identity_father: "", photo_identity_responsible: "", mother_name: "", mother_phone: "", father_name: "", father_phone: "", responsible_name: "", responsible_phone: "" });
+    setForm({ order_number: "", first_name: "", last_name: "", class_id: "", room_id: "", academic_year_id: defaultYearId, email: "", phone: "", address: "", birth_date: "", birth_place: "", gender: "", photo_identity_student: "", photo_identity_mother: "", photo_identity_father: "", photo_identity_responsible: "", mother_name: "", mother_phone: "", father_name: "", father_phone: "", responsible_name: "", responsible_phone: "" });
     setShowForm(true);
     setCreatedOrderNumber(null);
   }
@@ -263,17 +297,41 @@ export function DashboardStudentsPage() {
 
       {error && <div className="p-3 rounded-lg bg-red-50 text-red-600 text-sm">{error}</div>}
 
-      {/* Filtre par classe */}
-      <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Filtrer par classe</label>
-        <select
-          value={classFilter}
-          onChange={(e) => setClassFilter(e.target.value)}
-          className="border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm max-w-xs"
-        >
-          <option value="">Toutes les classes</option>
-          {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
+      <div className="flex flex-wrap gap-4">
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Filtrer par classe</label>
+          <select
+            value={classFilter}
+            onChange={(e) => {
+              setClassFilter(e.target.value);
+              setRoomFilter("");
+            }}
+            className="border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm max-w-xs"
+          >
+            <option value="">Toutes les classes</option>
+            {classes.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Filtrer par salle</label>
+          <select
+            value={roomFilter}
+            onChange={(e) => setRoomFilter(e.target.value)}
+            className="border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm max-w-xs"
+          >
+            <option value="">Toutes les salles</option>
+            {roomsForFilter.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+                {r.capacity != null ? ` (${r.student_count}/${r.capacity})` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Formulaire */}
@@ -318,12 +376,56 @@ export function DashboardStudentsPage() {
               </select>
             </div>
           )}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Classe *</label>
-            <select value={form.class_id} onChange={(e) => setForm((f) => ({ ...f, class_id: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2" required>
-              <option value="">Sélectionner</option>
-              {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Classe *</label>
+              <select
+                value={form.class_id}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, class_id: e.target.value, room_id: "" }))
+                }
+                className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
+                required
+              >
+                <option value="">Sélectionner</option>
+                {classes.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Salle</label>
+              <select
+                value={form.room_id}
+                onChange={(e) => setForm((f) => ({ ...f, room_id: e.target.value }))}
+                className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
+                disabled={!form.class_id}
+              >
+                <option value="">Non assignée</option>
+                {roomsForForm.map((r) => {
+                  const full = r.capacity != null && r.student_count >= r.capacity;
+                  const isCurrent = editing?.room_id === r.id;
+                  return (
+                    <option key={r.id} value={r.id} disabled={full && !isCurrent}>
+                      {r.name}
+                      {r.capacity != null
+                        ? ` — ${r.student_count}/${r.capacity}${full && !isCurrent ? " (plein)" : ""}`
+                        : ` — ${r.student_count} élève(s)`}
+                    </option>
+                  );
+                })}
+              </select>
+              {form.class_id && roomsForForm.length === 0 && (
+                <p className="text-xs text-amber-700 mt-1">
+                  Aucune salle pour cette classe.{" "}
+                  <Link to="/dashboard/rooms" className="underline">
+                    Créer une salle
+                  </Link>
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -409,6 +511,7 @@ export function DashboardStudentsPage() {
               <th className="px-4 py-3 font-medium text-slate-900">Identifiant (n° ministère)</th>
               <th className="px-4 py-3 font-medium text-slate-900">Nom</th>
               <th className="px-4 py-3 font-medium text-slate-900">Classe</th>
+              <th className="px-4 py-3 font-medium text-slate-900">Salle</th>
               <th className="px-4 py-3 font-medium text-slate-900">Téléphone</th>
               <th className="px-4 py-3 font-medium text-slate-900">Mère / Père</th>
               <th className="px-4 py-3 font-medium text-slate-900 w-24">Actions</th>
@@ -416,13 +519,14 @@ export function DashboardStudentsPage() {
           </thead>
           <tbody>
             {students.length === 0 ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">Aucun élève</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">Aucun élève</td></tr>
             ) : (
               students.map((s) => (
                 <tr key={s.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
                   <td className="px-4 py-3 font-mono font-semibold text-slate-900">{s.order_number ?? "—"}</td>
                   <td className="px-4 py-3 font-medium text-slate-900">{s.first_name} {s.last_name}</td>
                   <td className="px-4 py-3 text-slate-600">{s.class_name}</td>
+                  <td className="px-4 py-3 text-slate-600">{s.room_name ?? "—"}</td>
                   <td className="px-4 py-3 text-slate-600">{s.phone ?? s.email ?? "—"}</td>
                   <td className="px-4 py-3 text-slate-600">{[s.mother_name, s.father_name].filter(Boolean).join(" / ") || "—"}</td>
                   <td className="px-4 py-3 flex gap-2 flex-wrap">

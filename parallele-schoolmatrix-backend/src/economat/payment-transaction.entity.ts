@@ -9,6 +9,7 @@ import {
 import { Student } from '../students/student.entity';
 import { Class } from '../classes/class.entity';
 import { FeeService } from './fee-service.entity';
+import { BankAccount } from '../finance/bank-account.entity';
 
 @Entity('payment_transaction')
 export class PaymentTransaction {
@@ -38,6 +39,14 @@ export class PaymentTransaction {
 
   @Column({ type: 'date' })
   payment_date: Date;
+
+  /** null = caisse ; sinon compte bancaire */
+  @ManyToOne(() => BankAccount, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'bank_account_id' })
+  bank_account: BankAccount | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  bank_account_id: string | null;
 
   @CreateDateColumn()
   created_at: Date;

@@ -61,4 +61,6 @@ Header `X-Sync-Key: <SYNC_API_KEY>` — même clé sur local, cloud et agent.
 
 Voir `ENTITY_ORDER` dans `apps/sync-agent/src/entities.js` et `SYNC_ENTITY_DEFS` dans le backend.
 
+Ordre notable : **Class avant Room** (`room.class_id` → classe pédagogique ; une classe a plusieurs salles avec `capacity`). **Student** après Room (`student.room_id`).
+
 Inclut **`User`** (`password_hash`, photos, `role_id`). Les rôles sont seedés identiquement (mêmes ids) des deux côtés — pas de sync `Role` en V1.

@@ -27,7 +27,7 @@ export class ClassesService {
 
   async findAll(): Promise<Class[]> {
     return this.classRepo.find({
-      relations: ['room', 'students'],
+      relations: ['room', 'rooms', 'students'],
       order: { name: 'ASC' },
     });
   }
@@ -35,7 +35,7 @@ export class ClassesService {
   async findOne(id: string): Promise<Class> {
     const c = await this.classRepo.findOne({
       where: { id },
-      relations: ['students', 'room'],
+      relations: ['students', 'room', 'rooms'],
     });
     if (!c) {
       throw new NotFoundException('Class not found');

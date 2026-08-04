@@ -3,8 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Student } from './student.entity';
 import { Class } from '../classes/class.entity';
+import { Room } from '../rooms/room.entity';
 import { FormationClasseService } from '../formation-classe/formation-classe.service';
 import { ClassesService } from '../classes/classes.service';
+import { RoomsService } from '../rooms/rooms.service';
 
 export type ImportResult = {
   created: number;
@@ -20,16 +22,26 @@ export class StudentsService {
     @Inject(forwardRef(() => FormationClasseService))
     private readonly formationClasseService: FormationClasseService,
     private readonly classesService: ClassesService,
+    private readonly roomsService: RoomsService,
   ) {}
 
-  async findAll(classId?: string): Promise<Student[]> {
+  async findAll(filters?: {
+    classId?: string;
+    roomId?: string;
+  }): Promise<Student[]> {
     const qb = this.studentRepo
       .createQueryBuilder('s')
       .leftJoinAndSelect('s.class', 'c')
-      .orderBy('s.last_name', 'ASC')
+      .leftJoinAndSelect('s.room', 'r')
+      .orderBy('c.name', 'ASC')
+      .addOrderBy('r.name', 'ASC')
+      .addOrderBy('s.last_name', 'ASC')
       .addOrderBy('s.first_name', 'ASC');
-    if (classId) {
-      qb.andWhere('s.class_id = :classId', { classId });
+    if (filters?.classId) {
+      qb.andWhere('s.class_id = :classId', { classId: filters.classId });
+    }
+    if (filters?.roomId) {
+      qb.andWhere('s.room_id = :roomId', { roomId: filters.roomId });
     }
     return qb.getMany();
   }
@@ -37,7 +49,7 @@ export class StudentsService {
   async findOne(id: string): Promise<Student> {
     const s = await this.studentRepo.findOne({
       where: { id },
-      relations: ['class'],
+      relations: ['class', 'room'],
     });
     if (!s) {
       throw new NotFoundException('Student not found');
@@ -45,10 +57,29 @@ export class StudentsService {
     return s;
   }
 
+  /** Valide salle ↔ classe et capacité. */
+  private async resolveRoomForClass(
+    classId: string,
+    roomId: string | null | undefined,
+    excludeStudentId?: string,
+  ): Promise<Room | null> {
+    if (!roomId) return null;
+    const room = await this.roomsService.findEntity(roomId);
+    const roomClassId = room.class?.id ?? null;
+    if (roomClassId && roomClassId !== classId) {
+      throw new BadRequestException(
+        'Cette salle n’appartient pas à la classe sélectionnée',
+      );
+    }
+    await this.roomsService.assertCanAcceptStudent(roomId, excludeStudentId);
+    return room;
+  }
+
   async create(params: {
     first_name: string;
     last_name: string;
     class_id: string;
+    room_id?: string | null;
     order_number: string;
     academic_year_id?: string;
     email?: string;
@@ -72,10 +103,17 @@ export class StudentsService {
     if (!raw) {
       throw new BadRequestException('L\'identifiant élève (numéro ministère) est obligatoire.');
     }
+    if (!params.class_id?.trim()) {
+      throw new BadRequestException('La classe est obligatoire.');
+    }
     const existing = await this.studentRepo.findOne({ where: { order_number: raw } });
     if (existing) {
       throw new BadRequestException(`Un élève avec l'identifiant « ${raw} » existe déjà.`);
     }
+    const room = await this.resolveRoomForClass(
+      params.class_id,
+      params.room_id ?? null,
+    );
     const student = this.studentRepo.create({
       order_number: raw,
       first_name: params.first_name.trim(),
@@ -98,6 +136,7 @@ export class StudentsService {
       responsible_name: params.responsible_name?.trim() || undefined,
       responsible_phone: params.responsible_phone?.trim() || undefined,
       class: { id: params.class_id },
+      room: room ?? null,
       active: true,
     });
     const saved = await this.studentRepo.save(student);
@@ -108,7 +147,7 @@ export class StudentsService {
         params.class_id,
       );
     }
-    return saved;
+    return this.findOne(saved.id);
   }
 
   async update(
@@ -117,6 +156,7 @@ export class StudentsService {
       first_name: string;
       last_name: string;
       class_id: string;
+      room_id: string | null;
       order_number: string;
       email: string;
       phone: string;
@@ -139,7 +179,7 @@ export class StudentsService {
   ): Promise<Student> {
     const student = await this.studentRepo.findOne({
       where: { id },
-      relations: ['class'],
+      relations: ['class', 'room'],
     });
     if (!student) {
       throw new NotFoundException('Student not found');
@@ -159,6 +199,19 @@ export class StudentsService {
     if (params.first_name !== undefined) student.first_name = params.first_name.trim();
     if (params.last_name !== undefined) student.last_name = params.last_name.trim();
     if (params.class_id !== undefined) student.class = { id: params.class_id } as Class;
+
+    const classId = params.class_id ?? student.class?.id;
+    if (params.room_id !== undefined) {
+      const room = await this.resolveRoomForClass(classId, params.room_id, id);
+      student.room = room;
+    } else if (params.class_id !== undefined && student.room?.id) {
+      // Changement de classe : vérifier que la salle actuelle appartient encore à la classe
+      const room = await this.roomsService.findEntity(student.room.id).catch(() => null);
+      if (room && room.class?.id && room.class.id !== params.class_id) {
+        student.room = null;
+      }
+    }
+
     if (params.email !== undefined) student.email = params.email.trim() || undefined;
     if (params.phone !== undefined) student.phone = params.phone.trim() || undefined;
     if (params.address !== undefined) student.address = params.address.trim() || undefined;
@@ -204,7 +257,8 @@ export class StudentsService {
     if (params.responsible_phone !== undefined) {
       student.responsible_phone = params.responsible_phone?.trim() || undefined;
     }
-    return this.studentRepo.save(student);
+    await this.studentRepo.save(student);
+    return this.findOne(id);
   }
 
   async findByOrderNumber(orderNumber: string): Promise<Student | null> {
@@ -212,7 +266,7 @@ export class StudentsService {
     if (!raw) return null;
     return this.studentRepo.findOne({
       where: { order_number: raw },
-      relations: ['class'],
+      relations: ['class', 'room'],
     });
   }
 

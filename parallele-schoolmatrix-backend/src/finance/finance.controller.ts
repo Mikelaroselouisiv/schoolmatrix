@@ -166,6 +166,7 @@ export class FinanceController {
       category?: string;
       document_ref?: string;
       fee_service_id?: string | null;
+      bank_account_id?: string | null;
     },
   ) {
     const exp = await this.financeService.createExpense(body);
@@ -182,6 +183,7 @@ export class FinanceController {
       category: string;
       document_ref: string;
       fee_service_id: string | null;
+      bank_account_id: string | null;
     }>,
   ) {
     const exp = await this.financeService.updateExpense(id, body);
@@ -224,5 +226,93 @@ export class FinanceController {
   async getBalance(@Query('exercice_id') exerciceId: string) {
     const balance = await this.financeService.getBalanceByAccount(exerciceId);
     return { ok: true, balance };
+  }
+
+  @Get('banks')
+  async listBanks() {
+    const banks = await this.financeService.findBanks();
+    return { ok: true, banks };
+  }
+
+  @Post('banks')
+  async createBank(@Body() body: { name: string }) {
+    const bank = await this.financeService.createBank(body);
+    return { ok: true, bank };
+  }
+
+  @Patch('banks/:id')
+  async updateBank(
+    @Param('id') id: string,
+    @Body() body: Partial<{ name: string; active: boolean }>,
+  ) {
+    const bank = await this.financeService.updateBank(id, body);
+    return { ok: true, bank };
+  }
+
+  @Delete('banks/:id')
+  async deleteBank(@Param('id') id: string) {
+    await this.financeService.deleteBank(id);
+    return { ok: true, deleted: true };
+  }
+
+  @Get('bank-accounts')
+  async listBankAccounts() {
+    const accounts = await this.financeService.listActiveBankAccounts();
+    return { ok: true, accounts };
+  }
+
+  @Post('bank-accounts')
+  async createBankAccount(
+    @Body()
+    body: {
+      bank_id: string;
+      name: string;
+      account_number?: string | null;
+      opening_balance?: number;
+    },
+  ) {
+    const account = await this.financeService.createBankAccount(body);
+    return {
+      ok: true,
+      account: {
+        id: account.id,
+        bank_id: account.bank_id,
+        name: account.name,
+        account_number: account.account_number,
+        opening_balance: Number(account.opening_balance),
+        active: account.active,
+      },
+    };
+  }
+
+  @Patch('bank-accounts/:id')
+  async updateBankAccount(
+    @Param('id') id: string,
+    @Body()
+    body: Partial<{
+      name: string;
+      account_number: string | null;
+      opening_balance: number;
+      active: boolean;
+    }>,
+  ) {
+    const account = await this.financeService.updateBankAccount(id, body);
+    return {
+      ok: true,
+      account: {
+        id: account.id,
+        bank_id: account.bank_id,
+        name: account.name,
+        account_number: account.account_number,
+        opening_balance: Number(account.opening_balance),
+        active: account.active,
+      },
+    };
+  }
+
+  @Delete('bank-accounts/:id')
+  async deleteBankAccount(@Param('id') id: string) {
+    await this.financeService.deleteBankAccount(id);
+    return { ok: true, deleted: true };
   }
 }

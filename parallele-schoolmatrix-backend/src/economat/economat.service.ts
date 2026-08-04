@@ -180,6 +180,7 @@ export class EconomatService {
     service_id: string;
     amount_paid: number;
     payment_date: string;
+    bank_account_id?: string | null;
   }): Promise<PaymentTransaction> {
     const student = await this.studentRepo.findOne({ where: { id: params.student_id }, relations: ['class'] });
     if (!student) throw new NotFoundException('Student not found');
@@ -193,6 +194,7 @@ export class EconomatService {
       amount_due: String(amount_due),
       amount_paid: String(params.amount_paid),
       payment_date: new Date(params.payment_date),
+      bank_account_id: params.bank_account_id || null,
     });
     return this.transactionRepo.save(tx);
   }
@@ -221,6 +223,7 @@ export class EconomatService {
       amount_due: Number(t.amount_due),
       amount_paid: Number(t.amount_paid),
       payment_date: t.payment_date,
+      bank_account_id: t.bank_account_id ?? null,
       created_at: t.created_at,
     }));
   }

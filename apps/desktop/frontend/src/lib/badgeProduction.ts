@@ -21,18 +21,6 @@ function getToken(): string | null {
   return typeof window !== "undefined" ? localStorage.getItem("token") : null;
 }
 
-/** Base API réelle pour /uploads (évite le préfixe /api Next si édition desktop). */
-function resolveUploadsApiBase(): string {
-  if (typeof window !== "undefined" && window.schoolmatrixDesktop?.apiBase) {
-    return window.schoolmatrixDesktop.apiBase.replace(/\/$/, "");
-  }
-  // Next proxy : /api → backend
-  if (API_BASE === "/api" || API_BASE.endsWith("/api")) {
-    return API_BASE.replace(/\/$/, "");
-  }
-  return API_BASE.replace(/\/$/, "");
-}
-
 export async function fetchDirecteurSignature(): Promise<BadgeSignatureInfo | null> {
   try {
     const res = await fetchWithAuth(`${API_BASE}/school/signatures`);
@@ -93,28 +81,26 @@ export async function buildBadgesPdfBlob(params: {
     students: params.students,
     signature,
     resolveUrl: getImageUrl,
-    apiBase: resolveUploadsApiBase(),
+    apiBase: API_BASE,
     token: getToken(),
   });
 }
 
+/** Élèves d'une classe (pour badges en lot). */
 export async function fetchStudentsForClassBadges(classId: string): Promise<BadgeStudentInfo[]> {
-  const [studentsRes, classesRes] = await Promise.all([
-    fetchWithAuth(`${API_BASE}/students?class_id=${encodeURIComponent(classId)}`),
-    fetchWithAuth(`${API_BASE}/classes`),
-  ]);
+  const studentsRes = await fetchWithAuth(
+    `${API_BASE}/students?class_id=${encodeURIComponent(classId)}`,
+  );
   const studentsData = await studentsRes.json().catch(() => ({}));
-  const classesData = await classesRes.json().catch(() => ({}));
   if (!studentsRes.ok) {
     throw new Error(studentsData.message || "Impossible de charger les élèves");
   }
-  const roomName =
-    (classesData.classes ?? []).find((c: { id: string }) => c.id === classId)?.room_name ?? null;
   const list = (studentsData.students ?? []) as Array<{
     first_name: string;
     last_name: string;
     order_number?: string | null;
     class_name?: string | null;
+    room_name?: string | null;
     photo_identity_student?: string | null;
   }>;
   return list
@@ -127,61 +113,50 @@ export async function fetchStudentsForClassBadges(classId: string): Promise<Badg
       last_name: s.last_name,
       order_number: s.order_number,
       class_name: s.class_name,
-      room_name: roomName,
+      room_name: s.room_name ?? null,
       photo_url: s.photo_identity_student,
     }));
 }
 
+/** Élèves inscrits dans une salle (groupe). */
 export async function fetchStudentsForRoomBadges(roomId: string): Promise<{
   students: BadgeStudentInfo[];
   roomName: string;
 }> {
-  const classesRes = await fetchWithAuth(`${API_BASE}/classes`);
-  const classesData = await classesRes.json().catch(() => ({}));
-  if (!classesRes.ok) {
-    throw new Error(classesData.message || "Impossible de charger les classes");
+  const [roomRes, studentsRes] = await Promise.all([
+    fetchWithAuth(`${API_BASE}/rooms/${encodeURIComponent(roomId)}`),
+    fetchWithAuth(`${API_BASE}/students?room_id=${encodeURIComponent(roomId)}`),
+  ]);
+  const roomData = await roomRes.json().catch(() => ({}));
+  const studentsData = await studentsRes.json().catch(() => ({}));
+  if (!roomRes.ok) {
+    throw new Error(roomData.message || "Salle introuvable");
   }
-  const classes = (classesData.classes ?? []) as Array<{
-    id: string;
-    name: string;
-    room_id: string | null;
-    room_name: string | null;
-  }>;
-  const inRoom = classes.filter((c) => c.room_id === roomId);
-  if (!inRoom.length) {
-    throw new Error("Aucune classe n’est assignée à cette salle");
+  if (!studentsRes.ok) {
+    throw new Error(studentsData.message || "Impossible de charger les élèves");
   }
-  const roomName = inRoom[0].room_name || "Salle";
-  const batches = await Promise.all(
-    inRoom.map(async (c) => {
-      const res = await fetchWithAuth(
-        `${API_BASE}/students?class_id=${encodeURIComponent(c.id)}`,
-      );
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) return [] as BadgeStudentInfo[];
-      return ((data.students ?? []) as Array<{
-        first_name: string;
-        last_name: string;
-        order_number?: string | null;
-        class_name?: string | null;
-        photo_identity_student?: string | null;
-      }>).map((s) => ({
-        first_name: s.first_name,
-        last_name: s.last_name,
-        order_number: s.order_number,
-        class_name: s.class_name ?? c.name,
-        room_name: roomName,
-        photo_url: s.photo_identity_student,
-      }));
-    }),
-  );
-  const students = batches
-    .flat()
+  const roomName = roomData.room?.name || "Salle";
+  const students = ((studentsData.students ?? []) as Array<{
+    first_name: string;
+    last_name: string;
+    order_number?: string | null;
+    class_name?: string | null;
+    room_name?: string | null;
+    photo_identity_student?: string | null;
+  }>)
+    .map((s) => ({
+      first_name: s.first_name,
+      last_name: s.last_name,
+      order_number: s.order_number,
+      class_name: s.class_name,
+      room_name: s.room_name || roomName,
+      photo_url: s.photo_identity_student,
+    }))
     .sort((a, b) =>
       `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`, "fr"),
     );
   if (!students.length) {
-    throw new Error("Aucun élève dans les classes de cette salle");
+    throw new Error("Aucun élève dans cette salle");
   }
   return { students, roomName };
 }

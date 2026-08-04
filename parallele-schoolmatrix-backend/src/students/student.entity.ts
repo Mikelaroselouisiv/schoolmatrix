@@ -8,6 +8,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { Class } from '../classes/class.entity';
+import { Room } from '../rooms/room.entity';
 
 @Entity('student')
 export class Student {
@@ -71,6 +72,14 @@ export class Student {
   @ManyToOne(() => Class, (cls) => cls.students, { nullable: false })
   @JoinColumn({ name: 'class_id' })
   class: Class;
+
+  /** Salle / groupe (ex. 1ère année 2) — effectif limité par room.capacity. */
+  @ManyToOne(() => Room, (room) => room.students, {
+    nullable: true,
+    onDelete: 'SET NULL',
+  })
+  @JoinColumn({ name: 'room_id' })
+  room: Room | null;
 
   @Column({ type: 'varchar', length: 50, unique: true, nullable: true })
   order_number: string | null;

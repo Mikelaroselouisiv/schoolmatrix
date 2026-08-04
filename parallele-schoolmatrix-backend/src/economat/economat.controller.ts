@@ -113,6 +113,7 @@ export class EconomatController {
     service_id: string;
     amount_paid: number;
     payment_date: string;
+    bank_account_id?: string | null;
   }) {
     const tx = await this.economatService.recordPayment(body);
     try {
@@ -130,6 +131,7 @@ export class EconomatController {
         amount_due: Number(tx.amount_due),
         amount_paid: Number(tx.amount_paid),
         payment_date: tx.payment_date,
+        bank_account_id: tx.bank_account_id ?? null,
         created_at: tx.created_at,
       },
     };

@@ -107,14 +107,14 @@ function ShortcutIcon({ href }: { href: string }) {
       </svg>
     );
   }
-  if (href.includes("/moniteur-finance")) {
+  if (href.includes("/moniteur-finance") || href.includes("/stats-financieres") || href.includes("/stats-academiques")) {
     return (
       <svg className={iconClass} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.5">
         <path d="M3 3v18h18" /><path d="M18 9l-5 5-4-4-3 3" />
       </svg>
     );
   }
-  if (href.includes("/comptabilite")) {
+  if (href.includes("/comptabilite") || href.includes("/banques")) {
     return (
       <svg className={iconClass} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.5">
         <rect x="4" y="2" width="16" height="20" rx="2" /><path d="M9 6h6M9 10h6M9 14h4" />

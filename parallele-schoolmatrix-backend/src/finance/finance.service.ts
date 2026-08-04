@@ -7,9 +7,15 @@ import { JournalEntry } from './journal-entry.entity';
 import { JournalEntryLine } from './journal-entry-line.entity';
 import { OtherRevenue } from './other-revenue.entity';
 import { Expense } from './expense.entity';
+import { Bank } from './bank.entity';
+import { BankAccount } from './bank-account.entity';
 import { FeeService } from '../economat/fee-service.entity';
 import { PaymentTransaction } from '../economat/payment-transaction.entity';
 import { suggestAccountFromCode } from './plan-comptable-reference';
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
 
 /** Plan comptable type école : actif, passif, charges, produits, résultat, report à nouveau. */
 const DEFAULT_ACCOUNTS = [
@@ -46,6 +52,10 @@ export class FinanceService {
     private readonly feeServiceRepo: Repository<FeeService>,
     @InjectRepository(PaymentTransaction)
     private readonly transactionRepo: Repository<PaymentTransaction>,
+    @InjectRepository(Bank)
+    private readonly bankRepo: Repository<Bank>,
+    @InjectRepository(BankAccount)
+    private readonly bankAccountRepo: Repository<BankAccount>,
   ) {}
 
   async ensureDefaultAccounts(): Promise<void> {
@@ -409,6 +419,7 @@ export class FinanceService {
       document_ref: e.document_ref,
       statut: e.statut,
       fee_service_id: e.fee_service_id,
+      bank_account_id: e.bank_account_id,
       created_at: e.created_at,
     }));
   }
@@ -421,7 +432,12 @@ export class FinanceService {
     category?: string;
     document_ref?: string;
     fee_service_id?: string | null;
+    bank_account_id?: string | null;
   }): Promise<Expense> {
+    if (params.bank_account_id) {
+      const ba = await this.bankAccountRepo.findOne({ where: { id: params.bank_account_id, active: true } });
+      if (!ba) throw new BadRequestException('Compte bancaire introuvable');
+    }
     const exp = this.expenseRepo.create({
       expense_date: params.expense_date,
       amount: String(params.amount),
@@ -431,11 +447,22 @@ export class FinanceService {
       document_ref: params.document_ref?.trim() || null,
       statut: 'BROUILLON',
       fee_service_id: params.fee_service_id || null,
+      bank_account_id: params.bank_account_id || null,
     });
     return this.expenseRepo.save(exp);
   }
 
-  async updateExpense(id: string, params: Partial<{ label: string; beneficiary: string; category: string; document_ref: string; fee_service_id: string | null }>): Promise<Expense> {
+  async updateExpense(
+    id: string,
+    params: Partial<{
+      label: string;
+      beneficiary: string;
+      category: string;
+      document_ref: string;
+      fee_service_id: string | null;
+      bank_account_id: string | null;
+    }>,
+  ): Promise<Expense> {
     const exp = await this.expenseRepo.findOne({ where: { id } });
     if (!exp) throw new NotFoundException('Dépense non trouvée');
     if (exp.statut === 'VALIDEE') throw new BadRequestException('Impossible de modifier une dépense validée');
@@ -444,6 +471,13 @@ export class FinanceService {
     if (params.category !== undefined) exp.category = params.category?.trim() || null;
     if (params.document_ref !== undefined) exp.document_ref = params.document_ref?.trim() || null;
     if (params.fee_service_id !== undefined) exp.fee_service_id = params.fee_service_id || null;
+    if (params.bank_account_id !== undefined) {
+      if (params.bank_account_id) {
+        const ba = await this.bankAccountRepo.findOne({ where: { id: params.bank_account_id, active: true } });
+        if (!ba) throw new BadRequestException('Compte bancaire introuvable');
+      }
+      exp.bank_account_id = params.bank_account_id || null;
+    }
     return this.expenseRepo.save(exp);
   }
 
@@ -455,9 +489,9 @@ export class FinanceService {
     await this.ensureDefaultAccounts();
     const exercice = await this.getExerciceForDate(exp.expense_date);
     if (!exercice) throw new BadRequestException('Aucun exercice ouvert pour la date de cette dépense. Ouvrez un exercice dont la période inclut la date.');
-    const caisse = await this.getAccountByCode('512000');
+    const cashAccount = await this.getAccountByCode(exp.bank_account_id ? '580000' : '512000');
     const charges = await this.getAccountByCode('606000');
-    if (!caisse || !charges) throw new BadRequestException('Plan comptable incomplet.');
+    if (!cashAccount || !charges) throw new BadRequestException('Plan comptable incomplet.');
 
     exp.statut = 'VALIDEE';
     await this.expenseRepo.save(exp);
@@ -470,7 +504,7 @@ export class FinanceService {
       source_ref: exp.id,
       lines: [
         { account_id: charges.id, debit: Number(exp.amount), credit: 0, line_label: exp.label },
-        { account_id: caisse.id, debit: 0, credit: Number(exp.amount), line_label: exp.label },
+        { account_id: cashAccount.id, debit: 0, credit: Number(exp.amount), line_label: exp.label },
       ],
     });
     return exp;
@@ -490,9 +524,10 @@ export class FinanceService {
     const dateStr = typeof tx.payment_date === 'string' ? tx.payment_date : (tx.payment_date as Date).toISOString().slice(0, 10);
     const exercice = await this.getExerciceForDate(dateStr);
     if (!exercice) return;
-    const caisse = await this.getAccountByCode('512000');
+    const bankAccountId = tx.bank_account_id ?? (tx as any).bank_account?.id ?? null;
+    const cashAccount = await this.getAccountByCode(bankAccountId ? '580000' : '512000');
     const recettes = await this.getAccountByCode('706000');
-    if (!caisse || !recettes) return;
+    if (!cashAccount || !recettes) return;
 
     const amount = Number(tx.amount_paid);
     if (amount <= 0) return;
@@ -507,10 +542,229 @@ export class FinanceService {
       source: 'ECONOMAT',
       source_ref: tx.id,
       lines: [
-        { account_id: caisse.id, debit: amount, credit: 0, line_label: label },
+        { account_id: cashAccount.id, debit: amount, credit: 0, line_label: label },
         { account_id: recettes.id, debit: 0, credit: amount, line_label: label },
       ],
     });
+  }
+
+  // ─── Banques & comptes ───────────────────────────────────────────────
+
+  async findBanks(): Promise<any[]> {
+    const banks = await this.bankRepo.find({
+      relations: ['accounts'],
+      order: { name: 'ASC' },
+    });
+    const balances = await this.computeBankAccountBalances();
+    return banks.map((b) => ({
+      id: b.id,
+      name: b.name,
+      active: b.active,
+      accounts: (b.accounts ?? [])
+        .slice()
+        .sort((a, c) => a.name.localeCompare(c.name))
+        .map((a) => ({
+          id: a.id,
+          bank_id: b.id,
+          name: a.name,
+          account_number: a.account_number,
+          opening_balance: Number(a.opening_balance),
+          active: a.active,
+          balance: balances.get(a.id) ?? Number(a.opening_balance),
+          created_at: a.created_at,
+        })),
+      created_at: b.created_at,
+    }));
+  }
+
+  async createBank(params: { name: string }): Promise<Bank> {
+    const name = params.name?.trim();
+    if (!name) throw new BadRequestException('Nom de banque requis');
+    return this.bankRepo.save(this.bankRepo.create({ name, active: true }));
+  }
+
+  async updateBank(id: string, params: Partial<{ name: string; active: boolean }>): Promise<Bank> {
+    const bank = await this.bankRepo.findOne({ where: { id } });
+    if (!bank) throw new NotFoundException('Banque introuvable');
+    if (params.name !== undefined) {
+      const name = params.name.trim();
+      if (!name) throw new BadRequestException('Nom de banque requis');
+      bank.name = name;
+    }
+    if (params.active !== undefined) bank.active = params.active;
+    return this.bankRepo.save(bank);
+  }
+
+  async deleteBank(id: string): Promise<{ deleted: boolean }> {
+    const bank = await this.bankRepo.findOne({ where: { id }, relations: ['accounts'] });
+    if (!bank) throw new NotFoundException('Banque introuvable');
+    await this.bankRepo.remove(bank);
+    return { deleted: true };
+  }
+
+  async createBankAccount(params: {
+    bank_id: string;
+    name: string;
+    account_number?: string | null;
+    opening_balance?: number;
+  }): Promise<BankAccount> {
+    const bank = await this.bankRepo.findOne({ where: { id: params.bank_id } });
+    if (!bank) throw new NotFoundException('Banque introuvable');
+    const name = params.name?.trim();
+    if (!name) throw new BadRequestException('Nom du compte requis');
+    const account = this.bankAccountRepo.create({
+      bank_id: params.bank_id,
+      bank: { id: params.bank_id } as Bank,
+      name,
+      account_number: params.account_number?.trim() || null,
+      opening_balance: String(params.opening_balance ?? 0),
+      active: true,
+    });
+    return this.bankAccountRepo.save(account);
+  }
+
+  async updateBankAccount(
+    id: string,
+    params: Partial<{ name: string; account_number: string | null; opening_balance: number; active: boolean }>,
+  ): Promise<BankAccount> {
+    const account = await this.bankAccountRepo.findOne({ where: { id } });
+    if (!account) throw new NotFoundException('Compte bancaire introuvable');
+    if (params.name !== undefined) {
+      const name = params.name.trim();
+      if (!name) throw new BadRequestException('Nom du compte requis');
+      account.name = name;
+    }
+    if (params.account_number !== undefined) account.account_number = params.account_number?.trim() || null;
+    if (params.opening_balance !== undefined) account.opening_balance = String(params.opening_balance);
+    if (params.active !== undefined) account.active = params.active;
+    return this.bankAccountRepo.save(account);
+  }
+
+  async deleteBankAccount(id: string): Promise<{ deleted: boolean }> {
+    const account = await this.bankAccountRepo.findOne({ where: { id } });
+    if (!account) throw new NotFoundException('Compte bancaire introuvable');
+    await this.bankAccountRepo.remove(account);
+    return { deleted: true };
+  }
+
+  /** Liste plate des comptes actifs (pour sélecteurs paiement / dépense). */
+  async listActiveBankAccounts(): Promise<
+    { id: string; label: string; bank_id: string; bank_name: string; account_name: string; balance: number }[]
+  > {
+    const accounts = await this.bankAccountRepo.find({
+      where: { active: true },
+      relations: ['bank'],
+      order: { name: 'ASC' },
+    });
+    const balances = await this.computeBankAccountBalances();
+    return accounts
+      .filter((a) => a.bank?.active !== false)
+      .map((a) => ({
+        id: a.id,
+        bank_id: a.bank_id,
+        bank_name: a.bank?.name ?? '—',
+        account_name: a.name,
+        label: `${a.bank?.name ?? '—'} — ${a.name}`,
+        balance: balances.get(a.id) ?? Number(a.opening_balance),
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }
+
+  async computeBankAccountBalances(): Promise<Map<string, number>> {
+    const accounts = await this.bankAccountRepo.find();
+    const map = new Map<string, number>();
+    for (const a of accounts) map.set(a.id, Number(a.opening_balance) || 0);
+
+    const paid = await this.transactionRepo
+      .createQueryBuilder('t')
+      .select('t.bank_account_id', 'bank_account_id')
+      .addSelect('SUM(t.amount_paid)', 'total')
+      .where('t.bank_account_id IS NOT NULL')
+      .groupBy('t.bank_account_id')
+      .getRawMany();
+    for (const row of paid) {
+      const id = row.bank_account_id as string;
+      if (!id) continue;
+      map.set(id, round2((map.get(id) ?? 0) + Number(row.total ?? 0)));
+    }
+
+    const spent = await this.expenseRepo
+      .createQueryBuilder('e')
+      .select('e.bank_account_id', 'bank_account_id')
+      .addSelect('SUM(e.amount)', 'total')
+      .where('e.bank_account_id IS NOT NULL')
+      .andWhere('e.statut = :st', { st: 'VALIDEE' })
+      .groupBy('e.bank_account_id')
+      .getRawMany();
+    for (const row of spent) {
+      const id = row.bank_account_id as string;
+      if (!id) continue;
+      map.set(id, round2((map.get(id) ?? 0) - Number(row.total ?? 0)));
+    }
+
+    return map;
+  }
+
+  async getBankAccountsMonitor(): Promise<{
+    total_balance: number;
+    accounts: {
+      id: string;
+      bank_id: string;
+      bank_name: string;
+      account_name: string;
+      account_number: string | null;
+      opening_balance: number;
+      inflows: number;
+      outflows: number;
+      balance: number;
+    }[];
+  }> {
+    const accounts = await this.bankAccountRepo.find({
+      relations: ['bank'],
+      order: { name: 'ASC' },
+    });
+    const paidRows = await this.transactionRepo
+      .createQueryBuilder('t')
+      .select('t.bank_account_id', 'bank_account_id')
+      .addSelect('SUM(t.amount_paid)', 'total')
+      .where('t.bank_account_id IS NOT NULL')
+      .groupBy('t.bank_account_id')
+      .getRawMany();
+    const spentRows = await this.expenseRepo
+      .createQueryBuilder('e')
+      .select('e.bank_account_id', 'bank_account_id')
+      .addSelect('SUM(e.amount)', 'total')
+      .where('e.bank_account_id IS NOT NULL')
+      .andWhere('e.statut = :st', { st: 'VALIDEE' })
+      .groupBy('e.bank_account_id')
+      .getRawMany();
+    const inflows = new Map(paidRows.map((r) => [r.bank_account_id as string, Number(r.total ?? 0)]));
+    const outflows = new Map(spentRows.map((r) => [r.bank_account_id as string, Number(r.total ?? 0)]));
+
+    const list = accounts
+      .filter((a) => a.active && a.bank?.active !== false)
+      .map((a) => {
+        const opening = Number(a.opening_balance) || 0;
+        const inflow = inflows.get(a.id) ?? 0;
+        const outflow = outflows.get(a.id) ?? 0;
+        return {
+          id: a.id,
+          bank_id: a.bank_id,
+          bank_name: a.bank?.name ?? '—',
+          account_name: a.name,
+          account_number: a.account_number,
+          opening_balance: opening,
+          inflows: round2(inflow),
+          outflows: round2(outflow),
+          balance: round2(opening + inflow - outflow),
+        };
+      })
+      .sort((a, b) => `${a.bank_name}${a.account_name}`.localeCompare(`${b.bank_name}${b.account_name}`));
+
+    return {
+      total_balance: round2(list.reduce((s, a) => s + a.balance, 0)),
+      accounts: list,
+    };
   }
 
   /** Activités parascolaires = fee_services avec nature PARASCOLAIRE */

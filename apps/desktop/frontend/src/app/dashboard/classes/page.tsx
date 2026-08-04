@@ -21,6 +21,8 @@ type ClassItem = {
   section: string | null;
   room_id: string | null;
   room_name: string | null;
+  room_count?: number;
+  rooms?: Array<{ id: string; name: string; capacity: number | null }>;
   student_count?: number;
 };
 
@@ -172,23 +174,16 @@ export default function ClassesPage() {
               <input type="text" value={section} onChange={(e) => setSection(e.target.value)} placeholder="ex: A, B" className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40" />
             </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Salle</label>
-            <select value={room_id} onChange={(e) => setRoom_id(e.target.value)} className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40">
-              <option value="">— Aucune —</option>
-              {rooms
-                .filter((r) => r.active !== false || r.id === room_id)
-                .map((r) => (
-                  <option key={r.id} value={r.id}>{r.name}</option>
-                ))}
-            </select>
-            {rooms.length === 0 && (
-              <p className="mt-1.5 text-xs text-slate-500">
-                Aucune salle disponible.{" "}
-                <Link href="/dashboard/rooms" className="text-[var(--school-accent-1)] hover:underline">
-                  Créer une salle
-                </Link>
-              </p>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-600">
+            Les salles (ex. 1<sup>re</sup> année 1, 2, 3) et leur limite d’élèves se gèrent dans{" "}
+            <Link href="/dashboard/rooms" className="text-[var(--school-accent-1)] hover:underline font-medium">
+              Gestion des salles
+            </Link>
+            {editing && (editing.room_count ?? 0) > 0 && (
+              <span className="block mt-1 text-slate-500">
+                Salles liées :{" "}
+                {(editing.rooms ?? []).map((r) => r.name).join(", ") || editing.room_count}
+              </span>
             )}
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
@@ -207,7 +202,7 @@ export default function ClassesPage() {
             <tr>
               <th className="px-4 py-3 font-medium text-slate-900">Nom</th>
               <th className="px-4 py-3 font-medium text-slate-900">Niveau / Section</th>
-              <th className="px-4 py-3 font-medium text-slate-900">Salle</th>
+              <th className="px-4 py-3 font-medium text-slate-900">Salles</th>
               <th className="px-4 py-3 font-medium text-slate-900">Élèves</th>
               <th className="px-4 py-3 font-medium text-slate-900 w-64">Actions</th>
             </tr>
@@ -222,7 +217,11 @@ export default function ClassesPage() {
                   <td className="px-4 py-3 text-slate-600">
                     {[c.level, c.section].filter(Boolean).join(" / ") || "-"}
                   </td>
-                  <td className="px-4 py-3 text-slate-600">{c.room_name ?? "-"}</td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {c.room_count
+                      ? `${c.room_count} — ${(c.rooms ?? []).map((r) => r.name).join(", ")}`
+                      : "—"}
+                  </td>
                   <td className="px-4 py-3 text-slate-600">{c.student_count ?? "-"}</td>
                   <td className="px-4 py-3 flex flex-wrap items-center gap-2">
                     <ExportBadgePdfButton

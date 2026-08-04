@@ -19,6 +19,9 @@ const ROUTE_LABELS: Record<string, string> = {
   roles: "Rôles",
   discipline: "Discipline",
   "fiche-eleve": "Fiche élève",
+  "stats-academiques": "Stats académiques",
+  "stats-financieres": "Stats financières",
+  banques: "Banques",
 };
 
 export function getBreadcrumbSegments(pathname: string): { href: string; label: string }[] {

@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { API_BASE, fetchWithAuth } from "@/services/api";
 import { useSchoolProfile } from "@/context/SchoolProfileContext";
 import { ROLES_FULL } from "@/lib/dashboardRoles";
@@ -33,8 +33,10 @@ type Transaction = {
   amount_due: number;
   amount_paid: number;
   payment_date: string;
+  bank_account_id: string | null;
   created_at: string;
 };
+type BankAccountOption = { id: string; label: string };
 type Exemption = {
   id: string;
   student_id: string;
@@ -64,6 +66,7 @@ export function DashboardEconomatPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [exemptions, setExemptions] = useState<Exemption[]>([]);
 
+  const [bankAccounts, setBankAccounts] = useState<BankAccountOption[]>([]);
   const [paymentForm, setPaymentForm] = useState({
     student_id: "",
     class_id: "",
@@ -71,6 +74,7 @@ export function DashboardEconomatPage() {
     service_id: "",
     amount_paid: "",
     payment_date: getTodayLocalYYYYMMDD(),
+    bank_account_id: "",
   });
   const [savingPayment, setSavingPayment] = useState(false);
   const [filterYear, setFilterYear] = useState("");
@@ -105,24 +109,27 @@ export function DashboardEconomatPage() {
   async function loadBaseData() {
     setError("");
     try {
-      const [yearsRes, classesRes, servicesRes, currentRes, ctxRes] = await Promise.all([
+      const [yearsRes, classesRes, servicesRes, currentRes, ctxRes, banksRes] = await Promise.all([
         fetchWithAuth(`${API_BASE}/academic-years`),
         fetchWithAuth(`${API_BASE}/classes`),
         fetchWithAuth(`${API_BASE}/economat/fee-services`),
         fetchWithAuth(`${API_BASE}/economat/current-year`),
         fetchWithAuth(`${API_BASE}/school/current-context`),
+        fetchWithAuth(`${API_BASE}/finance/bank-accounts`),
       ]);
       const yearsData = await yearsRes.json();
       const classesData = await classesRes.json();
       const servicesData = await servicesRes.json();
       const currentData = await currentRes.json();
       const ctxData = await ctxRes.json();
+      const banksData = await banksRes.json().catch(() => ({}));
       if (!yearsRes.ok) throw new Error(yearsData.message || "Erreur années");
       if (!classesRes.ok) throw new Error(classesData.message || "Erreur classes");
       if (!servicesRes.ok) throw new Error(servicesData.message || "Erreur services");
       setAcademicYears(yearsData.academic_years ?? []);
       setClasses(classesData.classes ?? []);
       setFeeServices(servicesData.fee_services ?? []);
+      setBankAccounts(banksRes.ok ? banksData.accounts ?? [] : []);
       const defaultYearName = ctxRes.ok && ctxData.current_academic_year_name
         ? ctxData.current_academic_year_name
         : (currentData.academic_year as string) || "";
@@ -234,11 +241,12 @@ export function DashboardEconomatPage() {
           service_id: paymentForm.service_id,
           amount_paid: amount,
           payment_date: paymentForm.payment_date,
+          bank_account_id: paymentForm.bank_account_id || null,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Erreur");
-      setPaymentForm((f) => ({ ...f, amount_paid: "", student_id: "" }));
+      setPaymentForm((f) => ({ ...f, amount_paid: "", student_id: "", bank_account_id: "" }));
       loadTransactions();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
@@ -550,14 +558,29 @@ export function DashboardEconomatPage() {
                 />
               </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Date du paiement</label>
-              <DateInputJJMMAAAA
-                value={paymentForm.payment_date}
-                onChange={(payment_date) => setPaymentForm((f) => ({ ...f, payment_date }))}
-                className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
-                required
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Date du paiement</label>
+                <DateInputJJMMAAAA
+                  value={paymentForm.payment_date}
+                  onChange={(payment_date) => setPaymentForm((f) => ({ ...f, payment_date }))}
+                  className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Mode d&apos;encaissement</label>
+                <select
+                  value={paymentForm.bank_account_id}
+                  onChange={(e) => setPaymentForm((f) => ({ ...f, bank_account_id: e.target.value }))}
+                  className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
+                >
+                  <option value="">Caisse</option>
+                  {bankAccounts.map((a) => (
+                    <option key={a.id} value={a.id}>{a.label}</option>
+                  ))}
+                </select>
+              </div>
             </div>
             <button type="submit" disabled={savingPayment} className="app-btn-primary disabled:opacity-60">
               {savingPayment ? "Enregistrement..." : "Enregistrer le paiement"}

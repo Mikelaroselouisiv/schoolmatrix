@@ -6,6 +6,8 @@ import { JournalEntry } from './journal-entry.entity';
 import { JournalEntryLine } from './journal-entry-line.entity';
 import { OtherRevenue } from './other-revenue.entity';
 import { Expense } from './expense.entity';
+import { Bank } from './bank.entity';
+import { BankAccount } from './bank-account.entity';
 import { FeeService } from '../economat/fee-service.entity';
 import { PaymentTransaction } from '../economat/payment-transaction.entity';
 import { FinanceService } from './finance.service';
@@ -20,6 +22,8 @@ import { FinanceController } from './finance.controller';
       JournalEntryLine,
       OtherRevenue,
       Expense,
+      Bank,
+      BankAccount,
       FeeService,
       PaymentTransaction,
     ]),

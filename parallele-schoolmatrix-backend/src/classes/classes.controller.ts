@@ -30,6 +30,12 @@ export class ClassesController {
         section: c.section,
         room_id: c.room?.id ?? null,
         room_name: c.room?.name ?? null,
+        room_count: c.rooms?.length ?? 0,
+        rooms: (c.rooms ?? []).map((r) => ({
+          id: r.id,
+          name: r.name,
+          capacity: r.capacity ?? null,
+        })),
         active: c.active,
         is_preschool: isPreschoolClass(c.description, c.level),
         created_at: c.created_at,

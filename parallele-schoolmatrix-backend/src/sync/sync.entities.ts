@@ -17,6 +17,8 @@ import { ExamSchedule } from '../exam-schedule/exam-schedule.entity';
 import { ScheduleSlot } from '../teachers/schedule-slot.entity';
 import { ExtracurricularActivity } from '../extracurricular-activity/extracurricular-activity.entity';
 import { Expense } from '../finance/expense.entity';
+import { Bank } from '../finance/bank.entity';
+import { BankAccount } from '../finance/bank-account.entity';
 import { StudentClassAssignment } from '../formation-classe/student-class-assignment.entity';
 import { ClassDecisionThreshold } from '../formation-classe/class-decision-threshold.entity';
 import { Attendance } from '../discipline/attendance.entity';
@@ -45,6 +47,8 @@ export type SyncEntityName =
   | 'ScheduleSlot'
   | 'ExtracurricularActivity'
   | 'Expense'
+  | 'Bank'
+  | 'BankAccount'
   | 'StudentClassAssignment'
   | 'ClassDecisionThreshold'
   | 'Attendance'
@@ -65,9 +69,10 @@ export const SYNC_ENTITY_DEFS: SyncEntityDef[] = [
   { name: 'User', target: User, timeField: 'updated_at' },
   { name: 'AcademicYear', target: AcademicYear, timeField: 'updated_at' },
   { name: 'Period', target: Period, timeField: 'created_at' },
-  { name: 'Room', target: Room, timeField: 'updated_at' },
   { name: 'Subject', target: Subject, timeField: 'updated_at' },
+  /** Class avant Room : room.class_id → class (plusieurs salles / classe). */
   { name: 'Class', target: Class, timeField: 'updated_at' },
+  { name: 'Room', target: Room, timeField: 'updated_at' },
   { name: 'ClassSubject', target: ClassSubject, timeField: 'created_at' },
   { name: 'Student', target: Student, timeField: 'updated_at' },
   { name: 'FeeService', target: FeeService, timeField: 'updated_at' },
@@ -80,6 +85,8 @@ export const SYNC_ENTITY_DEFS: SyncEntityDef[] = [
   { name: 'ClassDecisionThreshold', target: ClassDecisionThreshold, timeField: 'updated_at' },
   { name: 'Grade', target: Grade, timeField: 'updated_at' },
   { name: 'PreschoolGrade', target: PreschoolGrade, timeField: 'updated_at' },
+  { name: 'Bank', target: Bank, timeField: 'updated_at' },
+  { name: 'BankAccount', target: BankAccount, timeField: 'updated_at' },
   { name: 'Expense', target: Expense, timeField: 'updated_at' },
   { name: 'FileMetadata', target: FileMetadata, timeField: 'updated_at' },
   { name: 'Attendance', target: Attendance, timeField: 'created_at' },

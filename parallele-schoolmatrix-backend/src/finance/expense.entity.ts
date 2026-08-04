@@ -38,6 +38,10 @@ export class Expense {
   @Column({ type: 'uuid', nullable: true })
   fee_service_id: string | null;
 
+  /** null = caisse ; sinon compte bancaire */
+  @Column({ type: 'uuid', nullable: true })
+  bank_account_id: string | null;
+
   @CreateDateColumn()
   created_at: Date;
 

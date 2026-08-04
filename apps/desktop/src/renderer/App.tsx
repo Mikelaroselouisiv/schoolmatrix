@@ -13,6 +13,9 @@ import { DashboardFormationClassePage } from './pages/DashboardFormationClassePa
 import { DashboardGradesPage } from './pages/DashboardGradesPage';
 import { DashboardHomePage } from './pages/DashboardHomePage';
 import { DashboardMoniteurFinancePage } from './pages/DashboardMoniteurFinancePage';
+import { DashboardStatsAcademiquesPage } from './pages/DashboardStatsAcademiquesPage';
+import { DashboardStatsFinancieresPage } from './pages/DashboardStatsFinancieresPage';
+import { DashboardBanquesPage } from './pages/DashboardBanquesPage';
 import { DashboardSchedulePage } from './pages/DashboardSchedulePage';
 import { DashboardSchoolPage } from './pages/DashboardSchoolPage';
 import { DashboardStudentsImportPage } from './pages/DashboardStudentsImportPage';
@@ -58,6 +61,9 @@ export default function App() {
               <Route path="depenses" element={<DashboardDepensesPage />} />
               <Route path="moniteur-finance" element={<DashboardMoniteurFinancePage />} />
               <Route path="comptabilite" element={<DashboardComptabilitePage />} />
+              <Route path="banques" element={<DashboardBanquesPage />} />
+              <Route path="stats-academiques" element={<DashboardStatsAcademiquesPage />} />
+              <Route path="stats-financieres" element={<DashboardStatsFinancieresPage />} />
               <Route path="fiche-eleve" element={<DashboardFicheElevePage />} />
               <Route path="users" element={<DashboardUsersPage />} />
             </Route>

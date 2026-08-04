@@ -6,7 +6,7 @@ import { useSchoolProfile } from "@/context/SchoolProfileContext";
 import { ROLES_FULL } from "@/lib/dashboardRoles";
 import { ExportPdfButton } from "@/components/ExportPdfButton";
 import { ExportBadgePdfButton } from "@/components/ExportBadgePdfButton";
-import { buildBadgesPdfBlob, fetchRoomNameForClass } from "@/lib/badgeProduction";
+import { buildBadgesPdfBlob } from "@/lib/badgeProduction";
 import { formatDateJJMMAAAA } from "@/lib/format";
 
 type Student = {
@@ -28,6 +28,8 @@ type Student = {
   responsible_phone: string | null;
   class_id: string;
   class_name: string;
+  room_id?: string | null;
+  room_name?: string | null;
   is_preschool?: boolean;
 };
 
@@ -455,7 +457,10 @@ export function DashboardFicheElevePage() {
                 <p className="text-slate-700 mt-1">
                   <span className="font-medium">Tél. :</span> {student.phone ?? student.email ?? "—"}
                 </p>
-                <p className="text-slate-500 text-sm">{student.class_name}</p>
+                <p className="text-slate-500 text-sm">
+                  {student.class_name}
+                  {student.room_name ? ` · Salle ${student.room_name}` : ""}
+                </p>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -463,7 +468,6 @@ export function DashboardFicheElevePage() {
                 label="Produire le badge"
                 filename={`badge-${student.first_name}-${student.last_name}`}
                 getBlob={async () => {
-                  const room_name = await fetchRoomNameForClass(student.class_id);
                   return buildBadgesPdfBlob({
                     school,
                     students: [
@@ -472,7 +476,7 @@ export function DashboardFicheElevePage() {
                         last_name: student.last_name,
                         order_number: student.order_number,
                         class_name: student.class_name,
-                        room_name,
+                        room_name: student.room_name ?? null,
                         photo_url: student.photo_identity_student,
                       },
                     ],

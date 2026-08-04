@@ -6,6 +6,7 @@ import {
   Delete,
   Param,
   Body,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { RoomsService } from './rooms.service';
@@ -17,73 +18,45 @@ export class RoomsController {
   constructor(private readonly roomsService: RoomsService) {}
 
   @Get()
-  async list() {
-    const rooms = await this.roomsService.findAll();
-    return {
-      ok: true,
-      rooms: rooms.map((r) => ({
-        id: r.id,
-        name: r.name,
-        description: r.description,
-        active: r.active,
-        created_at: r.created_at,
-        updated_at: r.updated_at,
-      })),
-    };
+  async list(@Query('class_id') classId?: string) {
+    const rooms = await this.roomsService.findAll(classId || undefined);
+    return { ok: true, rooms };
   }
 
   @Get(':id')
   async one(@Param('id') id: string) {
     const room = await this.roomsService.findOne(id);
-    return {
-      ok: true,
-      room: {
-        id: room.id,
-        name: room.name,
-        description: room.description,
-        active: room.active,
-        created_at: room.created_at,
-        updated_at: room.updated_at,
-      },
-    };
+    return { ok: true, room };
   }
 
   @Post()
-  async create(@Body() body: { name: string; description?: string }) {
-    const room = await this.roomsService.create({
-      name: body.name,
-      description: body.description,
-    });
-    return {
-      ok: true,
-      room: {
-        id: room.id,
-        name: room.name,
-        description: room.description,
-        active: room.active,
-        created_at: room.created_at,
-        updated_at: room.updated_at,
-      },
-    };
+  async create(
+    @Body()
+    body: {
+      name: string;
+      description?: string;
+      capacity?: number | null;
+      class_id?: string | null;
+    },
+  ) {
+    const room = await this.roomsService.create(body);
+    return { ok: true, room };
   }
 
   @Patch(':id')
   async update(
     @Param('id') id: string,
-    @Body() body: { name?: string; description?: string; active?: boolean },
+    @Body()
+    body: {
+      name?: string;
+      description?: string;
+      capacity?: number | null;
+      class_id?: string | null;
+      active?: boolean;
+    },
   ) {
     const room = await this.roomsService.update(id, body);
-    return {
-      ok: true,
-      room: {
-        id: room.id,
-        name: room.name,
-        description: room.description,
-        active: room.active,
-        created_at: room.created_at,
-        updated_at: room.updated_at,
-      },
-    };
+    return { ok: true, room };
   }
 
   @Delete(':id')

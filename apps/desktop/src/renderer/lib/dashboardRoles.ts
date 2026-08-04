@@ -44,12 +44,25 @@ function canSeeNavItem(roleName: string, allowedRoles: string[]): boolean {
 function canSeeByPermissions(permissionKey: string, rolePermissions: string[]): boolean {
   if (rolePermissions.includes("full_access")) return true;
   if (permissionKey === "dashboard") return true;
-  if (permissionKey === "finance") return rolePermissions.includes("finance") || rolePermissions.includes("economat");
+  if (permissionKey === "finance" || permissionKey === "stats-financieres") {
+    return (
+      rolePermissions.includes("finance") ||
+      rolePermissions.includes("economat") ||
+      rolePermissions.includes("stats-financieres")
+    );
+  }
   if (permissionKey === "rooms") return rolePermissions.includes("rooms") || rolePermissions.includes("classes");
+  if (permissionKey === "stats-academiques") {
+    return (
+      rolePermissions.includes("stats-academiques") ||
+      rolePermissions.includes("grades") ||
+      rolePermissions.includes("classes")
+    );
+  }
   return rolePermissions.includes(permissionKey);
 }
 
-export type NavBlock = "configuration" | "management" | "finance" | "fiche" | "special";
+export type NavBlock = "configuration" | "management" | "finance" | "statistics" | "fiche" | "special";
 
 export type NavItem = {
   href: string;
@@ -79,6 +92,10 @@ export const DASHBOARD_NAV: NavItem[] = [
   { href: "/dashboard/depenses", label: "Dépenses", allowedRoles: [...ROLES_FULL, ...ROLES_ECONOME], permissionKey: "finance", block: "finance" },
   { href: "/dashboard/moniteur-finance", label: "Moniteur Finance", allowedRoles: [...ROLES_FULL, ...ROLES_ECONOME], permissionKey: "finance", block: "finance" },
   { href: "/dashboard/comptabilite", label: "Comptabilité", allowedRoles: [...ROLES_FULL, ...ROLES_ECONOME], permissionKey: "finance", block: "finance" },
+  { href: "/dashboard/banques", label: "Banques", allowedRoles: [...ROLES_FULL, ...ROLES_ECONOME], permissionKey: "finance", block: "finance" },
+  // Bloc Statistiques
+  { href: "/dashboard/stats-academiques", label: "Stats académiques", allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES], permissionKey: "stats-academiques", block: "statistics" },
+  { href: "/dashboard/stats-financieres", label: "Stats financières", allowedRoles: [...ROLES_FULL, ...ROLES_ECONOME], permissionKey: "stats-financieres", block: "statistics" },
   // Bloc Fiche élève (dominant, seul)
   {
     href: "/dashboard/fiche-eleve",
@@ -123,7 +140,7 @@ export function canAccessPath(roleName: string, path: string, rolePermissions?: 
   return canSeeNavItem(roleName, item.allowedRoles);
 }
 
-const BLOCK_ORDER: NavBlock[] = ["configuration", "management", "finance", "fiche", "special"];
+const BLOCK_ORDER: NavBlock[] = ["configuration", "management", "finance", "statistics", "fiche", "special"];
 
 /** Retourne les entrées de menu visibles pour un rôle, ordonnées par bloc (pour les raccourcis). */
 export function getNavItemsForRole(

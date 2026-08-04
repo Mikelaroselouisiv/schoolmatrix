@@ -23,8 +23,14 @@ export class StudentsController {
   constructor(private readonly studentsService: StudentsService) {}
 
   @Get()
-  async list(@Query('class_id') classId?: string) {
-    const students = await this.studentsService.findAll(classId);
+  async list(
+    @Query('class_id') classId?: string,
+    @Query('room_id') roomId?: string,
+  ) {
+    const students = await this.studentsService.findAll({
+      classId: classId || undefined,
+      roomId: roomId || undefined,
+    });
     return {
       ok: true,
       students: students.map((s) => ({
@@ -50,6 +56,8 @@ export class StudentsController {
         responsible_phone: s.responsible_phone,
         class_id: s.class?.id,
         class_name: s.class?.name,
+        room_id: s.room?.id ?? null,
+        room_name: s.room?.name ?? null,
         active: s.active,
         created_at: s.created_at,
         updated_at: s.updated_at,
@@ -106,6 +114,8 @@ export class StudentsController {
         responsible_phone: s.responsible_phone,
         class_id: s.class?.id,
         class_name: s.class?.name,
+        room_id: s.room?.id ?? null,
+        room_name: s.room?.name ?? null,
         is_preschool: isPreschool,
         active: s.active,
         created_at: s.created_at,
@@ -166,6 +176,8 @@ export class StudentsController {
         responsible_name: s.responsible_name,
         responsible_phone: s.responsible_phone,
         class_id: s.class?.id,
+        room_id: s.room?.id ?? null,
+        room_name: s.room?.name ?? null,
         active: s.active,
         created_at: s.created_at,
         updated_at: s.updated_at,
@@ -200,6 +212,8 @@ export class StudentsController {
         responsible_name: s.responsible_name,
         responsible_phone: s.responsible_phone,
         class_id: s.class?.id,
+        room_id: s.room?.id ?? null,
+        room_name: s.room?.name ?? null,
         active: s.active,
         created_at: s.created_at,
         updated_at: s.updated_at,

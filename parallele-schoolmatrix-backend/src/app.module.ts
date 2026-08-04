@@ -31,6 +31,7 @@ import { GcsModule } from './gcs/gcs.module';
 import { StorageModule } from './storage/storage.module';
 import { FileMetadataModule } from './file-metadata/file-metadata.module';
 import { SyncModule } from './sync/sync.module';
+import { StatisticsModule } from './statistics/statistics.module';
 import { migrations } from './migrations';
 
 @Module({
@@ -81,6 +82,7 @@ import { migrations } from './migrations';
     DisciplineModule,
     FormationClasseModule,
     StudentParentsModule,
+    StatisticsModule,
     AuthModule,
   ],
   controllers: [AppController],

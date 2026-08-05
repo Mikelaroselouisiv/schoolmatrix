@@ -120,11 +120,17 @@ function Wait-BackendGcpCi {
       continue
     }
 
-    $activeRun = $runs | Where-Object { $_.status -ne 'completed' } | Select-Object -First 1
-    if ($null -ne $activeRun) {
-      $runId = [string]$activeRun.databaseId
-      $runStatus = [string]$activeRun.status
-      $runUrl = [string]$activeRun.url
+    # Force a scalar run: PowerShell member enumeration on a collection turns
+    # .databaseId into "id1 id2 id3", which breaks `gh run watch`.
+    $activeList = @($runs | Where-Object { $_.status -ne 'completed' })
+    if ($activeList.Count -gt 0) {
+      $activeRun = $activeList[0]
+      $runId = '{0}' -f $activeRun.databaseId
+      if ($runId -notmatch '^\d+$') {
+        throw "Invalid backend CI run id '$runId' (expected single numeric id)."
+      }
+      $runStatus = '{0}' -f $activeRun.status
+      $runUrl = '{0}' -f $activeRun.url
       Write-Host ("-> gh run watch {0} ({1}) {2}" -f $runId, $runStatus, $runUrl) -ForegroundColor Gray
       & gh run watch $runId --exit-status
       if ($LASTEXITCODE -ne 0) {
@@ -134,9 +140,9 @@ function Wait-BackendGcpCi {
       return
     }
 
-    $done = $runs | Select-Object -First 1
-    $doneConclusion = [string]$done.conclusion
-    $doneId = [string]$done.databaseId
+    $done = $runs[0]
+    $doneConclusion = '{0}' -f $done.conclusion
+    $doneId = '{0}' -f $done.databaseId
     if ($doneConclusion -eq 'success') {
       Write-Host ("Backend CI already success (run {0})." -f $doneId) -ForegroundColor Green
       return

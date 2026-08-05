@@ -294,6 +294,80 @@ export class SyncService implements OnModuleInit {
   }
 
   /**
+   * Nouveaux champs établissement + signatures : un null/vide distant
+   * n’efface jamais une valeur locale déjà renseignée
+   * (adresse, téléphone, email, logo, signatures PNG, etc.).
+   */
+  private static readonly SCHOOL_PROFILE_PRESERVE_FIELDS = [
+    'address',
+    'phone',
+    'email',
+    'logo_url',
+    'slogan',
+    'domain',
+    'name',
+    'primary_color',
+    'secondary_color',
+  ] as const;
+
+  private static readonly SCHOOL_SIGNATURE_PRESERVE_FIELDS = [
+    'image_url',
+    'signer_name',
+    'signer_role',
+    'slot_key',
+  ] as const;
+
+  private isBlank(v: unknown): boolean {
+    return v == null || (typeof v === 'string' && v.trim() === '');
+  }
+
+  private mergePreserveFields(
+    existing: Record<string, unknown> | null | undefined,
+    incoming: Record<string, unknown>,
+    fields: readonly string[],
+  ): Record<string, unknown> {
+    const out: Record<string, unknown> = { ...incoming };
+    if (!existing) return out;
+    for (const f of fields) {
+      if (this.isBlank(out[f]) && !this.isBlank(existing[f])) {
+        out[f] = existing[f];
+      }
+    }
+    // Propriétés absentes du filaire cloud (ancienne version) → garder le local
+    for (const f of fields) {
+      if (
+        !Object.prototype.hasOwnProperty.call(out, f) &&
+        !this.isBlank(existing[f])
+      ) {
+        out[f] = existing[f];
+      }
+    }
+    return out;
+  }
+
+  private mergeSchoolProfileData(
+    existing: Record<string, unknown> | null | undefined,
+    incoming: Record<string, unknown>,
+  ): Record<string, unknown> {
+    return this.mergePreserveFields(
+      existing,
+      incoming,
+      SyncService.SCHOOL_PROFILE_PRESERVE_FIELDS,
+    );
+  }
+
+  private mergeSchoolSignatureData(
+    existing: Record<string, unknown> | null | undefined,
+    incoming: Record<string, unknown>,
+  ): Record<string, unknown> {
+    return this.mergePreserveFields(
+      existing,
+      incoming,
+      SyncService.SCHOOL_SIGNATURE_PRESERVE_FIELDS,
+    );
+  }
+
+  /**
    * SchoolProfile = une seule ligne. LWW adopte l’UUID gagnant et
    * supprime les doublons locaux.
    */
@@ -338,13 +412,31 @@ export class SyncService implements OnModuleInit {
       return 'skipped';
     }
 
+    // Fusionner le contact local avant d’appliquer le filaire cloud (souvent null).
+    const merged = this.mergeSchoolProfileData(
+      newestLocal as Record<string, unknown>,
+      record.data,
+    );
+
     const existed = all.some((p) => String(p.id) === keepId);
+    // Réassigner les signatures avant suppression (évite CASCADE wipe).
+    try {
+      const localIds = all.map((p) => String(p.id));
+      await this.dataSource.query(
+        `UPDATE school_signature
+         SET school_profile_id = $1
+         WHERE school_profile_id = ANY($2::uuid[])`,
+        [keepId, localIds],
+      );
+    } catch {
+      /* table absente sur très vieux schémas */
+    }
     await this.deleteProfilesExcept(repo, keepId);
     await this.persist(
       repo,
       meta,
       keepId,
-      record.data,
+      merged,
       record.updatedAt,
       timeField,
     );
@@ -413,11 +505,19 @@ export class SyncService implements OnModuleInit {
       return 'skipped';
     }
 
+    let data = record.data;
+    if (entityName === 'SchoolSignature') {
+      data = this.mergeSchoolSignatureData(
+        existing as Record<string, unknown>,
+        record.data,
+      );
+    }
+
     await this.persist(
       repo,
       meta,
       primaryId,
-      record.data,
+      data,
       record.updatedAt,
       timeField,
     );
@@ -523,24 +623,48 @@ export class SyncService implements OnModuleInit {
     updatedAt: string | undefined,
     timeField: 'updated_at' | 'created_at',
   ): Promise<void> {
+    let incoming = data;
+    const table = (meta.tableName || '').replace(/"/g, '');
+    if (table === 'school_profile' || table === 'school_signature') {
+      try {
+        const existing = await repo.findOne({
+          where: { id: primaryId } as any,
+        });
+        if (existing) {
+          incoming =
+            table === 'school_profile'
+              ? this.mergeSchoolProfileData(
+                  existing as Record<string, unknown>,
+                  data,
+                )
+              : this.mergeSchoolSignatureData(
+                  existing as Record<string, unknown>,
+                  data,
+                );
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
     const payload: Record<string, unknown> = { id: primaryId };
     // Chemins uploads/… → URL GCS publique (affichage Server ↔ Remote).
-    normalizeMediaFieldsInPlace(data);
+    normalizeMediaFieldsInPlace(incoming);
 
     for (const col of meta.columns) {
       if (col.relationMetadata) continue;
       const prop = col.propertyName;
       if (prop === 'id') continue;
-      if (Object.prototype.hasOwnProperty.call(data, prop)) {
-        payload[prop] = data[prop];
+      if (Object.prototype.hasOwnProperty.call(incoming, prop)) {
+        payload[prop] = incoming[prop];
       }
     }
 
     for (const rel of meta.relations) {
       if (!(rel.isManyToOne || (rel.isOneToOne && rel.isOwning))) continue;
       const prop = rel.propertyName;
-      if (!Object.prototype.hasOwnProperty.call(data, prop)) continue;
-      const fk = data[prop];
+      if (!Object.prototype.hasOwnProperty.call(incoming, prop)) continue;
+      const fk = incoming[prop];
       if (fk == null || fk === '') {
         payload[prop] = null;
       } else {

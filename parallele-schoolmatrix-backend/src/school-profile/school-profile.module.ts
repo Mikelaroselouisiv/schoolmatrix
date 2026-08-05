@@ -10,6 +10,7 @@ import { Class } from '../classes/class.entity';
 import { Student } from '../students/student.entity';
 import { User } from '../users/user.entity';
 import { Role } from '../roles/role.entity';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { Role } from '../roles/role.entity';
       User,
       Role,
     ]),
+    AuthModule,
   ],
   controllers: [SchoolProfileController],
   providers: [SchoolProfileService],

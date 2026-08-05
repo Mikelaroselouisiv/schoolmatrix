@@ -12,6 +12,7 @@ import { SchoolProfileService } from './school-profile.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { Permissions } from '../auth/permissions.decorator';
 
 @Controller('school')
 export class SchoolProfileController {
@@ -36,9 +37,10 @@ export class SchoolProfileController {
     return { ok: true, ...ctx };
   }
 
-  /** Statistiques sensibles : uniquement directeurs et superadmin. */
+  /** Statistiques sensibles : rôles admin ou permission full_access. */
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('SUPER_ADMIN', 'DIRECTEUR_GENERAL', 'SCHOOL_ADMIN')
+  @Permissions('full_access')
   @Get('dashboard-stats')
   async getDashboardStats() {
     const stats = await this.schoolProfileService.getDashboardStats();

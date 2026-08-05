@@ -28,6 +28,8 @@
 Une seule ligne métier. À l’apply sync : LWW adopte l’UUID gagnant et **supprime les doublons**.  
 `getProfile()` lit toujours le plus ancien `created_at` après dédup au démarrage.
 
+**Nouveaux champs établissement** (`address`, `phone`, `email`, `logo_url`, slogan, etc.) **et signatures** (`image_url`, nom, rôle) : un `null`/vide ou une clé absente venant du cloud **n’écrase pas** une valeur locale déjà renseignée. Les lignes `school_signature` sont réassignées vers l’UUID profil gagnant avant suppression des doublons (évite le wipe CASCADE).
+
 ## SchoolSignature
 
 Signatures d’établissement (image PNG idéalement sans fond, nom, rôle), enfants de `SchoolProfile` (`school_profile_id`).  

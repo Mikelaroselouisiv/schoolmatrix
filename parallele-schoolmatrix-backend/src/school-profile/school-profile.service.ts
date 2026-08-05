@@ -88,18 +88,20 @@ export class SchoolProfileService implements OnModuleInit {
     const newest = all.reduce((a, b) =>
       a.updated_at.getTime() >= b.updated_at.getTime() ? a : b,
     );
-    keep.name = newest.name;
-    keep.slogan = newest.slogan;
-    keep.domain = newest.domain;
-    keep.logo_url = newest.logo_url;
-    keep.address = newest.address;
-    keep.phone = newest.phone;
-    keep.email = newest.email;
-    keep.primary_color = newest.primary_color;
-    keep.secondary_color = newest.secondary_color;
+    keep.name = newest.name || keep.name;
+    keep.slogan = newest.slogan ?? keep.slogan;
+    keep.domain = newest.domain ?? keep.domain;
+    keep.logo_url = newest.logo_url ?? keep.logo_url;
+    // Ne pas écraser un contact renseigné par un null (doublon sync incomplet).
+    keep.address = newest.address ?? keep.address;
+    keep.phone = newest.phone ?? keep.phone;
+    keep.email = newest.email ?? keep.email;
+    keep.primary_color = newest.primary_color || keep.primary_color;
+    keep.secondary_color = newest.secondary_color || keep.secondary_color;
     keep.active = newest.active;
-    keep.current_academic_year_id = newest.current_academic_year_id;
-    keep.current_period_id = newest.current_period_id;
+    keep.current_academic_year_id =
+      newest.current_academic_year_id ?? keep.current_academic_year_id;
+    keep.current_period_id = newest.current_period_id ?? keep.current_period_id;
     keep.updated_at = newest.updated_at;
     await this.profileRepo.save(keep);
 

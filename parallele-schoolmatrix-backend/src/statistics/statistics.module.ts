@@ -16,6 +16,7 @@ import { ClassFee } from '../economat/class-fee.entity';
 import { PaymentTransaction } from '../economat/payment-transaction.entity';
 import { StudentServiceExemption } from '../economat/student-service-exemption.entity';
 import { FinanceModule } from '../finance/finance.module';
+import { AuthModule } from '../auth/auth.module';
 import { StatisticsService } from './statistics.service';
 import { StatisticsController } from './statistics.controller';
 
@@ -39,6 +40,7 @@ import { StatisticsController } from './statistics.controller';
       StudentServiceExemption,
     ]),
     FinanceModule,
+    AuthModule,
   ],
   controllers: [StatisticsController],
   providers: [StatisticsService],

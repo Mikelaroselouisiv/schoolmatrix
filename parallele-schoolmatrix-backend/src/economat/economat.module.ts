@@ -9,10 +9,12 @@ import { Class } from '../classes/class.entity';
 import { EconomatService } from './economat.service';
 import { EconomatController } from './economat.controller';
 import { FinanceModule } from '../finance/finance.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
     FinanceModule,
+    AuthModule,
     TypeOrmModule.forFeature([
       FeeService,
       ClassFee,

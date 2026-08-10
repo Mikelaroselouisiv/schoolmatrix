@@ -1,5 +1,7 @@
 # Desktop SchoolMatrix — un seul logiciel
 
+> **DEV quotidien** : [DEV.md](DEV.md) · **3 environnements** : [ENVIRONMENTS.md](ENVIRONMENTS.md) · **Livraison** : [RELEASE.md](RELEASE.md)
+
 Le produit desktop est **entièrement dans** `apps/desktop` (modèle Israel) :
 
 - **UI** : React + Vite + React Router (`src/renderer`), chargée par Electron  
@@ -35,13 +37,13 @@ Docker reste vide tant que l’app n’a pas démarré une fois (l’installeur 
 
 ## Legacy / archive
 
-L’ancien frontend Next.js (`parallele-schoolmatrix-frontend`, éventuellement présent sous `apps/desktop/frontend`) est **legacy / archive** :
+L’ancien frontend Next.js (`apps/desktop/frontend`) est **legacy / archive** (`ARCHIVE.md`) :
 
 - source de référence pour le portage vers `src/renderer`
 - **plus utilisé par Electron** (pas de sidecar Next, pas de `next-runtime`)
 - ne pas lancer `npm run dev` dedans pour le produit desktop
 
-Ne pas supprimer le dossier Next tant que le portage de pages restantes n’est pas validé ; le marquer uniquement comme archive.
+L’ancien monde AWS ECR / Electron prod-locale est sous `_archive/legacy-aws-ecr/` — ne pas l’utiliser.
 
 ## Dev
 

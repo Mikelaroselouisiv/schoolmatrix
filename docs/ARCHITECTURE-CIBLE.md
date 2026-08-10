@@ -1,5 +1,8 @@
 # Architecture cible — Parallele SchoolMatrix
 
+> État d’exploitation actuel (DEV / GCP / école) : [ENVIRONMENTS.md](ENVIRONMENTS.md).  
+> L’UI desktop est **Electron + Vite** (`apps/desktop`) — plus de sidecar Next en production.
+
 Inspiré de POS Entreprises Israel, avec une règle claire :
 
 ## Source de vérité

@@ -53,6 +53,7 @@ apps/desktop/dist/
 
 # Installateurs locaux (binaires)
 /release/
+_archive/**/release/
 
 
 apps/desktop/release-server/

@@ -1,11 +1,16 @@
 /**
- * En dev : démarre le conteneur PostgreSQL (schoolmatrix-db-dev) puis lance le backend.
- * Utilisation : node scripts/start-db-then-dev.js  ou  npm run dev
+ * En DEV : démarre Postgres `schoolmatrix-db-dev` puis Nest --watch.
+ * Utilisation : npm run dev
+ *
+ * Ne touche PAS au stack Server école (schoolmatrix_*_server) ni au cloud GCP.
  */
 const { spawn } = require('child_process');
 const path = require('path');
+const fs = require('fs');
 
 const containerName = 'schoolmatrix-db-dev';
+const repoRoot = path.resolve(__dirname, '..', '..');
+const composeFile = path.join(repoRoot, 'dev', 'docker-compose.postgres.yml');
 
 function run(cmd, args, opts = {}) {
   return new Promise((resolve, reject) => {
@@ -15,12 +20,32 @@ function run(cmd, args, opts = {}) {
   });
 }
 
+async function ensureDevPostgres() {
+  console.log(`Démarrage Postgres DEV (${containerName})...`);
+  try {
+    await run('docker', ['start', containerName]);
+    return;
+  } catch {
+    // conteneur absent → créer via compose DEV
+  }
+
+  if (!fs.existsSync(composeFile)) {
+    console.warn(
+      `Conteneur ${containerName} introuvable et compose manquant: ${composeFile}`,
+    );
+    console.warn('Crée-le avec: npm run dev:db (depuis la racine du repo)');
+    return;
+  }
+
+  console.log('Conteneur absent — création via dev/docker-compose.postgres.yml ...');
+  await run('docker', ['compose', '-f', composeFile, 'up', '-d']);
+}
+
 async function main() {
-  console.log('Démarrage du conteneur base de données...');
-  await run('docker', ['start', containerName]).catch(() => {
-    console.log('(conteneur déjà démarré ou à créer manuellement)');
+  await ensureDevPostgres().catch((err) => {
+    console.warn('(Postgres DEV non démarré automatiquement)', err.message || err);
   });
-  console.log('Lancement du backend...');
+  console.log('Lancement du backend Nest (start:dev)...');
   await run('npm', ['run', 'start:dev'], { cwd: path.join(__dirname, '..') });
 }
 

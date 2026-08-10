@@ -1,5 +1,8 @@
 # Livraison SchoolMatrix — comment on développe et on pousse partout
 
+> Avant de publier : développer selon [DEV.md](DEV.md).  
+> Ne jamais confondre les 3 cibles : [ENVIRONMENTS.md](ENVIRONMENTS.md).
+
 ## Principe
 
 1. **Développer** (backend Nest, `apps/desktop`, sync-agent, docs…)

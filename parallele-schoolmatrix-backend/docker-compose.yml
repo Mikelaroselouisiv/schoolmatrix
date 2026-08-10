@@ -1,3 +1,5 @@
-# Tout est à la racine du projet.
-# Base (dev) : schoolmatrix-db-dev (port 5433) — démarrer avec  docker start schoolmatrix-db-dev
-# Build + run (api + web, même base) : à la racine  docker compose up -d --build   ou  .\run.ps1
+# DEPRECATED pour le quotidien DEV.
+# Utiliser à la racine du repo : dev/docker-compose.postgres.yml
+#   npm run dev:db
+#
+# Ancien rappel : conteneur schoolmatrix-db-dev, port hôte 5435.

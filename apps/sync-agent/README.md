@@ -1,6 +1,7 @@
 # SchoolMatrix sync-agent
 
-Tourne **uniquement** sur la machine Server.
+- **École (prod)** : conteneur Docker via l’installateur Server (`server-stack`).
+- **DEV** : process Node local optionnel pour tester la sync (voir [docs/DEV.md](../../docs/DEV.md)).
 
 Cycle (~5s) + kick HTTP :
 

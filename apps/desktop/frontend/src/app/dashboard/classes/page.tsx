@@ -7,29 +7,22 @@ import { useSchoolProfile } from "@/src/contexts/SchoolProfileContext";
 import { ExportBadgePdfButton } from "@/src/components/ExportBadgePdfButton";
 import { buildBadgesPdfBlob, fetchStudentsForClassBadges } from "@/src/lib/badgeProduction";
 
-type Room = {
-  id: string;
-  name: string;
-  active?: boolean;
-};
-
 type ClassItem = {
   id: string;
   name: string;
   description: string | null;
   level: string | null;
-  section: string | null;
-  room_id: string | null;
-  room_name: string | null;
   room_count?: number;
   rooms?: Array<{ id: string; name: string; capacity: number | null }>;
   student_count?: number;
 };
 
+type Subject = { id: string; name: string };
+
 export default function ClassesPage() {
   const { school } = useSchoolProfile();
   const [classes, setClasses] = useState<ClassItem[]>([]);
-  const [rooms, setRooms] = useState<Room[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -37,25 +30,23 @@ export default function ClassesPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [level, setLevel] = useState("");
-  const [section, setSection] = useState("");
-  const [room_id, setRoom_id] = useState<string>("");
+  const [subjectIds, setSubjectIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
-
 
   async function load() {
     setLoading(true);
     setError("");
     try {
-      const [classesRes, roomsRes] = await Promise.all([
+      const [classesRes, subjectsRes] = await Promise.all([
         fetchWithAuth(`${API_BASE}/classes`),
-        fetchWithAuth(`${API_BASE}/rooms`),
+        fetchWithAuth(`${API_BASE}/subjects`),
       ]);
       const classesData = await classesRes.json();
-      const roomsData = await roomsRes.json();
+      const subjectsData = await subjectsRes.json();
       if (!classesRes.ok) throw new Error(classesData.message || "Erreur");
-      if (!roomsRes.ok) throw new Error(roomsData.message || "Erreur");
+      if (!subjectsRes.ok) throw new Error(subjectsData.message || "Erreur");
       setClasses(classesData.classes ?? []);
-      setRooms(roomsData.rooms ?? []);
+      setSubjects(subjectsData.subjects ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur de chargement");
     } finally {
@@ -76,8 +67,7 @@ export default function ClassesPage() {
         name: name.trim(),
         description: description.trim() || undefined,
         level: level.trim() || undefined,
-        section: section.trim() || undefined,
-        room_id: room_id || undefined,
+        subject_ids: subjectIds,
       };
       if (editing) {
         const res = await fetchWithAuth(`${API_BASE}/classes/${editing.id}`, {
@@ -99,8 +89,7 @@ export default function ClassesPage() {
       setName("");
       setDescription("");
       setLevel("");
-      setSection("");
-      setRoom_id("");
+      setSubjectIds([]);
       load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
@@ -124,14 +113,20 @@ export default function ClassesPage() {
     }
   }
 
-  function openEdit(c: ClassItem) {
+  async function openEdit(c: ClassItem) {
     setEditing(c);
     setName(c.name);
     setDescription(c.description ?? "");
     setLevel(c.level ?? "");
-    setSection(c.section ?? "");
-    setRoom_id(c.room_id ?? "");
+    setSubjectIds([]);
     setShowForm(true);
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/classes/${c.id}`);
+      const data = await res.json();
+      if (res.ok) setSubjectIds(data.class?.subject_ids ?? []);
+    } catch {
+      /* ignore */
+    }
   }
 
   function openCreate() {
@@ -139,9 +134,22 @@ export default function ClassesPage() {
     setName("");
     setDescription("");
     setLevel("");
-    setSection("");
-    setRoom_id("");
+    setSubjectIds([]);
     setShowForm(true);
+  }
+
+  function toggleSubject(id: string) {
+    setSubjectIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+
+  function toggleAllSubjects() {
+    if (subjectIds.length === subjects.length) {
+      setSubjectIds([]);
+    } else {
+      setSubjectIds(subjects.map((s) => s.id));
+    }
   }
 
   if (loading) return <div className="animate-pulse text-slate-500">Chargement...</div>;
@@ -164,28 +172,51 @@ export default function ClassesPage() {
             <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
             <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Optionnel" className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40" />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Niveau</label>
-              <input type="text" value={level} onChange={(e) => setLevel(e.target.value)} placeholder="ex: 6e, 5e" className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40" />
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Niveau</label>
+            <input type="text" value={level} onChange={(e) => setLevel(e.target.value)} placeholder="ex: 1ère année, 6e" className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40" />
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-slate-700">Matières</label>
+              {subjects.length > 0 && (
+                <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={subjects.length > 0 && subjectIds.length === subjects.length}
+                    onChange={toggleAllSubjects}
+                  />
+                  Tout cocher
+                </label>
+              )}
             </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Section</label>
-              <input type="text" value={section} onChange={(e) => setSection(e.target.value)} placeholder="ex: A, B" className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40" />
+            <div className="max-h-48 overflow-y-auto rounded-lg border border-[var(--app-border)] p-3 space-y-2">
+              {subjects.length === 0 ? (
+                <p className="text-sm text-slate-500">
+                  Aucune matière.{" "}
+                  <Link href="/dashboard/subjects" className="text-[var(--school-accent-1)] hover:underline">
+                    Créer des matières
+                  </Link>
+                </p>
+              ) : (
+                subjects.map((s) => (
+                  <label key={s.id} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={subjectIds.includes(s.id)}
+                      onChange={() => toggleSubject(s.id)}
+                    />
+                    {s.name}
+                  </label>
+                ))
+              )}
             </div>
           </div>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-600">
-            Les salles (ex. 1<sup>re</sup> année 1, 2, 3) et leur limite d’élèves se gèrent dans{" "}
-            <Link href="/dashboard/rooms" className="text-[var(--school-accent-1)] hover:underline font-medium">
-              Gestion des salles
-            </Link>
-            {editing && (editing.room_count ?? 0) > 0 && (
-              <span className="block mt-1 text-slate-500">
-                Salles liées :{" "}
-                {(editing.rooms ?? []).map((r) => r.name).join(", ") || editing.room_count}
-              </span>
-            )}
-          </div>
+          {editing && (editing.room_count ?? 0) > 0 && (
+            <p className="text-sm text-slate-500">
+              Salles : {(editing.rooms ?? []).map((r) => r.name).join(", ") || editing.room_count}
+            </p>
+          )}
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-3">
             <button type="submit" disabled={saving} className="app-btn-primary disabled:opacity-60">{saving ? "Enregistrement..." : "Enregistrer"}</button>
@@ -201,7 +232,7 @@ export default function ClassesPage() {
           <thead className="bg-slate-50 border-b border-[var(--app-border)]">
             <tr>
               <th className="px-4 py-3 font-medium text-slate-900">Nom</th>
-              <th className="px-4 py-3 font-medium text-slate-900">Niveau / Section</th>
+              <th className="px-4 py-3 font-medium text-slate-900">Niveau</th>
               <th className="px-4 py-3 font-medium text-slate-900">Salles</th>
               <th className="px-4 py-3 font-medium text-slate-900">Élèves</th>
               <th className="px-4 py-3 font-medium text-slate-900 w-64">Actions</th>
@@ -214,9 +245,7 @@ export default function ClassesPage() {
               classes.map((c) => (
                 <tr key={c.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
                   <td className="px-4 py-3 font-medium text-slate-900">{c.name}</td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {[c.level, c.section].filter(Boolean).join(" / ") || "-"}
-                  </td>
+                  <td className="px-4 py-3 text-slate-600">{c.level || "—"}</td>
                   <td className="px-4 py-3 text-slate-600">
                     {c.room_count
                       ? `${c.room_count} — ${(c.rooms ?? []).map((r) => r.name).join(", ")}`

@@ -19,6 +19,15 @@ type ClassSubjectAssignment = {
   class_name: string;
   subject_id: string;
   subject_name: string;
+  room_id: string | null;
+  room_name: string;
+};
+
+type RoomItem = {
+  id: string;
+  name: string;
+  class_id: string | null;
+  active?: boolean;
 };
 
 type TeacherDetail = Teacher & {
@@ -35,6 +44,7 @@ export default function TeachersPage() {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [rooms, setRooms] = useState<RoomItem[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [selectedTeacher, setSelectedTeacher] = useState<TeacherDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -50,8 +60,30 @@ export default function TeachersPage() {
   const [newClassId, setNewClassId] = useState("");
   const [addingAssignment, setAddingAssignment] = useState(false);
   const [newAssignmentClassId, setNewAssignmentClassId] = useState("");
+  const [newAssignmentRoomId, setNewAssignmentRoomId] = useState("");
   const [newAssignmentSubjectId, setNewAssignmentSubjectId] = useState("");
+  const [classSubjectsForAssignment, setClassSubjectsForAssignment] = useState<Subject[]>([]);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!newAssignmentClassId) {
+      setClassSubjectsForAssignment([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetchWithAuth(`${API_BASE}/classes/${newAssignmentClassId}/subjects`);
+        const data = await res.json();
+        if (!cancelled) setClassSubjectsForAssignment(data.subjects ?? []);
+      } catch {
+        if (!cancelled) setClassSubjectsForAssignment([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [newAssignmentClassId]);
 
 
   async function loadTeachers() {
@@ -82,19 +114,23 @@ export default function TeachersPage() {
   async function loadRefs() {
     setError("");
     try {
-      const [classesRes, subjectsRes, usersRes] = await Promise.all([
+      const [classesRes, subjectsRes, roomsRes, usersRes] = await Promise.all([
         fetchWithAuth(`${API_BASE}/classes`),
         fetchWithAuth(`${API_BASE}/subjects`),
+        fetchWithAuth(`${API_BASE}/rooms`),
         fetchWithAuth(`${API_BASE}/users`),
       ]);
       const classesData = await classesRes.json();
       const subjectsData = await subjectsRes.json();
+      const roomsData = await roomsRes.json();
       const usersData = await usersRes.json();
       if (!classesRes.ok) throw new Error(classesData.message || "Erreur");
       if (!subjectsRes.ok) throw new Error(subjectsData.message || "Erreur");
+      if (!roomsRes.ok) throw new Error(roomsData.message || "Erreur");
       if (!usersRes.ok) throw new Error(usersData.message || "Erreur");
       setClasses(classesData.classes ?? []);
       setSubjects(subjectsData.subjects ?? []);
+      setRooms(roomsData.rooms ?? []);
       setUsers(usersData.users ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
@@ -219,18 +255,23 @@ export default function TeachersPage() {
 
   async function handleAddAssignment(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedTeacher || !newAssignmentClassId || !newAssignmentSubjectId) return;
+    if (!selectedTeacher || !newAssignmentClassId || !newAssignmentRoomId || !newAssignmentSubjectId) return;
     setSaving(true);
     setError("");
     try {
       const res = await fetchWithAuth(`${API_BASE}/teachers/${selectedTeacher.id}/class-subjects`, {
         method: "POST",
-        body: JSON.stringify({ class_id: newAssignmentClassId, subject_id: newAssignmentSubjectId }),
+        body: JSON.stringify({
+          class_id: newAssignmentClassId,
+          room_id: newAssignmentRoomId,
+          subject_id: newAssignmentSubjectId,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Erreur");
       setAddingAssignment(false);
       setNewAssignmentClassId("");
+      setNewAssignmentRoomId("");
       setNewAssignmentSubjectId("");
       await loadTeacherDetail(selectedTeacher.id);
     } catch (e) {
@@ -262,9 +303,21 @@ export default function TeachersPage() {
   const assignments = selectedTeacher?.class_subjects ?? [];
   const availableSubjects = subjects.filter((s) => !teacherSubjects.some((ts) => ts.subject_id === s.id));
   const availableClasses = classes.filter((c) => !teacherClasses.some((tc) => tc.class_id === c.id));
-  const availableSubjectsForNewClass = newAssignmentClassId
-    ? subjects.filter((s) => !assignments.some((a) => a.class_id === newAssignmentClassId && a.subject_id === s.id))
-    : subjects;
+  const roomsForAssignment = newAssignmentClassId
+    ? rooms.filter((r) => r.class_id === newAssignmentClassId && r.active !== false)
+    : [];
+  const availableSubjectsForNewRoom =
+    newAssignmentClassId && newAssignmentRoomId
+      ? classSubjectsForAssignment.filter(
+          (s) =>
+            !assignments.some(
+              (a) =>
+                a.class_id === newAssignmentClassId &&
+                a.room_id === newAssignmentRoomId &&
+                a.subject_id === s.id,
+            ),
+        )
+      : [];
 
   function teacherName(t: Teacher) {
     return [t.first_name, t.last_name].filter(Boolean).join(" ") || t.email;
@@ -294,7 +347,6 @@ export default function TeachersPage() {
       {showPromoteForm && (
         <form onSubmit={handlePromote} className="p-5 rounded-xl border border-[var(--app-border)] bg-white space-y-4 max-w-md">
           <h3 className="font-semibold text-slate-900">Promouvoir en professeur</h3>
-          <p className="text-sm text-slate-600">Choisissez un utilisateur existant pour lui attribuer le rôle de professeur.</p>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Utilisateur</label>
             <select
@@ -356,24 +408,25 @@ export default function TeachersPage() {
 
           {selectedTeacher && (
             <>
-              {/* Assignations : matière enseignée dans quelle classe */}
+              {/* Assignations : matière enseignée dans quelle salle (section) */}
               <div className="rounded-xl border border-[var(--app-border)] bg-white p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <h4 className="font-medium text-slate-900">Assignations (classe + matière)</h4>
+                  <h4 className="font-medium text-slate-900">Assignations (salle + matière)</h4>
                   {!addingAssignment && (
                     <button onClick={() => setAddingAssignment(true)} className="text-sm text-[var(--school-accent-1)] hover:underline">
                       + Ajouter une assignation
                     </button>
                   )}
                 </div>
-                <p className="text-sm text-slate-600 mb-3">
-                  Définissez précisément quelles matières ce professeur enseigne dans quelles classes. Cela permettra au professeur de ne voir que ses matières lors de la saisie des notes.
-                </p>
                 {addingAssignment && (
                   <form onSubmit={handleAddAssignment} className="flex flex-wrap gap-2 mb-3 p-3 bg-slate-50 rounded-lg">
                     <select
                       value={newAssignmentClassId}
-                      onChange={(e) => { setNewAssignmentClassId(e.target.value); setNewAssignmentSubjectId(""); }}
+                      onChange={(e) => {
+                        setNewAssignmentClassId(e.target.value);
+                        setNewAssignmentRoomId("");
+                        setNewAssignmentSubjectId("");
+                      }}
                       className="border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40 min-w-[140px]"
                       required
                     >
@@ -383,20 +436,47 @@ export default function TeachersPage() {
                       ))}
                     </select>
                     <select
+                      value={newAssignmentRoomId}
+                      onChange={(e) => {
+                        setNewAssignmentRoomId(e.target.value);
+                        setNewAssignmentSubjectId("");
+                      }}
+                      className="border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40 min-w-[140px]"
+                      required
+                      disabled={!newAssignmentClassId}
+                    >
+                      <option value="">Salle...</option>
+                      {roomsForAssignment.map((r) => (
+                        <option key={r.id} value={r.id}>{r.name}</option>
+                      ))}
+                    </select>
+                    <select
                       value={newAssignmentSubjectId}
                       onChange={(e) => setNewAssignmentSubjectId(e.target.value)}
                       className="border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40 min-w-[140px]"
                       required
+                      disabled={!newAssignmentRoomId}
                     >
                       <option value="">Matière...</option>
-                      {availableSubjectsForNewClass.map((s) => (
+                      {availableSubjectsForNewRoom.map((s) => (
                         <option key={s.id} value={s.id}>{s.name}</option>
                       ))}
                     </select>
-                    <button type="submit" disabled={saving || !newAssignmentClassId || !newAssignmentSubjectId} className="app-btn-primary text-sm py-2 disabled:opacity-60">
+                    <button type="submit" disabled={saving || !newAssignmentClassId || !newAssignmentRoomId || !newAssignmentSubjectId} className="app-btn-primary text-sm py-2 disabled:opacity-60">
                       {saving ? "..." : "Ajouter"}
                     </button>
-                    <button type="button" onClick={() => { setAddingAssignment(false); setNewAssignmentClassId(""); setNewAssignmentSubjectId(""); }} className="app-btn-secondary text-sm py-2">Annuler</button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddingAssignment(false);
+                        setNewAssignmentClassId("");
+                        setNewAssignmentRoomId("");
+                        setNewAssignmentSubjectId("");
+                      }}
+                      className="app-btn-secondary text-sm py-2"
+                    >
+                      Annuler
+                    </button>
                   </form>
                 )}
                 <div className="overflow-x-auto rounded-lg border border-[var(--app-border)]">
@@ -404,17 +484,19 @@ export default function TeachersPage() {
                     <thead className="bg-slate-50 border-b border-[var(--app-border)]">
                       <tr>
                         <th className="px-3 py-2 font-medium text-slate-900">Classe</th>
+                        <th className="px-3 py-2 font-medium text-slate-900">Salle</th>
                         <th className="px-3 py-2 font-medium text-slate-900">Matière</th>
                         <th className="px-3 py-2 font-medium text-slate-900 w-20">Action</th>
                       </tr>
                     </thead>
                     <tbody>
                       {assignments.length === 0 ? (
-                        <tr><td colSpan={3} className="px-3 py-4 text-center text-slate-500">Aucune assignation. Ajoutez « Classe + Matière » pour que le professeur puisse saisir les notes.</td></tr>
+                        <tr><td colSpan={4} className="px-3 py-4 text-center text-slate-500">Aucune assignation. Ajoutez « Salle + Matière » pour que le professeur puisse saisir les notes.</td></tr>
                       ) : (
                         assignments.map((a) => (
                           <tr key={a.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
                             <td className="px-3 py-2 text-slate-700">{a.class_name}</td>
+                            <td className="px-3 py-2 text-slate-700">{a.room_name || "—"}</td>
                             <td className="px-3 py-2 text-slate-700">{a.subject_name}</td>
                             <td className="px-3 py-2">
                               <button type="button" onClick={() => handleRemoveAssignment(a.id)} className="text-red-600 hover:underline text-xs">Retirer</button>
@@ -427,9 +509,6 @@ export default function TeachersPage() {
                 </div>
               </div>
 
-              <p className="text-xs text-slate-500">
-                L&apos;horaire précis (jour, heure) se définit dans Horaires. En saisie des notes, le professeur ne verra que les classes et matières listées ici.
-              </p>
             </>
           )}
         </section>

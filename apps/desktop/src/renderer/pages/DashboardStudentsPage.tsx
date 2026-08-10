@@ -158,8 +158,9 @@ export function DashboardStudentsPage() {
     e.preventDefault();
     if (!form.first_name.trim() || !form.last_name.trim() || !form.class_id) return;
     if (!editing && !form.academic_year_id) return;
-    if (!editing && !form.order_number.trim()) {
-      setError("L'identifiant élève (numéro ministère) est obligatoire.");
+    const nisu = form.order_number.trim().replace(/[\s\u00A0]+/g, "").toUpperCase();
+    if (!nisu) {
+      setError("Le NISU (identifiant unique élève) est obligatoire.");
       return;
     }
     setSaving(true);
@@ -167,7 +168,7 @@ export function DashboardStudentsPage() {
     setCreatedOrderNumber(null);
     try {
       const body = {
-        ...(form.order_number.trim() || editing ? { order_number: form.order_number.trim() || null } : {}),
+        order_number: nisu,
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
         class_id: form.class_id,
@@ -289,9 +290,8 @@ export function DashboardStudentsPage() {
         <div className="p-4 rounded-xl bg-green-50 border border-green-200">
           <p className="font-semibold text-green-800">Élève inscrit</p>
           <p className="text-green-700 mt-1">
-            Identifiant (n° ministère) : <span className="font-mono font-bold">{createdOrderNumber}</span>
+            NISU : <span className="font-mono font-bold">{createdOrderNumber}</span>
           </p>
-          <p className="text-sm text-green-600 mt-1">Utilisez ce numéro pour lier le compte parent à cet élève dans Gestion Utilisateurs (élèves liés). Le parent pourra alors voir le dossier de son enfant depuis la page d&apos;accueil.</p>
         </div>
       )}
 
@@ -352,19 +352,22 @@ export function DashboardStudentsPage() {
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
-              Identifiant élève (numéro ministère) {!editing && "*"}
+              NISU *
             </label>
             <input
               type="text"
               value={form.order_number}
               onChange={(e) => setForm((f) => ({ ...f, order_number: e.target.value }))}
-              placeholder="Numéro attribué par le ministère de l'éducation"
+              onBlur={() =>
+                setForm((f) => ({
+                  ...f,
+                  order_number: f.order_number.trim().replace(/[\s\u00A0]+/g, "").toUpperCase(),
+                }))
+              }
+              placeholder="Code NISU unique (Haïti)"
               className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 font-mono"
-              required={!editing}
+              required
             />
-            {editing && (
-              <p className="text-xs text-slate-500 mt-1">Ce numéro sert à identifier l&apos;élève et à lier le compte parent pour « Voir mon élève ».</p>
-            )}
           </div>
 
           {!editing && (
@@ -403,7 +406,7 @@ export function DashboardStudentsPage() {
                 className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
                 disabled={!form.class_id}
               >
-                <option value="">Non assignée</option>
+                <option value="">À assigner plus tard</option>
                 {roomsForForm.map((r) => {
                   const full = r.capacity != null && r.student_count >= r.capacity;
                   const isCurrent = editing?.room_id === r.id;
@@ -508,7 +511,7 @@ export function DashboardStudentsPage() {
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 border-b border-[var(--app-border)]">
             <tr>
-              <th className="px-4 py-3 font-medium text-slate-900">Identifiant (n° ministère)</th>
+              <th className="px-4 py-3 font-medium text-slate-900">NISU</th>
               <th className="px-4 py-3 font-medium text-slate-900">Nom</th>
               <th className="px-4 py-3 font-medium text-slate-900">Classe</th>
               <th className="px-4 py-3 font-medium text-slate-900">Salle</th>

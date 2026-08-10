@@ -18,7 +18,7 @@ type BalanceLine = { account_code: string; account_label: string; total_debit: n
 
 type ManualLine = { account_id: string; debit: string; credit: string };
 
-export function DashboardComptabilitePage() {
+export function DashboardComptabilitePage({ embedded = false }: { embedded?: boolean } = {}) {
   const [tab, setTab] = useState<"balance" | "journal">("balance");
   const [exercices, setExercices] = useState<Exercice[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -327,10 +327,7 @@ export function DashboardComptabilitePage() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-slate-900">Comptabilité</h2>
-      <p className="text-slate-600 text-sm">
-  
-      </p>
+      {!embedded && <h2 className="text-2xl font-bold text-slate-900">Comptabilité</h2>}
 
       {error && <div className="p-3 rounded-lg bg-red-50 text-red-600 text-sm">{error}</div>}
 

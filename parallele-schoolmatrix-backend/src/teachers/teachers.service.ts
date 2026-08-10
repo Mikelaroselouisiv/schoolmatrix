@@ -32,9 +32,33 @@ export class TeachersService {
 
   private async resolveRoom(roomId?: string | null): Promise<Room | undefined> {
     if (!roomId) return undefined;
-    const room = await this.roomRepo.findOne({ where: { id: roomId } });
+    const room = await this.roomRepo.findOne({
+      where: { id: roomId },
+      relations: ['class'],
+    });
     if (!room) {
       throw new BadRequestException('Salle introuvable');
+    }
+    return room;
+  }
+
+  /** Salle obligatoire, rattachée à la classe pédagogique. */
+  private async resolveRoomForClass(
+    classId: string,
+    roomId?: string | null,
+  ): Promise<Room> {
+    if (!roomId?.trim()) {
+      throw new BadRequestException('La salle (section) est obligatoire');
+    }
+    const room = await this.resolveRoom(roomId);
+    if (!room) {
+      throw new BadRequestException('Salle introuvable');
+    }
+    const roomClassId = room.class?.id ?? (room as any).class_id;
+    if (roomClassId && roomClassId !== classId) {
+      throw new BadRequestException(
+        'Cette salle n’appartient pas à la classe sélectionnée',
+      );
     }
     return room;
   }
@@ -150,12 +174,12 @@ export class TeachersService {
     return { deleted: true };
   }
 
-  /** Assignations précises : (classe, matière) pour ce professeur. */
+  /** Assignations précises : (classe, salle/section, matière) pour ce professeur. */
   async getTeacherClassSubjects(teacherId: number) {
     await this.findOneTeacher(teacherId);
     const list = await this.teacherClassSubjectRepo.find({
       where: { teacher: { id: teacherId } },
-      relations: ['class', 'subject'],
+      relations: ['class', 'subject', 'room'],
       order: { created_at: 'ASC' },
     });
     return list.map((a) => ({
@@ -164,6 +188,8 @@ export class TeachersService {
       class_name: a.class?.name ?? '',
       subject_id: a.subject?.id ?? a.subject_id,
       subject_name: a.subject?.name ?? '',
+      room_id: a.room?.id ?? a.room_id ?? null,
+      room_name: a.room?.name ?? '',
       created_at: a.created_at,
     }));
   }
@@ -172,24 +198,28 @@ export class TeachersService {
     teacherId: number,
     classId: string,
     subjectId: string,
+    roomId: string,
   ): Promise<TeacherClassSubject> {
     await this.findOneTeacher(teacherId);
+    const room = await this.resolveRoomForClass(classId, roomId);
     const existing = await this.teacherClassSubjectRepo.findOne({
       where: {
         teacher: { id: teacherId },
         class: { id: classId },
         subject: { id: subjectId },
+        room: { id: room.id },
       },
     });
     if (existing) {
       throw new BadRequestException(
-        'Ce professeur enseigne déjà cette matière dans cette classe.',
+        'Ce professeur enseigne déjà cette matière dans cette salle.',
       );
     }
     const assignment = this.teacherClassSubjectRepo.create({
       teacher: { id: teacherId },
       class: { id: classId },
       subject: { id: subjectId },
+      room: { id: room.id },
     });
     return this.teacherClassSubjectRepo.save(assignment);
   }
@@ -273,6 +303,7 @@ export class TeachersService {
 
   async getScheduleSlots(filters: {
     class_id?: string;
+    room_id?: string;
     teacher_id?: number;
     day_of_week?: number;
     academic_year?: string;
@@ -288,6 +319,9 @@ export class TeachersService {
       .addOrderBy('slot.start_time', 'ASC');
     if (filters.class_id) {
       qb.andWhere('slot.class_id = :class_id', { class_id: filters.class_id });
+    }
+    if (filters.room_id) {
+      qb.andWhere('slot.room_id = :room_id', { room_id: filters.room_id });
     }
     if (filters.teacher_id) {
       qb.andWhere('slot.teacher_id = :teacher_id', {
@@ -331,12 +365,12 @@ export class TeachersService {
     class_id: string;
     subject_id: string;
     teacher_id: number;
-    room_id?: string;
+    room_id: string;
     day_of_week: number;
     start_time: string;
     end_time: string;
   }): Promise<ScheduleSlot> {
-    const room = await this.resolveRoom(params.room_id);
+    const room = await this.resolveRoomForClass(params.class_id, params.room_id);
     const slot = this.scheduleSlotRepo.create({
       academic_year: params.academic_year?.trim() || undefined,
       class: { id: params.class_id },
@@ -374,8 +408,13 @@ export class TeachersService {
     if (params.class_id !== undefined) slot.class = { id: params.class_id } as Class;
     if (params.subject_id !== undefined) slot.subject = { id: params.subject_id } as Subject;
     if (params.teacher_id !== undefined) slot.teacher = { id: params.teacher_id } as User;
+    const classId =
+      params.class_id ?? slot.class?.id ?? (slot as any).class_id;
     if (params.room_id !== undefined) {
-      slot.room = (await this.resolveRoom(params.room_id)) ?? (null as unknown as Room);
+      slot.room = await this.resolveRoomForClass(classId, params.room_id);
+    } else if (params.class_id !== undefined && slot.room?.id) {
+      // Revalider la salle si la classe change
+      slot.room = await this.resolveRoomForClass(params.class_id, slot.room.id);
     }
     if (params.day_of_week !== undefined) slot.day_of_week = params.day_of_week;
     if (params.start_time !== undefined) slot.start_time = params.start_time;

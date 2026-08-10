@@ -22,7 +22,7 @@ function money(n: number) {
   return n.toLocaleString("fr-FR", { maximumFractionDigits: 2 });
 }
 
-export function DashboardBanquesPage() {
+export function DashboardBanquesPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [banks, setBanks] = useState<Bank[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -139,8 +139,8 @@ export function DashboardBanquesPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <h2 className="text-2xl font-bold text-slate-900">Banques</h2>
-        <div className="text-sm text-slate-600">
+        {!embedded && <h2 className="text-2xl font-bold text-slate-900">Banques</h2>}
+        <div className={`text-sm text-slate-600 ${embedded ? "ml-auto" : ""}`}>
           Solde total · <span className="font-semibold text-slate-900">{money(totalBalance)}</span>
         </div>
       </div>

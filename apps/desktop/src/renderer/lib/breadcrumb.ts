@@ -19,6 +19,7 @@ const ROUTE_LABELS: Record<string, string> = {
   roles: "Rôles",
   discipline: "Discipline",
   "fiche-eleve": "Fiche élève",
+  photography: "Photographie",
   "stats-academiques": "Stats académiques",
   "stats-financieres": "Stats financières",
   banques: "Banques",

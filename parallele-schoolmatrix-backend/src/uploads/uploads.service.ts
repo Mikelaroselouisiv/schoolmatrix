@@ -175,12 +175,10 @@ export class UploadsService implements OnModuleInit {
     await this.fileMetaRepo.save(meta);
     this.syncKick.kick('upload');
 
-    // Toujours renvoyer une URL lisible des deux côtés (GCS si actif).
+    // GCS actif + upload OK → URL publique. Sinon chemin relatif (servi par /uploads local).
     if (remoteKey && this.gcs.isEnabled()) {
       return this.gcs.publicUrl(remoteKey);
     }
-    const resolved = resolveMediaUrl(`uploads/${filename}`);
-    if (resolved && !isRelativeUploadPath(resolved)) return resolved;
     return `uploads/${filename}`;
   }
 }

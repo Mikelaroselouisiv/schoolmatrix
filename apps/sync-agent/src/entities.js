@@ -10,6 +10,7 @@ export const ENTITY_ORDER = [
   'Room',
   'ClassSubject',
   'Student',
+  'StudentPhoto',
   'FeeService',
   'ClassFee',
   'ClassSubjectCoefficient',

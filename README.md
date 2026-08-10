@@ -57,6 +57,10 @@ _archive/                         ← Ancien monde AWS/ECR/Next — ne pas utili
 - Stack Server Docker sur le PC de dev **en même temps** que Nest (`:3000` déjà pris) — voir `npm run dev:free-port`
 - `ship-all` / upload GCS sauf intention de **publier**
 
+## Agence — dupliquer pour une nouvelle école
+
+Ce dépôt est le **prototype Parallele**. Pour créer un SchoolMatrix isolé pour une autre école (Shekinah, etc.) : [docs/AGENCY-TENANT-CLONE.md](docs/AGENCY-TENANT-CLONE.md) et le skill `.cursor/skills/schoolmatrix-tenant-clone/`.
+
 ## Livraison production
 
 Quand le travail est fini et prêt à partir partout :

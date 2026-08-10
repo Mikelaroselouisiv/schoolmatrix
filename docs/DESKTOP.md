@@ -24,7 +24,7 @@ Sur site : installer l’exe **Server** → l’app se lance → tout est automa
 
 1. Copie `server-stack` → `C:\ProgramData\Parallele SchoolMatrix\server-stack`
 2. Installe Docker Desktop si besoin (winget)
-3. Crée / réaligne `.env.server` depuis `defaults.env` **embarqué** (SYNC_API_KEY, GCS, `SYNC_INTERVAL_MS`, `SYNC_KICK_URL`)
+3. Crée / réaligne `.env.server` depuis `defaults.env` **embarqué** (SYNC_API_KEY, GCS, GEMINI, `SYNC_INTERVAL_MS`, `SYNC_KICK_URL`)
 4. Monte `credentials/gcs-sa.json` dans Docker (`GOOGLE_APPLICATION_CREDENTIALS`)
 5. Charge les images `.tar` (Postgres + backend + sync-agent) et recreate `backend` + `sync-agent`
 6. Tâche planifiée pour remonter la stack à l’ouverture de session

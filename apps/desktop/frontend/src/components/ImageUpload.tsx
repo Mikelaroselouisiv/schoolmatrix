@@ -130,9 +130,6 @@ export function ImageUpload({
           >
             {uploading ? "Envoi…" : buttonLabel}
           </button>
-          {crop === "square" && (
-            <p className="text-xs text-slate-500">Format carré — recadrage à l’import</p>
-          )}
           {value && (
             <button
               type="button"

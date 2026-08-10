@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
 import { API_BASE, fetchWithAuth } from "@/services/api";
 import { useSchoolProfile } from "@/context/SchoolProfileContext";
 import { ExportBadgePdfButton } from "@/components/ExportBadgePdfButton";
@@ -136,26 +135,11 @@ export function DashboardRoomsPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Gestion des salles</h2>
-          <p className="text-sm text-slate-500 mt-1">
-            Une classe (ex. 1<sup>re</sup> année) peut avoir plusieurs salles (1, 2, 3) avec une limite d’élèves.
-          </p>
-        </div>
+        <h2 className="text-2xl font-bold text-slate-900">Gestion des salles</h2>
         <button onClick={openCreate} className="app-btn-primary" disabled={!classes.length}>
           Ajouter une salle
         </button>
       </div>
-
-      {!classes.length && (
-        <div className="p-3 rounded-lg bg-amber-50 text-amber-800 text-sm">
-          Créez d’abord une{" "}
-          <Link to="/dashboard/classes" className="underline font-medium">
-            classe pédagogique
-          </Link>{" "}
-          (ex. Première année fondamentale), puis ses salles.
-        </div>
-      )}
 
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Filtrer par classe</label>

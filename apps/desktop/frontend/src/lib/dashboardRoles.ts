@@ -8,7 +8,8 @@
  * - Directeur pédagogique : Horaires, Saisie des notes.
  * - Censeur : Horaires, Saisie des notes (identique au directeur pédagogique).
  * - Admin préscolaire / fondamental / secondaire : Horaires uniquement.
- * - Économe : Tableau de bord et Économat uniquement.
+ * - Économe : Tableau de bord, Économat et Dépenses (pas Stats financières).
+ * - Comptable : Stats financières (Moniteur / Banques / Comptabilité).
  * - Responsable discipline : Tableau de bord et Discipline (appel, retard, points).
  * - Enseignant, Parent : Tableau de bord uniquement (vue moniteur / profil).
  */
@@ -33,8 +34,14 @@ const ROLES_HORAIRES_SEUL: string[] = [
 /** Rôles qui voient uniquement l’économat (en plus du tableau de bord). */
 const ROLES_ECONOME: string[] = ["ECONOME"];
 
+/** Comptable : Stats financières (moniteur, banques, comptabilité). */
+const ROLES_COMPTABLE: string[] = ["COMPTABLE"];
+
 /** Rôles qui voient Discipline (appel, retard, points disciplinaires). */
 const ROLES_DISCIPLINE: string[] = ["DISCIPLINE"];
+
+/** Rôles photographe (photos élèves uniquement via onglet Photographie). */
+const ROLES_PHOTOGRAPHY: string[] = ["PHOTOGRAPHER"];
 
 function canSeeNavItem(roleName: string, allowedRoles: string[]): boolean {
   if (allowedRoles.length === 0) return true;
@@ -44,11 +51,16 @@ function canSeeNavItem(roleName: string, allowedRoles: string[]): boolean {
 function canSeeByPermissions(permissionKey: string, rolePermissions: string[]): boolean {
   if (rolePermissions.includes("full_access")) return true;
   if (permissionKey === "dashboard") return true;
-  if (permissionKey === "finance" || permissionKey === "stats-financieres") {
+  // Économat / Dépenses : finance ou economat (pas stats financières)
+  if (permissionKey === "finance") {
+    return rolePermissions.includes("finance") || rolePermissions.includes("economat");
+  }
+  // Stats financières (moniteur / banques / comptabilité) : pas l’économe seul
+  if (permissionKey === "stats-financieres") {
     return (
+      rolePermissions.includes("stats-financieres") ||
       rolePermissions.includes("finance") ||
-      rolePermissions.includes("economat") ||
-      rolePermissions.includes("stats-financieres")
+      rolePermissions.includes("comptabilite")
     );
   }
   if (permissionKey === "rooms") return rolePermissions.includes("rooms") || rolePermissions.includes("classes");
@@ -75,10 +87,10 @@ export type NavItem = {
 /** Entrées du menu dashboard avec les rôles autorisés et le bloc d'affichage. */
 export const DASHBOARD_NAV: NavItem[] = [
   { href: "/dashboard", label: "Tableau de bord", allowedRoles: [], permissionKey: "dashboard", block: "configuration" },
-  // Bloc Configuration : Matière, Classes, Années et périodes, Professeurs, Horaires
+  // Bloc Configuration : Matières, Classes, puis Salles (sections), Années, Professeurs, Horaires
   { href: "/dashboard/subjects", label: "Matières", allowedRoles: [...ROLES_FULL], permissionKey: "subjects", block: "configuration" },
-  { href: "/dashboard/rooms", label: "Salles", allowedRoles: [...ROLES_FULL], permissionKey: "rooms", block: "configuration" },
   { href: "/dashboard/classes", label: "Classes", allowedRoles: [...ROLES_FULL], permissionKey: "classes", block: "configuration" },
+  { href: "/dashboard/rooms", label: "Salles", allowedRoles: [...ROLES_FULL], permissionKey: "rooms", block: "configuration" },
   { href: "/dashboard/academic-years", label: "Années et périodes", allowedRoles: [...ROLES_FULL], permissionKey: "academic-years", block: "configuration" },
   { href: "/dashboard/teachers", label: "Professeurs", allowedRoles: [...ROLES_FULL], permissionKey: "teachers", block: "configuration" },
   { href: "/dashboard/schedule", label: "Horaires", allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...ROLES_HORAIRES_SEUL], permissionKey: "schedule", block: "configuration" },
@@ -87,21 +99,31 @@ export const DASHBOARD_NAV: NavItem[] = [
   { href: "/dashboard/grades", label: "Saisie des notes", allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, "TEACHER"], permissionKey: "grades", block: "management" },
   { href: "/dashboard/discipline", label: "Discipline", allowedRoles: [...ROLES_FULL, ...ROLES_DISCIPLINE], permissionKey: "discipline", block: "management" },
   { href: "/dashboard/formation-classe", label: "Formation de classe", allowedRoles: [...ROLES_FULL], permissionKey: "formation-classe", block: "management" },
-  // Bloc Finance : Économat, Dépenses, Moniteur Finance, Comptabilité
+  // Bloc Finance opérationnel : Économat + Dépenses (économe)
   { href: "/dashboard/economat", label: "Économat", allowedRoles: [...ROLES_FULL, ...ROLES_ECONOME], permissionKey: "finance", block: "finance" },
   { href: "/dashboard/depenses", label: "Dépenses", allowedRoles: [...ROLES_FULL, ...ROLES_ECONOME], permissionKey: "finance", block: "finance" },
-  { href: "/dashboard/moniteur-finance", label: "Moniteur Finance", allowedRoles: [...ROLES_FULL, ...ROLES_ECONOME], permissionKey: "finance", block: "finance" },
-  { href: "/dashboard/comptabilite", label: "Comptabilité", allowedRoles: [...ROLES_FULL, ...ROLES_ECONOME], permissionKey: "finance", block: "finance" },
-  { href: "/dashboard/banques", label: "Banques", allowedRoles: [...ROLES_FULL, ...ROLES_ECONOME], permissionKey: "finance", block: "finance" },
-  // Bloc Statistiques
+  // Bloc Statistiques — Stats financières = Moniteur + Banques + Comptabilité
   { href: "/dashboard/stats-academiques", label: "Stats académiques", allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES], permissionKey: "stats-academiques", block: "statistics" },
-  { href: "/dashboard/stats-financieres", label: "Stats financières", allowedRoles: [...ROLES_FULL, ...ROLES_ECONOME], permissionKey: "stats-financieres", block: "statistics" },
-  // Bloc Fiche élève (dominant, seul)
+  {
+    href: "/dashboard/stats-financieres",
+    label: "Stats financières",
+    allowedRoles: [...ROLES_FULL, ...ROLES_COMPTABLE],
+    permissionKey: "stats-financieres",
+    block: "statistics",
+  },
+  // Bloc Fiche élève + Photographie
   {
     href: "/dashboard/fiche-eleve",
     label: "Fiche élève",
     allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...ROLES_HORAIRES_SEUL, ...ROLES_ECONOME, "PARENT"],
     permissionKey: "fiche-eleve",
+    block: "fiche",
+  },
+  {
+    href: "/dashboard/photography",
+    label: "Photographie",
+    allowedRoles: [...ROLES_FULL, ...ROLES_PHOTOGRAPHY],
+    permissionKey: "photography",
     block: "fiche",
   },
 ];

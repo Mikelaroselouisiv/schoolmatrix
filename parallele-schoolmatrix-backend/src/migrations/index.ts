@@ -7,6 +7,9 @@ import { SchoolContactAndSignatures1739000000004 } from './1739000000004-SchoolC
 import { SchoolSignatureImageUrl1739000000005 } from './1739000000005-SchoolSignatureImageUrl';
 import { RoomClassCapacityStudentRoom1739000000006 } from './1739000000006-RoomClassCapacityStudentRoom';
 import { BanksAndBankAccounts1739000000007 } from './1739000000007-BanksAndBankAccounts';
+import { TeacherClassSubjectRoom1739000000008 } from './1739000000008-TeacherClassSubjectRoom';
+import { StudentPhoto1739000000009 } from './1739000000009-StudentPhoto';
+import { NormalizeStudentNisuUnique1739000000010 } from './1739000000010-NormalizeStudentNisuUnique';
 
 /** Liste des migrations (ordre d’exécution). Utilisée par l’app au démarrage (migrationsRun). */
 export const migrations = [
@@ -19,4 +22,7 @@ export const migrations = [
   SchoolSignatureImageUrl1739000000005,
   RoomClassCapacityStudentRoom1739000000006,
   BanksAndBankAccounts1739000000007,
+  TeacherClassSubjectRoom1739000000008,
+  StudentPhoto1739000000009,
+  NormalizeStudentNisuUnique1739000000010,
 ];

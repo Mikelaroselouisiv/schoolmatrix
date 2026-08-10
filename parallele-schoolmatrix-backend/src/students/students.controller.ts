@@ -149,6 +149,57 @@ export class StudentsController {
     return { ok: true, ...result };
   }
 
+  /** Aperçu PDF (heuristique + IA) — n’écrit pas en base. */
+  @Post('import-pdf/preview')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 15 * 1024 * 1024 } }))
+  async importPdfPreview(@UploadedFile() file: { buffer?: Buffer }) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('Fichier PDF requis.');
+    }
+    const preview = await this.studentsService.previewPdfImport(file.buffer);
+    return {
+      ok: true,
+      rows: preview.rows,
+      header_found: preview.header_found,
+      warnings: preview.warnings,
+      method: preview.method,
+      ai_configured: preview.ai_configured,
+      count: preview.rows.length,
+    };
+  }
+
+  /** Confirme l’inscription PDF dans la classe choisie (sans salle). */
+  @Post('import-pdf')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 15 * 1024 * 1024 } }))
+  async importPdf(
+    @UploadedFile() file: { buffer?: Buffer },
+    @Body('class_id') classId: string,
+    @Body('academic_year_id') academicYearId?: string,
+    @Body('rows_json') rowsJson?: string,
+  ) {
+    if (!classId?.trim()) {
+      throw new BadRequestException('Classe requise.');
+    }
+    let confirmedRows: any[] | undefined;
+    if (rowsJson?.trim()) {
+      try {
+        confirmedRows = JSON.parse(rowsJson);
+      } catch {
+        throw new BadRequestException('rows_json invalide.');
+      }
+    }
+    if (!confirmedRows?.length && !file?.buffer?.length) {
+      throw new BadRequestException('Fichier PDF ou lignes confirmées requis.');
+    }
+    const result = await this.studentsService.importFromPdf(
+      file?.buffer ?? Buffer.alloc(0),
+      classId.trim(),
+      academicYearId?.trim() || null,
+      confirmedRows,
+    );
+    return { ok: true, ...result };
+  }
+
   @Post()
   async create(@Body() body: Record<string, unknown>) {
     const s = await this.studentsService.create(body as any);

@@ -20,12 +20,14 @@ export class ScheduleSlotsController {
   @Get()
   async list(
     @Query('class_id') classId?: string,
+    @Query('room_id') roomId?: string,
     @Query('teacher_id') teacherId?: string,
     @Query('day_of_week') dayOfWeek?: string,
     @Query('academic_year') academicYear?: string,
   ) {
     const slots = await this.teachersService.getScheduleSlots({
       class_id: classId,
+      room_id: roomId,
       teacher_id: teacherId ? parseInt(teacherId, 10) : undefined,
       day_of_week: dayOfWeek ? parseInt(dayOfWeek, 10) : undefined,
       academic_year: academicYear,
@@ -41,7 +43,7 @@ export class ScheduleSlotsController {
       class_id: string;
       subject_id: string;
       teacher_id: number;
-      room_id?: string;
+      room_id: string;
       day_of_week: number;
       start_time: string;
       end_time: string;

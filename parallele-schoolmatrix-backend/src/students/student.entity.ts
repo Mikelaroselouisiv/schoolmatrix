@@ -81,6 +81,7 @@ export class Student {
   @JoinColumn({ name: 'room_id' })
   room: Room | null;
 
+  /** NISU — unique en Haïti (jamais deux élèves avec le même code). */
   @Column({ type: 'varchar', length: 50, unique: true, nullable: true })
   order_number: string | null;
 

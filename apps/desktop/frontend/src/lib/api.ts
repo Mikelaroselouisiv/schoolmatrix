@@ -28,18 +28,39 @@ const API_BASE = resolveApiBase();
 const GCS_PUBLIC_UPLOADS =
   "https://storage.googleapis.com/parallele-schoolmatrix-assets/schoolmatrix/uploads";
 
+function extractUploadFilename(stored: string): string | null {
+  const s = stored.trim();
+  if (!s) return null;
+  const rel = s.match(/^(?:\/)?uploads\/([^/?#]+)$/i);
+  if (rel) return rel[1];
+  const gcs = s.match(
+    /storage\.googleapis\.com\/[^/]+\/[^/]+\/uploads\/([^/?#]+)(?:\?|#|$)/i,
+  );
+  return gcs ? gcs[1] : null;
+}
+
 /**
- * URL d’image : GCS publique (Server ↔ Remote), sinon API locale.
+ * URL d’image : préfère l’API (`/uploads/…`) pour le dev local et le proxy Nest.
  */
 function getImageUrl(storedUrl: string | null | undefined): string | null {
   if (!storedUrl || !storedUrl.trim()) return null;
   const trimmed = storedUrl.trim();
+  const filename = extractUploadFilename(trimmed);
+  const desktopBase =
+    typeof window !== "undefined"
+      ? window.schoolmatrixDesktop?.apiBase?.replace(/\/$/, "")
+      : "";
+  const base = desktopBase || (typeof window !== "undefined" ? "" : "");
+  if (filename && desktopBase) {
+    return `${desktopBase}/uploads/${encodeURIComponent(filename)}`;
+  }
+  if (filename && typeof window !== "undefined" && !desktopBase) {
+    return `/api/uploads/${encodeURIComponent(filename)}`;
+  }
   if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed;
-  const rel = trimmed.match(/^(?:\/)?uploads\/([^/?#]+)$/i);
-  if (rel) return `${GCS_PUBLIC_UPLOADS}/${rel[1]}`;
+  if (filename) return `${GCS_PUBLIC_UPLOADS}/${filename}`;
   const path = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
-  if (typeof window !== "undefined" && window.schoolmatrixDesktop?.apiBase) {
-    const base = window.schoolmatrixDesktop.apiBase.replace(/\/$/, "");
+  if (base) {
     const uploadPath = path.startsWith("/uploads")
       ? path
       : path.startsWith("/api/")

@@ -7,6 +7,7 @@ import { Room } from '../rooms/room.entity';
 import { Subject } from '../subjects/subject.entity';
 import { Class } from '../classes/class.entity';
 import { Student } from '../students/student.entity';
+import { StudentPhoto } from '../students/student-photo.entity';
 import { FeeService } from '../economat/fee-service.entity';
 import { ClassFee } from '../economat/class-fee.entity';
 import { PaymentTransaction } from '../economat/payment-transaction.entity';
@@ -37,6 +38,7 @@ export type SyncEntityName =
   | 'Class'
   | 'ClassSubject'
   | 'Student'
+  | 'StudentPhoto'
   | 'FeeService'
   | 'ClassFee'
   | 'PaymentTransaction'
@@ -75,6 +77,7 @@ export const SYNC_ENTITY_DEFS: SyncEntityDef[] = [
   { name: 'Room', target: Room, timeField: 'updated_at' },
   { name: 'ClassSubject', target: ClassSubject, timeField: 'created_at' },
   { name: 'Student', target: Student, timeField: 'updated_at' },
+  { name: 'StudentPhoto', target: StudentPhoto, timeField: 'updated_at' },
   { name: 'FeeService', target: FeeService, timeField: 'updated_at' },
   { name: 'ClassFee', target: ClassFee, timeField: 'updated_at' },
   { name: 'ClassSubjectCoefficient', target: ClassSubjectCoefficient, timeField: 'updated_at' },

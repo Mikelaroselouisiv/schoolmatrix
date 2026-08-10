@@ -1,5 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { API_BASE, fetchWithAuth } from "@/services/api";
+import { DashboardBanquesPage } from "./DashboardBanquesPage";
+import { DashboardComptabilitePage } from "./DashboardComptabilitePage";
 
 type Year = { id: string; name: string };
 type FinancialStats = {
@@ -65,6 +68,8 @@ type FinancialStats = {
   };
 };
 
+type TabId = "moniteur" | "banques" | "comptabilite";
+
 function money(n: number | null | undefined) {
   if (n == null || Number.isNaN(n)) return "—";
   return n.toLocaleString("fr-FR", { maximumFractionDigits: 0 });
@@ -84,7 +89,43 @@ function Kpi({ label, value, accent }: { label: string; value: string; accent?: 
   );
 }
 
-export function DashboardStatsFinancieresPage() {
+function healthSummary(stats: FinancialStats): string {
+  const rate = stats.overview.collection_rate;
+  const solde = stats.cashflow.solde;
+  const banque = stats.banks?.total_balance ?? 0;
+  const reste = stats.overview.balance;
+  const parts: string[] = [];
+
+  if (rate == null) {
+    parts.push("Le taux de recouvrement des frais n’est pas encore calculable sur la période.");
+  } else if (rate >= 80) {
+    parts.push(`Bonne encaissement des frais : environ ${pct(rate)} du dû est déjà payé.`);
+  } else if (rate >= 50) {
+    parts.push(`Recouvrement moyen (${pct(rate)}) : une partie des familles a encore un solde.`);
+  } else {
+    parts.push(`Recouvrement faible (${pct(rate)}) : beaucoup reste à encaisser.`);
+  }
+
+  if (solde >= 0) {
+    parts.push(`Sur la période, l’école a plus encaissé que dépensé (solde ${money(solde)}).`);
+  } else {
+    parts.push(`Sur la période, les sorties dépassent les entrées (solde ${money(solde)}).`);
+  }
+
+  if (banque > 0) {
+    parts.push(`Les comptes bancaires affichent un solde cumulé de ${money(banque)}.`);
+  } else {
+    parts.push("Aucun solde bancaire significatif pour l’instant (ou aucun compte configuré).");
+  }
+
+  if (reste > 0) {
+    parts.push(`${money(reste)} restent à recouvrer auprès des familles.`);
+  }
+
+  return parts.join(" ");
+}
+
+function MoniteurPanel() {
   const [years, setYears] = useState<Year[]>([]);
   const [yearName, setYearName] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -142,11 +183,14 @@ export function DashboardStatsFinancieresPage() {
   }, [yearName, dateFrom, dateTo]);
 
   const maxMonth = stats?.by_month.reduce((m, x) => Math.max(m, x.amount), 0) ?? 0;
+  const summary = useMemo(() => (stats ? healthSummary(stats) : ""), [stats]);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <h2 className="text-2xl font-bold text-slate-900">Stats financières</h2>
+        <p className="text-sm text-slate-600 max-w-xl">
+          Vue simple de la santé financière de l’école (encaissements, dépenses, banques).
+        </p>
         <div className="flex flex-wrap items-center gap-3">
           <select
             value={yearName}
@@ -180,6 +224,11 @@ export function DashboardStatsFinancieresPage() {
         <div className="animate-pulse text-slate-500 py-8">Chargement...</div>
       ) : stats ? (
         <>
+          <div className="p-5 rounded-xl border border-[var(--app-border)] bg-slate-50">
+            <h3 className="text-sm font-semibold text-slate-900 mb-2">En résumé</h3>
+            <p className="text-sm text-slate-700 leading-relaxed">{summary}</p>
+          </div>
+
           <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3">
             <Kpi label="Total dû" value={money(stats.overview.amount_due)} />
             <Kpi label="Encaissé" value={money(stats.overview.amount_paid)} accent="text-green-700" />
@@ -197,28 +246,21 @@ export function DashboardStatsFinancieresPage() {
             <Kpi label="Entrées (période)" value={money(stats.cashflow.total_entrees)} accent="text-green-700" />
             <Kpi label="Sorties (période)" value={money(stats.cashflow.total_sorties)} accent="text-red-700" />
             <Kpi
-              label="Solde caisse"
+              label="Solde période"
               value={money(stats.cashflow.solde)}
               accent={stats.cashflow.solde >= 0 ? "text-green-700" : "text-red-700"}
             />
-            <Kpi
-              label="Soldes bancaires"
-              value={money(stats.banks?.total_balance ?? 0)}
-              accent="text-slate-900"
-            />
+            <Kpi label="Soldes bancaires" value={money(stats.banks?.total_balance ?? 0)} />
           </div>
 
           {stats.banks && stats.banks.accounts.length > 0 && (
             <div className="p-4 rounded-xl border border-[var(--app-border)] bg-white overflow-x-auto">
-              <h3 className="text-sm font-semibold text-slate-900 mb-3">Comptes bancaires</h3>
+              <h3 className="text-sm font-semibold text-slate-900 mb-3">Aperçu comptes bancaires</h3>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-slate-500 border-b border-slate-100">
                     <th className="py-2 pr-2 font-medium">Banque</th>
                     <th className="py-2 pr-2 font-medium">Compte</th>
-                    <th className="py-2 pr-2 font-medium text-right">Ouverture</th>
-                    <th className="py-2 pr-2 font-medium text-right">Entrées</th>
-                    <th className="py-2 pr-2 font-medium text-right">Sorties</th>
                     <th className="py-2 font-medium text-right">Solde</th>
                   </tr>
                 </thead>
@@ -230,9 +272,6 @@ export function DashboardStatsFinancieresPage() {
                         {a.account_name}
                         {a.account_number ? ` · ${a.account_number}` : ""}
                       </td>
-                      <td className="py-2 pr-2 text-right text-slate-600">{money(a.opening_balance)}</td>
-                      <td className="py-2 pr-2 text-right text-green-700">{money(a.inflows)}</td>
-                      <td className="py-2 pr-2 text-right text-red-700">{money(a.outflows)}</td>
                       <td className="py-2 text-right font-semibold">{money(a.balance)}</td>
                     </tr>
                   ))}
@@ -288,9 +327,7 @@ export function DashboardStatsFinancieresPage() {
                   ))}
                   {stats.by_service.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="py-4 text-center text-slate-400">
-                        —
-                      </td>
+                      <td colSpan={4} className="py-4 text-center text-slate-400">—</td>
                     </tr>
                   )}
                 </tbody>
@@ -350,6 +387,50 @@ export function DashboardStatsFinancieresPage() {
           </div>
         </>
       ) : null}
+    </div>
+  );
+}
+
+export function DashboardStatsFinancieresPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const raw = searchParams.get("tab");
+  const tab: TabId =
+    raw === "banques" || raw === "comptabilite" || raw === "moniteur" ? raw : "moniteur";
+
+  function setTab(next: TabId) {
+    setSearchParams(next === "moniteur" ? {} : { tab: next }, { replace: true });
+  }
+
+  const tabs: { id: TabId; label: string }[] = [
+    { id: "moniteur", label: "Moniteur" },
+    { id: "banques", label: "Banques" },
+    { id: "comptabilite", label: "Comptabilité" },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-slate-900">Stats financières</h2>
+
+      <div className="flex gap-1 border-b border-[var(--app-border)]">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${
+              tab === t.id
+                ? "bg-white border border-[var(--app-border)] border-b-0 text-slate-900"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "moniteur" && <MoniteurPanel />}
+      {tab === "banques" && <DashboardBanquesPage embedded />}
+      {tab === "comptabilite" && <DashboardComptabilitePage embedded />}
     </div>
   );
 }

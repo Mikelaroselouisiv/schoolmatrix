@@ -53,7 +53,7 @@ type ExtracurricularActivity = {
 type ClassItem = { id: string; name: string };
 type Subject = { id: string; name: string };
 type Teacher = { id: number; first_name: string | null; last_name: string | null; email: string };
-type Room = { id: string; name: string; active?: boolean };
+type Room = { id: string; name: string; class_id?: string | null; active?: boolean };
 type AcademicYear = { id: string; name: string };
 type Period = { id: string; name: string };
 
@@ -72,10 +72,12 @@ export default function SchedulePage() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [periods, setPeriods] = useState<Period[]>([]);
-  const [classSubjects, setClassSubjects] = useState<Subject[]>([]);
+  const [slotClassSubjects, setSlotClassSubjects] = useState<Subject[]>([]);
+  const [examClassSubjects, setExamClassSubjects] = useState<Subject[]>([]);
 
   const [academicYearFilter, setAcademicYearFilter] = useState("");
   const [classFilter, setClassFilter] = useState("");
+  const [roomFilter, setRoomFilter] = useState("");
 
   const [defaultYearId, setDefaultYearId] = useState("");
   const [defaultYearName, setDefaultYearName] = useState("");
@@ -111,7 +113,7 @@ export default function SchedulePage() {
     activity_date: "",
     start_time: "14:00",
     end_time: "16:00",
-    class_id: "",
+    class_ids: [] as string[],
     occasion: "",
     participation_fee: "",
     dress_code: "",
@@ -162,17 +164,20 @@ export default function SchedulePage() {
     }
   }
 
-  async function loadClassSubjects(classId: string) {
+  async function loadClassSubjects(
+    classId: string,
+    setter: (subjects: Subject[]) => void,
+  ) {
     if (!classId) {
-      setClassSubjects([]);
+      setter([]);
       return;
     }
     try {
       const res = await fetchWithAuth(`${API_BASE}/classes/${classId}/subjects`);
       const data = await res.json();
-      setClassSubjects(data.subjects ?? []);
+      setter(data.subjects ?? []);
     } catch {
-      setClassSubjects([]);
+      setter([]);
     }
   }
 
@@ -184,6 +189,7 @@ export default function SchedulePage() {
       const yearName = academicYears.find((ay) => ay.id === yearId)?.name;
       if (yearName) params.set("academic_year", yearName);
       if (classFilter) params.set("class_id", classFilter);
+      if (roomFilter) params.set("room_id", roomFilter);
       const res = await fetchWithAuth(`${API_BASE}/schedule-slots?${params}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Erreur");
@@ -255,19 +261,23 @@ export default function SchedulePage() {
       loadExams();
       loadActivities();
     }
-  }, [academicYearFilter, classFilter]);
+  }, [academicYearFilter, classFilter, roomFilter]);
 
   useEffect(() => {
     loadPeriods(examForm.academic_year_id);
   }, [examForm.academic_year_id]);
 
   useEffect(() => {
-    loadClassSubjects(examForm.class_id);
+    loadClassSubjects(slotForm.class_id, setSlotClassSubjects);
+  }, [slotForm.class_id]);
+
+  useEffect(() => {
+    loadClassSubjects(examForm.class_id, setExamClassSubjects);
   }, [examForm.class_id]);
 
   async function handleAddSlot(e: React.FormEvent) {
     e.preventDefault();
-    if (!slotForm.class_id || !slotForm.subject_id || !slotForm.teacher_id) return;
+    if (!slotForm.class_id || !slotForm.subject_id || !slotForm.teacher_id || !slotForm.room_id) return;
     setSaving(true);
     setError("");
     try {
@@ -278,7 +288,7 @@ export default function SchedulePage() {
           class_id: slotForm.class_id,
           subject_id: slotForm.subject_id,
           teacher_id: parseInt(slotForm.teacher_id, 10),
-          room_id: slotForm.room_id || undefined,
+          room_id: slotForm.room_id,
           day_of_week: slotForm.day_of_week,
           start_time: slotForm.start_time,
           end_time: slotForm.end_time,
@@ -344,14 +354,26 @@ export default function SchedulePage() {
 
   async function handleAddActivity(e: React.FormEvent) {
     e.preventDefault();
-    if (!activityForm.academic_year_id || !activityForm.class_id || !activityForm.occasion || !activityForm.activity_date) return;
+    if (
+      !activityForm.academic_year_id ||
+      !activityForm.class_ids.length ||
+      !activityForm.occasion ||
+      !activityForm.activity_date
+    ) {
+      return;
+    }
     setSaving(true);
     setError("");
     try {
       const res = await fetchWithAuth(`${API_BASE}/extracurricular-activities`, {
         method: "POST",
         body: JSON.stringify({
-          ...activityForm,
+          academic_year_id: activityForm.academic_year_id,
+          activity_date: activityForm.activity_date,
+          start_time: activityForm.start_time,
+          end_time: activityForm.end_time,
+          class_ids: activityForm.class_ids,
+          occasion: activityForm.occasion,
           participation_fee: activityForm.participation_fee || null,
           dress_code: activityForm.dress_code || null,
         }),
@@ -359,13 +381,39 @@ export default function SchedulePage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Erreur");
       setShowActivityForm(false);
-      setActivityForm({ academic_year_id: "", activity_date: "", start_time: "14:00", end_time: "16:00", class_id: "", occasion: "", participation_fee: "", dress_code: "" });
+      setActivityForm({
+        academic_year_id: "",
+        activity_date: "",
+        start_time: "14:00",
+        end_time: "16:00",
+        class_ids: [],
+        occasion: "",
+        participation_fee: "",
+        dress_code: "",
+      });
       loadActivities();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
     } finally {
       setSaving(false);
     }
+  }
+
+  function toggleActivityClass(id: string) {
+    setActivityForm((f) => ({
+      ...f,
+      class_ids: f.class_ids.includes(id)
+        ? f.class_ids.filter((x) => x !== id)
+        : [...f.class_ids, id],
+    }));
+  }
+
+  function toggleAllActivityClasses() {
+    setActivityForm((f) => ({
+      ...f,
+      class_ids:
+        f.class_ids.length === classes.length ? [] : classes.map((c) => c.id),
+    }));
   }
 
   async function handleDeleteActivity(id: string) {
@@ -429,13 +477,32 @@ export default function SchedulePage() {
           <label className="block text-xs text-slate-500 mb-0.5">Classe</label>
           <select
             value={classFilter}
-            onChange={(e) => setClassFilter(e.target.value)}
+            onChange={(e) => {
+              setClassFilter(e.target.value);
+              setRoomFilter("");
+            }}
             className="text-sm border border-[var(--app-border)] rounded px-2 py-1.5"
           >
             <option value="">Toutes</option>
             {classes.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-slate-500 mb-0.5">Salle</label>
+          <select
+            value={roomFilter}
+            onChange={(e) => setRoomFilter(e.target.value)}
+            className="text-sm border border-[var(--app-border)] rounded px-2 py-1.5"
+            disabled={!classFilter}
+          >
+            <option value="">Toutes</option>
+            {rooms
+              .filter((r) => !classFilter || r.class_id === classFilter)
+              .map((r) => (
+                <option key={r.id} value={r.id}>{r.name}</option>
+              ))}
           </select>
         </div>
       </div>
@@ -462,16 +529,64 @@ export default function SchedulePage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Classe *</label>
-                  <select value={slotForm.class_id} onChange={(e) => setSlotForm((f) => ({ ...f, class_id: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm" required>
+                  <select
+                    value={slotForm.class_id}
+                    onChange={(e) =>
+                      setSlotForm((f) => ({
+                        ...f,
+                        class_id: e.target.value,
+                        room_id: "",
+                        subject_id: "",
+                      }))
+                    }
+                    className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm"
+                    required
+                  >
                     <option value="">Sélectionner</option>
                     {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Matière *</label>
-                  <select value={slotForm.subject_id} onChange={(e) => setSlotForm((f) => ({ ...f, subject_id: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm" required>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Salle *</label>
+                  <select
+                    value={slotForm.room_id}
+                    onChange={(e) => setSlotForm((f) => ({ ...f, room_id: e.target.value }))}
+                    className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm"
+                    required
+                    disabled={!slotForm.class_id}
+                  >
                     <option value="">Sélectionner</option>
-                    {subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    {rooms
+                      .filter(
+                        (r) =>
+                          r.class_id === slotForm.class_id &&
+                          (r.active !== false || r.id === slotForm.room_id),
+                      )
+                      .map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                  </select>
+                  {slotForm.class_id &&
+                    rooms.filter((r) => r.class_id === slotForm.class_id).length === 0 && (
+                    <p className="mt-1 text-xs text-amber-700">
+                      Aucune salle pour cette classe.{" "}
+                      <Link href="/dashboard/rooms" className="text-[var(--school-accent-1)] hover:underline">Créer une salle</Link>
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Matière *</label>
+                  <select
+                    value={slotForm.subject_id}
+                    onChange={(e) => setSlotForm((f) => ({ ...f, subject_id: e.target.value }))}
+                    className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm"
+                    required
+                    disabled={!slotForm.class_id}
+                  >
+                    <option value="">
+                      {slotForm.class_id ? "Sélectionner" : "Choisir une classe d'abord"}
+                    </option>
+                    {slotClassSubjects.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -480,21 +595,6 @@ export default function SchedulePage() {
                     <option value="">Sélectionner</option>
                     {teachers.map((t) => <option key={t.id} value={t.id}>{teacherName(t)}</option>)}
                   </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Salle</label>
-                  <select value={slotForm.room_id} onChange={(e) => setSlotForm((f) => ({ ...f, room_id: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm">
-                    <option value="">—</option>
-                    {rooms
-                      .filter((r) => r.active !== false || r.id === slotForm.room_id)
-                      .map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                  </select>
-                  {rooms.length === 0 && (
-                    <p className="mt-1 text-xs text-slate-500">
-                      Aucune salle.{" "}
-                      <Link href="/dashboard/rooms" className="text-[var(--school-accent-1)] hover:underline">Créer</Link>
-                    </p>
-                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Jour *</label>
@@ -590,7 +690,7 @@ export default function SchedulePage() {
                   <label className="block text-sm font-medium text-slate-700 mb-1">Matière *</label>
                   <select value={examForm.subject_id} onChange={(e) => setExamForm((f) => ({ ...f, subject_id: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm" required disabled={!examForm.class_id}>
                     <option value="">{examForm.class_id ? "Sélectionner" : "Choisir une classe d'abord"}</option>
-                    {classSubjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    {examClassSubjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                 </div>
                 <div>
@@ -663,12 +763,32 @@ export default function SchedulePage() {
                     {academicYears.map((ay) => <option key={ay.id} value={ay.id}>{ay.name}</option>)}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Classe *</label>
-                  <select value={activityForm.class_id} onChange={(e) => setActivityForm((f) => ({ ...f, class_id: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 text-sm" required>
-                    <option value="">Sélectionner</option>
-                    {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
+                <div className="col-span-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-sm font-medium text-slate-700">Classes *</label>
+                    {classes.length > 0 && (
+                      <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={classes.length > 0 && activityForm.class_ids.length === classes.length}
+                          onChange={toggleAllActivityClasses}
+                        />
+                        Tout cocher
+                      </label>
+                    )}
+                  </div>
+                  <div className="max-h-40 overflow-y-auto rounded-lg border border-[var(--app-border)] p-3 space-y-2">
+                    {classes.map((c) => (
+                      <label key={c.id} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={activityForm.class_ids.includes(c.id)}
+                          onChange={() => toggleActivityClass(c.id)}
+                        />
+                        {c.name}
+                      </label>
+                    ))}
+                  </div>
                 </div>
                 <div className="col-span-2">
                   <label className="block text-sm font-medium text-slate-700 mb-1">Occasion / Intitulé *</label>

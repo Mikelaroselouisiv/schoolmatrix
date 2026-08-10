@@ -2,7 +2,7 @@
 <#
   Bootstrap machine Server SchoolMatrix - appelé automatiquement au lancement de l'app.
   Tout est embarqué dans l'installeur : images .tar, docker-compose, defaults.env
-  (SYNC_API_KEY + GCS), credentials/gcs-sa.json. Aucune config manuelle sur site.
+  (SYNC_API_KEY + GCS + GEMINI), credentials/gcs-sa.json. Aucune config manuelle sur site.
 #>
 param(
   [Parameter(Mandatory = $true)]
@@ -116,7 +116,7 @@ function Ensure-EnvFile {
     }
 
     Write-EnvMap $EnvFile $map
-    Write-Step 'Fichier .env.server cree (SYNC_API_KEY + GCS embarques)'
+    Write-Step 'Fichier .env.server cree (SYNC_API_KEY + GCS + GEMINI embarques)'
     return
   }
 
@@ -143,7 +143,9 @@ function Align-BundledCloudConfig {
     'GCS_BUCKET',
     'GCS_PREFIX',
     'GCS_PROJECT_ID',
-    'GOOGLE_APPLICATION_CREDENTIALS'
+    'GOOGLE_APPLICATION_CREDENTIALS',
+    'GEMINI_API_KEY',
+    'GEMINI_MODEL'
   )
   foreach ($k in $keysToAlign) {
     $bv = $bundled[$k]
@@ -156,7 +158,7 @@ function Align-BundledCloudConfig {
   }
   if ($changed) {
     Write-EnvMap $EnvFile $map
-    Write-Step 'Config cloud realignee depuis l installateur (sync + GCS)'
+    Write-Step 'Config cloud realignee depuis l installateur (sync + GCS + GEMINI)'
   }
   return $changed
 }

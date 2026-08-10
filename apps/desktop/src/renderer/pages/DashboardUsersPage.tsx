@@ -514,7 +514,6 @@ export function DashboardUsersPage() {
           </div>
           <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Dossiers élèves liés</label>
-              <p className="text-xs text-slate-500 mb-2">Le parent pourra voir le dossier de ces élèves via « Fiche élève » sur la page d&apos;accueil.</p>
               <div className="flex flex-wrap items-end gap-2 mb-3 p-2 rounded-lg bg-slate-50 border border-slate-200">
                 <div className="flex-1 min-w-[160px]">
                   <label className="block text-xs text-slate-500 mb-0.5">Lier par identifiant (n° ministère)</label>

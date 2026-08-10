@@ -432,7 +432,7 @@ export function DashboardHomePage() {
             {otherShortcuts.map((item) => (
               <Link
                 key={item.href}
-                href={item.href}
+                to={item.href}
                 className="rounded-xl overflow-hidden shadow-md hover:shadow-lg transition-all flex items-center gap-5 p-5 min-h-[88px] sm:min-h-[96px] group border border-white/20"
                 style={{
                   background: "linear-gradient(135deg, var(--school-accent-1) 0%, var(--school-accent-2, var(--school-accent-1)) 100%)",

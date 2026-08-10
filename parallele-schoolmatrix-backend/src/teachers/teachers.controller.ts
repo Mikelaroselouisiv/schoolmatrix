@@ -99,15 +99,16 @@ export class TeachersController {
   @Post(':id/class-subjects')
   async addClassSubject(
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: { class_id: string; subject_id: string },
+    @Body() body: { class_id: string; subject_id: string; room_id: string },
   ) {
-    if (!body?.class_id || !body?.subject_id) {
-      throw new BadRequestException('class_id et subject_id requis');
+    if (!body?.class_id || !body?.subject_id || !body?.room_id) {
+      throw new BadRequestException('class_id, room_id et subject_id requis');
     }
     const assignment = await this.teachersService.addTeacherClassSubject(
       id,
       body.class_id,
       body.subject_id,
+      body.room_id,
     );
     return {
       ok: true,
@@ -115,6 +116,7 @@ export class TeachersController {
         id: assignment.id,
         class_id: assignment.class_id ?? (assignment as any).class?.id,
         subject_id: assignment.subject_id ?? (assignment as any).subject?.id,
+        room_id: assignment.room_id ?? (assignment as any).room?.id,
         created_at: assignment.created_at,
       },
     };

@@ -164,6 +164,10 @@ export default function StudentsPage() {
       setError("L'identifiant élève (numéro ministère) est obligatoire.");
       return;
     }
+    if (!form.room_id) {
+      setError("La salle (section) est obligatoire.");
+      return;
+    }
     setSaving(true);
     setError("");
     setCreatedOrderNumber(null);
@@ -173,7 +177,7 @@ export default function StudentsPage() {
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
         class_id: form.class_id,
-        room_id: form.room_id || null,
+        room_id: form.room_id,
         ...(form.academic_year_id ? { academic_year_id: form.academic_year_id } : {}),
         email: form.email.trim() || undefined,
         phone: form.phone.trim() || undefined,
@@ -293,7 +297,6 @@ export default function StudentsPage() {
           <p className="text-green-700 mt-1">
             Identifiant (n° ministère) : <span className="font-mono font-bold">{createdOrderNumber}</span>
           </p>
-          <p className="text-sm text-green-600 mt-1">Utilisez ce numéro pour lier le compte parent à cet élève dans Gestion Utilisateurs (élèves liés). Le parent pourra alors voir le dossier de son enfant depuis la page d&apos;accueil.</p>
         </div>
       )}
 
@@ -398,14 +401,15 @@ export default function StudentsPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Salle</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Salle *</label>
               <select
                 value={form.room_id}
                 onChange={(e) => setForm((f) => ({ ...f, room_id: e.target.value }))}
                 className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
                 disabled={!form.class_id}
+                required
               >
-                <option value="">Non assignée</option>
+                <option value="">Sélectionner</option>
                 {roomsForForm.map((r) => {
                   const full = r.capacity != null && r.student_count >= r.capacity;
                   const isCurrent = editing?.room_id === r.id;

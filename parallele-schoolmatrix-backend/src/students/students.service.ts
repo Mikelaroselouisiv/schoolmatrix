@@ -7,6 +7,8 @@ import { Room } from '../rooms/room.entity';
 import { FormationClasseService } from '../formation-classe/formation-classe.service';
 import { ClassesService } from '../classes/classes.service';
 import { RoomsService } from '../rooms/rooms.service';
+import { StudentAiImportService } from './student-ai-import.service';
+import { isPostgresUniqueViolation, normalizeNisu } from './student-nisu';
 
 export type ImportResult = {
   created: number;
@@ -23,6 +25,7 @@ export class StudentsService {
     private readonly formationClasseService: FormationClasseService,
     private readonly classesService: ClassesService,
     private readonly roomsService: RoomsService,
+    private readonly studentAiImport: StudentAiImportService,
   ) {}
 
   async findAll(filters?: {
@@ -99,23 +102,20 @@ export class StudentsService {
     responsible_name?: string;
     responsible_phone?: string;
   }): Promise<Student> {
-    const raw = (params.order_number ?? '').trim();
-    if (!raw) {
-      throw new BadRequestException('L\'identifiant élève (numéro ministère) est obligatoire.');
+    const nisu = normalizeNisu(params.order_number);
+    if (!nisu) {
+      throw new BadRequestException('Le NISU (identifiant unique élève) est obligatoire.');
     }
     if (!params.class_id?.trim()) {
       throw new BadRequestException('La classe est obligatoire.');
     }
-    const existing = await this.studentRepo.findOne({ where: { order_number: raw } });
-    if (existing) {
-      throw new BadRequestException(`Un élève avec l'identifiant « ${raw} » existe déjà.`);
-    }
-    const room = await this.resolveRoomForClass(
-      params.class_id,
-      params.room_id ?? null,
-    );
+    // Salle optionnelle à la création (import PDF / inscription progressive → Fiche élève).
+    await this.assertNisuAvailable(nisu);
+    const room = params.room_id?.trim()
+      ? await this.resolveRoomForClass(params.class_id, params.room_id)
+      : null;
     const student = this.studentRepo.create({
-      order_number: raw,
+      order_number: nisu,
       first_name: params.first_name.trim(),
       last_name: params.last_name.trim(),
       email: params.email?.trim(),
@@ -136,10 +136,20 @@ export class StudentsService {
       responsible_name: params.responsible_name?.trim() || undefined,
       responsible_phone: params.responsible_phone?.trim() || undefined,
       class: { id: params.class_id },
-      room: room ?? null,
+      room,
       active: true,
     });
-    const saved = await this.studentRepo.save(student);
+    let saved: Student;
+    try {
+      saved = await this.studentRepo.save(student);
+    } catch (err) {
+      if (isPostgresUniqueViolation(err)) {
+        throw new BadRequestException(
+          `Le NISU « ${nisu} » est déjà utilisé — un élève ne peut pas être inscrit deux fois.`,
+        );
+      }
+      throw err;
+    }
     if (params.academic_year_id) {
       await this.formationClasseService.addStudentToClass(
         saved.id,
@@ -148,6 +158,16 @@ export class StudentsService {
       );
     }
     return this.findOne(saved.id);
+  }
+
+  /** NISU unique global (Haïti) — refuse tout doublon. */
+  private async assertNisuAvailable(nisu: string, excludeStudentId?: string): Promise<void> {
+    const existing = await this.studentRepo.findOne({ where: { order_number: nisu } });
+    if (existing && existing.id !== excludeStudentId) {
+      throw new BadRequestException(
+        `Le NISU « ${nisu} » est déjà utilisé — un élève ne peut pas être inscrit deux fois.`,
+      );
+    }
   }
 
   async update(
@@ -185,16 +205,12 @@ export class StudentsService {
       throw new NotFoundException('Student not found');
     }
     if (params.order_number !== undefined) {
-      const raw = params.order_number.trim();
-      if (raw) {
-        const existing = await this.studentRepo.findOne({ where: { order_number: raw } });
-        if (existing && existing.id !== id) {
-          throw new BadRequestException(`Un élève avec l'identifiant « ${raw} » existe déjà.`);
-        }
-        student.order_number = raw;
-      } else {
-        student.order_number = null;
+      const nisu = normalizeNisu(params.order_number);
+      if (!nisu) {
+        throw new BadRequestException('Le NISU (identifiant unique élève) est obligatoire.');
       }
+      await this.assertNisuAvailable(nisu, id);
+      student.order_number = nisu;
     }
     if (params.first_name !== undefined) student.first_name = params.first_name.trim();
     if (params.last_name !== undefined) student.last_name = params.last_name.trim();
@@ -202,12 +218,18 @@ export class StudentsService {
 
     const classId = params.class_id ?? student.class?.id;
     if (params.room_id !== undefined) {
-      const room = await this.resolveRoomForClass(classId, params.room_id, id);
-      student.room = room;
+      if (!params.room_id?.trim()) {
+        student.room = null;
+      } else {
+        const room = await this.resolveRoomForClass(classId, params.room_id, id);
+        if (!room) {
+          throw new BadRequestException('Salle introuvable');
+        }
+        student.room = room;
+      }
     } else if (params.class_id !== undefined && student.room?.id) {
-      // Changement de classe : vérifier que la salle actuelle appartient encore à la classe
       const room = await this.roomsService.findEntity(student.room.id).catch(() => null);
-      if (room && room.class?.id && room.class.id !== params.class_id) {
+      if (!room || (room.class?.id && room.class.id !== params.class_id)) {
         student.room = null;
       }
     }
@@ -257,15 +279,24 @@ export class StudentsService {
     if (params.responsible_phone !== undefined) {
       student.responsible_phone = params.responsible_phone?.trim() || undefined;
     }
-    await this.studentRepo.save(student);
+    try {
+      await this.studentRepo.save(student);
+    } catch (err) {
+      if (isPostgresUniqueViolation(err)) {
+        throw new BadRequestException(
+          `Le NISU « ${student.order_number} » est déjà utilisé — un élève ne peut pas être inscrit deux fois.`,
+        );
+      }
+      throw err;
+    }
     return this.findOne(id);
   }
 
   async findByOrderNumber(orderNumber: string): Promise<Student | null> {
-    const raw = (orderNumber ?? '').trim();
-    if (!raw) return null;
+    const nisu = normalizeNisu(orderNumber);
+    if (!nisu) return null;
     return this.studentRepo.findOne({
-      where: { order_number: raw },
+      where: { order_number: nisu },
       relations: ['class', 'room'],
     });
   }
@@ -313,19 +344,28 @@ export class StudentsService {
 
     const allClasses = await this.classesService.findAll();
     const classByName = new Map<string, string>(allClasses.map((c) => [c.name.trim(), c.id]));
+    const seenInBatch = new Set<string>();
 
     for (let r = 1; r < lines.length; r++) {
       const row = lines[r];
       const rowNum = r + 1;
       const get = (i: number) => (i >= 0 && i < row.length ? (row[i] ?? '').trim() : '');
-      const orderNumber = get(iOrder);
+      const orderNumber = normalizeNisu(get(iOrder));
       const first_name = get(iPrenom);
       const last_name = get(iNom);
       const className = get(iClasse);
       if (!orderNumber) {
-        result.errors.push({ row: rowNum, message: 'Identifiant (n° ministère) manquant.' });
+        result.errors.push({ row: rowNum, message: 'NISU manquant.' });
         continue;
       }
+      if (seenInBatch.has(orderNumber)) {
+        result.errors.push({
+          row: rowNum,
+          message: `NISU « ${orderNumber} » en double dans le fichier — refusé.`,
+        });
+        continue;
+      }
+      seenInBatch.add(orderNumber);
       if (!first_name || !last_name) {
         result.errors.push({ row: rowNum, message: 'Prénom et nom obligatoires.' });
         continue;
@@ -371,6 +411,127 @@ export class StudentsService {
         result.created++;
       } catch (err: any) {
         result.errors.push({ row: rowNum, message: err?.message || 'Erreur à l\'enregistrement.' });
+      }
+    }
+    return result;
+  }
+
+  /** Aperçu d’un PDF de liste (heuristique puis IA) — sans écriture en base. */
+  async previewPdfImport(buffer: Buffer): Promise<{
+    rows: import('./student-pdf-import').ParsedStudentRow[];
+    header_found: boolean;
+    warnings: string[];
+    method: string;
+    ai_configured: boolean;
+  }> {
+    const result = await this.studentAiImport.extractStudentsFromPdf(buffer);
+    const warnings = [...(result.warnings ?? [])];
+    const seen = new Set<string>();
+    const rows: import('./student-pdf-import').ParsedStudentRow[] = [];
+
+    for (const row of result.rows ?? []) {
+      const nisu = normalizeNisu(row.order_number);
+      if (!nisu) {
+        warnings.push(`Ligne ${row.row}: NISU manquant — ignorée.`);
+        continue;
+      }
+      if (seen.has(nisu)) {
+        warnings.push(`NISU « ${nisu} » en double dans le PDF — une seule occurrence est gardée.`);
+        continue;
+      }
+      seen.add(nisu);
+      const existing = await this.studentRepo.findOne({ where: { order_number: nisu } });
+      if (existing) {
+        warnings.push(
+          `NISU « ${nisu} » déjà inscrit (${existing.last_name} ${existing.first_name}) — non réimportable.`,
+        );
+        continue;
+      }
+      rows.push({ ...row, order_number: nisu });
+    }
+
+    return {
+      ...result,
+      rows,
+      warnings,
+      ai_configured: this.studentAiImport.isAiConfigured(),
+    };
+  }
+
+  /**
+   * Import PDF → élèves dans une classe donnée (sans salle).
+   * La salle / photos / contacts se complètent ensuite via Fiche élève.
+   */
+  async importFromPdf(
+    buffer: Buffer,
+    classId: string,
+    academicYearId?: string | null,
+    confirmedRows?: import('./student-pdf-import').ParsedStudentRow[],
+  ): Promise<ImportResult> {
+    const result: ImportResult = { created: 0, skipped: 0, errors: [] };
+    const cls = await this.classesService.findOne(classId).catch(() => null);
+    if (!cls) {
+      result.errors.push({ row: 0, message: 'Classe introuvable.' });
+      return result;
+    }
+
+    let rows = confirmedRows;
+    if (!rows?.length) {
+      const preview = await this.previewPdfImport(buffer);
+      if (!preview.rows.length) {
+        result.errors.push({
+          row: 0,
+          message:
+            preview.warnings?.[0] ||
+            'Aucune ligne élève détectée dans le PDF.',
+        });
+        return result;
+      }
+      rows = preview.rows;
+    }
+
+    const seenInBatch = new Set<string>();
+    for (const row of rows) {
+      const orderNumber = normalizeNisu(row.order_number);
+      if (!orderNumber) {
+        result.errors.push({ row: row.row, message: 'NISU manquant.' });
+        continue;
+      }
+      if (seenInBatch.has(orderNumber)) {
+        result.errors.push({
+          row: row.row,
+          message: `NISU « ${orderNumber} » en double dans la liste — refusé.`,
+        });
+        continue;
+      }
+      seenInBatch.add(orderNumber);
+      if (!row.first_name?.trim() || !row.last_name?.trim()) {
+        result.errors.push({ row: row.row, message: 'Prénom et nom obligatoires.' });
+        continue;
+      }
+      const existing = await this.studentRepo.findOne({ where: { order_number: orderNumber } });
+      if (existing) {
+        result.skipped++;
+        continue;
+      }
+      try {
+        await this.create({
+          order_number: orderNumber,
+          first_name: row.first_name.trim(),
+          last_name: row.last_name.trim(),
+          class_id: classId,
+          academic_year_id: academicYearId || undefined,
+          gender: row.gender || undefined,
+          birth_date: row.birth_date || undefined,
+          birth_place: row.birth_place || undefined,
+          room_id: null,
+        });
+        result.created++;
+      } catch (err: any) {
+        result.errors.push({
+          row: row.row,
+          message: err?.message || "Erreur à l'enregistrement.",
+        });
       }
     }
     return result;

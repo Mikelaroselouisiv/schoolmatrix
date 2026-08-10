@@ -39,6 +39,9 @@ Thumbs.db
 secrets/
 *.pem
 
+# Uploads runtime locaux (ne pas versionner)
+parallele-schoolmatrix-backend/storage/
+
 # Desktop build artifacts
 apps/desktop/next-runtime/
 apps/desktop/release/

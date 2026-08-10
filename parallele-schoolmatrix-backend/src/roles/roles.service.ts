@@ -3,7 +3,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Role } from './role.entity';
 
-const DEFAULT_ROLES = [
+const DEFAULT_ROLES: {
+  name: string;
+  description: string;
+  permissions?: string[];
+}[] = [
   { name: 'SUPER_ADMIN', description: 'Technicien / maintenance — accès total (première personne enregistrée et techniciens)' },
   { name: 'DIRECTEUR_GENERAL', description: 'Directeur général — propriétaire de l\'école, peut tout faire' },
   { name: 'SCHOOL_ADMIN', description: 'Alias direction (rétrocompatibilité)' },
@@ -13,10 +17,20 @@ const DEFAULT_ROLES = [
   { name: 'ADMIN_FONDAMENTAL', description: 'Administrateur fondamental — démarches admin, examens, parascolaire' },
   { name: 'ADMIN_SECONDAIRE', description: 'Administrateur secondaire — démarches admin, examens, parascolaire' },
   { name: 'ECONOME', description: 'Économe — enregistre les paiements uniquement (pas montants ni bourses)' },
+  {
+    name: 'COMPTABLE',
+    description: 'Comptable — Stats financières (Moniteur, Banques, plan comptable, journaux, exercices)',
+    permissions: ['stats-financieres', 'comptabilite'],
+  },
   { name: 'DISCIPLINE', description: 'Responsable discipline (présence, retards, pointage)' },
   { name: 'STAFF', description: 'Staff administratif générique (rétrocompatibilité)' },
   { name: 'TEACHER', description: 'Professeur' },
   { name: 'PARENT', description: 'Parent — rôle par défaut à la création de compte' },
+  {
+    name: 'PHOTOGRAPHER',
+    description: 'Photographe — accès à l’onglet Photographie (ajout de photos élèves uniquement)',
+    permissions: ['photography'],
+  },
 ];
 
 @Injectable()
@@ -30,7 +44,13 @@ export class RolesService {
     for (const r of DEFAULT_ROLES) {
       const exists = await this.rolesRepo.findOne({ where: { name: r.name } });
       if (!exists) {
-        await this.rolesRepo.save(this.rolesRepo.create(r));
+        await this.rolesRepo.save(
+          this.rolesRepo.create({
+            name: r.name,
+            description: r.description,
+            permissions: r.permissions ?? null,
+          }),
+        );
       }
     }
   }

@@ -124,27 +124,44 @@ export async function getMe(): Promise<SessionUser | null> {
 const GCS_PUBLIC_UPLOADS =
   'https://storage.googleapis.com/parallele-schoolmatrix-assets/schoolmatrix/uploads';
 
+function extractUploadFilename(stored: string): string | null {
+  const s = stored.trim();
+  if (!s) return null;
+  const rel = s.match(/^(?:\/)?uploads\/([^/?#]+)$/i);
+  if (rel) return rel[1];
+  const gcs = s.match(
+    /storage\.googleapis\.com\/[^/]+\/[^/]+\/uploads\/([^/?#]+)(?:\?|#|$)/i,
+  );
+  return gcs ? gcs[1] : null;
+}
+
 /**
- * URL d’image. Préfère l’URL publique GCS pour que Server et Remote
- * voient la même image (les chemins relatifs `uploads/…` ne vivent que sur un disque).
+ * URL d’image pour l’UI.
+ * Préfère l’API locale (`/uploads/…`) : en dev le fichier est sur disque ;
+ * en prod le proxy Nest sert le local ou GCS. Évite les aperçus cassés
+ * quand GCS pointe vers un objet inexistant en local.
  */
 export function getImageUrl(storedUrl: string | null | undefined): string | null {
   if (!storedUrl || !storedUrl.trim()) return null;
   const trimmed = storedUrl.trim();
+  const base = (apiBaseUrl || window.schoolmatrixDesktop?.apiBase || API_BASE || '').replace(
+    /\/$/,
+    '',
+  );
+  const filename = extractUploadFilename(trimmed);
+  if (filename && base) {
+    return `${base}/uploads/${encodeURIComponent(filename)}`;
+  }
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
-
-  const rel = trimmed.match(/^(?:\/)?uploads\/([^/?#]+)$/i);
-  if (rel) return `${GCS_PUBLIC_UPLOADS}/${rel[1]}`;
+  if (filename) return `${GCS_PUBLIC_UPLOADS}/${filename}`;
 
   const path = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
-  const base = (apiBaseUrl || window.schoolmatrixDesktop?.apiBase || '').replace(/\/$/, '');
   if (!base) return path;
   const uploadPath = path.startsWith('/uploads')
     ? path
     : path.startsWith('/api/')
       ? path.slice(4)
       : `/uploads${path.startsWith('/') ? path : `/${path}`}`;
-  // Fallback API : le backend redirige vers GCS si le fichier n’est pas local.
   return `${base}${uploadPath.startsWith('/') ? uploadPath : `/${uploadPath}`}`;
 }
 

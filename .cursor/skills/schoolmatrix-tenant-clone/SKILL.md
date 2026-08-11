@@ -4,8 +4,8 @@ description: >-
   Agent de duplication SchoolMatrix (agence) : crée un fork opérationnel isolé
   pour une nouvelle école cliente (nouveau dossier, repo GitHub, projet GCP,
   branding Electron Server/Remote) à partir du prototype Parallele. Use when the
-  user asks to cloner, dupliquer, nouveau client école, Shekinah, Yahweshamma,
-  nouveau SchoolMatrix, isolation GCP école, or forker Parallele SchoolMatrix.
+  user asks to cloner, dupliquer, nouveau client école, nouveau SchoolMatrix,
+  isolation GCP école, or forker Parallele SchoolMatrix.
 ---
 
 # Agent de duplication SchoolMatrix (modèle agence)
@@ -22,8 +22,8 @@ Positionnement : **personnalisation totale** — le logiciel doit coller à 100 
 
 ### Exception agence — clé IA partagée (obligatoire)
 
-**Une seule clé Gemini d’agence** pour **tous** les clients SchoolMatrix
-(Parallele, Shekinah, Yahweshamma, futurs forks).
+**Une seule clé Gemini d’agence** pour **tous** les forks SchoolMatrix
+(prototype + chaque nouveau client).
 
 - Variables : `GEMINI_API_KEY` (+ `GEMINI_MODEL` si défini) ; secours optionnel
   `OPENAI_API_KEY` si présent côté modèle.
@@ -37,10 +37,17 @@ Positionnement : **personnalisation totale** — le logiciel doit coller à 100 
 - Cette exception **ne s’applique pas** à `SYNC_API_KEY`, SA GCS, WIF, buckets,
   IP VM : ceux-là restent **isolés par client**.
 
+### Isolation étanche (obligatoire)
+
+- **Ce dépôt Parallele ne doit jamais contenir** le nom, le slug, l’IP, le
+  project ID, ni aucune trace d’un autre client / fork.
+- Les exemples ci-dessous sont **fictifs** (`acme`) — jamais le vrai nom d’un
+  client livré.
+- Chaque fork suit sa route sans « savoir » que les autres existent.
+
 - **Prototype / modèle source** : Parallele SchoolMatrix
   (`parallele-schoolmatrix`, repo `schoolmatrix`, dossier local type
   `Parallele-Schoolmatrix`).
-- **Clients suivants (exemples)** : Shekinah, Yahweshamma, etc.
 - Chaque duplication = une **enveloppe complète** (code + pipeline + cloud),
   puis **rebrand** + **rebranchement** vers les comptes du nouveau client.
 
@@ -90,13 +97,13 @@ Si une case manque : **demande**, ne invente pas.
 
 | # | Info | Exemple |
 |---|------|---------|
-| 1 | **Nom produit / école** | `SchoolMatrix Shekinah` |
-| 2 | **Slug technique** (minuscules, tirets) | `shekinah` |
-| 3 | **Dossier local cible** | `C:\Users\User\Documents\Shekinah-Schoolmatrix` |
+| 1 | **Nom produit / école** | `SchoolMatrix Acme` |
+| 2 | **Slug technique** (minuscules, tirets) | `acme` |
+| 3 | **Dossier local cible** | `C:\Users\User\Documents\Acme-Schoolmatrix` |
 | 4 | **Compte Google / GCP** (agence ou client) | email propriétaire |
-| 5 | **Project ID GCP** (pas le display name) | `shekinah-schoolmatrix` |
+| 5 | **Project ID GCP** (pas le display name) | `acme-schoolmatrix` |
 | 6 | **Confirmation billing** lié au projet | ID billing |
-| 7 | **URL repo GitHub** (vide) | `https://github.com/ORG/shekinah-schoolmatrix.git` |
+| 7 | **URL repo GitHub** (vide) | `https://github.com/ORG/acme-schoolmatrix.git` |
 | 8 | **Source à cloner** | chemin Parallele local OU remote Git |
 | 9 | **Logo client** (fichier PNG/SVG) | chemin local fourni |
 | 10 | **Région / zone GCP** (défaut OK) | `northamerica-northeast1` / `…-a` |
@@ -274,13 +281,27 @@ Copies hors repo (machine agence) :
 | `C:\Users\User\.cursor\skills\schoolmatrix-tenant-clone\` | Agent Cursor (portée globale) |
 | `C:\Users\User\Documents\script de developpement\schoolmatrix-tenant-clone\` | Toi (porte de main Documents) |
 
-Lors d’un premier essai réel (ex. Shekinah), l’agent **affine** scripts + skill
-d’après les frictions rencontrées jusqu’à tenir la cible ~10 minutes.
-**Toute amélioration du skill doit être recopiée aux trois emplacements** (repo + `.cursor/skills` + `script de developpement`).
+Après chaque clone réel, l’agent **affine** scripts + skill d’après les frictions
+(jusqu’à ~10 min). Notes opérationnelles nominatives (vrais clients) → **uniquement**
+dans `Documents\script de developpement\` — **jamais** dans ce dépôt Parallele.
+**Recopier le skill générique** aux emplacements agent (repo modèle + `.cursor/skills`
++ `script de developpement`) sans y coller de noms de clients réels.
+
+## Leçons opérationnelles (génériques — 1er clone)
+
+- Billing « compte 3 » = display name **Troisième Compte de facturation** → `01D27D-8BA5C8-721AC7`.
+- Créer config gcloud `schoolmatrix-<slug>` **avant** bootstrap ; `CLOUDSDK_CORE_DISABLE_PROMPTS=1` pour éviter les prompts API Compute.
+- Après bootstrap : remplacer l’IP placeholder par la vraie IP VM partout (`public-api`, `update-feed`, `defaults.env`, docs).
+- Corriger le **project number** dans `docs/GCP-*.md` (ne pas laisser celui du modèle).
+- `GEMINI_API_KEY` → Secret Manager du nouveau projet OK ; écriture `.env.prod` VM peut échouer sur invite SSH host key (Plink) — retry plus tard / IAP ; la clé reste en SM pour `prepare-server-stack`.
+- `SYNC_API_KEY` : **nouvelle** clé par client (pas celle de Parallele).
+- Logo provisoire = icônes Electron du modèle OK si le client n’a pas encore son logo.
+- Ouvrir le **nouveau** dossier Cursor du client — jamais continuer dans Parallele.
 
 ## Anti-patterns (erreurs graves)
 
 - Modifier Parallele « pour tester » le rebrand du client
+- Écrire le nom / slug / IP / project ID d’un client réel **dans** le dépôt Parallele
 - Réutiliser le bucket / la VM / le WIF Parallele
 - Lancer `ship-all` du dossier Parallele en croyant publier le client
 - Garder `34.95.43.132` dans le fork

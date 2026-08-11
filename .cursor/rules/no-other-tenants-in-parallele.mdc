@@ -1,0 +1,14 @@
+---
+description: Parallele ne doit contenir aucune trace d’un autre client SchoolMatrix
+alwaysApply: true
+---
+
+# Isolation étanche — dépôt Parallele uniquement
+
+Ce workspace est **Parallele SchoolMatrix** seulement.
+
+- Ne jamais écrire ici le nom, slug, project ID GCP, IP, repo GitHub, ni secrets
+  d’un autre fork / école cliente.
+- Les procédures de duplication restent **génériques** (exemples fictifs `acme`).
+- Notes nominatives clients → `Documents\script de developpement\` uniquement.
+- Ne pas « synchroniser » un skill client vers ce dépôt.

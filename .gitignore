@@ -54,6 +54,11 @@ apps/desktop/server-stack/credentials/*.json
 
 apps/desktop/dist/
 
+# Mobile Expo
+apps/mobile/.expo/
+apps/mobile/dist/
+apps/mobile/web-build/
+
 # Installateurs locaux (binaires)
 /release/
 _archive/**/release/

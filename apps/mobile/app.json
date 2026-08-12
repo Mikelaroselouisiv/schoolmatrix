@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "School Matrix",
+    "slug": "schoolmatrix-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/logo.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F5F3F1"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.schoolmatrix.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#F5F3F1",
+        "foregroundImage": "./assets/logo.png"
+      },
+      "package": "com.schoolmatrix.app"
+    },
+    "web": {
+      "favicon": "./assets/logo.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "School Matrix utilise vos photos pour les fiches élèves.",
+          "cameraPermission": "School Matrix utilise la caméra pour photographier les élèves."
+        }
+      ],
+      "@react-native-community/datetimepicker"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "REPLACE_AFTER_EAS_INIT"
+      }
+    }
+  }
+}

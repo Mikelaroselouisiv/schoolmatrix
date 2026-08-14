@@ -270,6 +270,7 @@ Le dépôt Parallele (modèle) doit exposer une feuille de route exécutable, ex
 | Artefact | Rôle |
 |----------|------|
 | `.cursor/skills/schoolmatrix-tenant-clone/SKILL.md` | Ce brief (agent) |
+| `.cursor/skills/schoolmatrix-cloud-db-seed/` | Saisie métier cloud (frais, salles) — recopier aussi vers `~\.cursor\skills\` |
 | `docs/AGENCY-TENANT-CLONE.md` | Doc humaine / checklist |
 | `infra/scripts/clone-schoolmatrix-tenant.ps1` | Orchestrateur (copie, remplacements, garde-fous) — à affiner au 1er essai |
 | Bootstrap / assert paramétrables | GCP idempotent par `<PROJECT_ID>` / `<slug>` |
@@ -279,6 +280,7 @@ Copies hors repo (machine agence) :
 | Chemin | Pour qui |
 |--------|----------|
 | `C:\Users\User\.cursor\skills\schoolmatrix-tenant-clone\` | Agent Cursor (portée globale) |
+| `C:\Users\User\.cursor\skills\schoolmatrix-cloud-db-seed\` | Saisie métier cloud (tous les forks école) |
 | `C:\Users\User\Documents\script de developpement\schoolmatrix-tenant-clone\` | Toi (porte de main Documents) |
 
 Après chaque clone réel, l’agent **affine** scripts + skill d’après les frictions

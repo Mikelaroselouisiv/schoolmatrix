@@ -114,8 +114,10 @@ export class StudentsService {
     const room = params.room_id?.trim()
       ? await this.resolveRoomForClass(params.class_id, params.room_id)
       : null;
+    const management_code = await this.allocateManagementCode();
     const student = this.studentRepo.create({
       order_number: nisu,
+      management_code,
       first_name: params.first_name.trim(),
       last_name: params.last_name.trim(),
       email: params.email?.trim(),
@@ -160,7 +162,7 @@ export class StudentsService {
     return this.findOne(saved.id);
   }
 
-  /** NISU unique global (Haïti) — refuse tout doublon. */
+  /** NISU unique global (Haïti) — refuse tout doublon. Usage interne / sensible. */
   private async assertNisuAvailable(nisu: string, excludeStudentId?: string): Promise<void> {
     const existing = await this.studentRepo.findOne({ where: { order_number: nisu } });
     if (existing && existing.id !== excludeStudentId) {
@@ -168,6 +170,18 @@ export class StudentsService {
         `Le NISU « ${nisu} » est déjà utilisé — un élève ne peut pas être inscrit deux fois.`,
       );
     }
+  }
+
+  /** Code de gestion public (badge, fiche) — distinct du NISU. */
+  private async allocateManagementCode(): Promise<string> {
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const seq = (await this.studentRepo.count()) + 1 + attempt;
+      const code = `CG-${String(seq).padStart(6, '0')}`;
+      const exists = await this.studentRepo.findOne({ where: { management_code: code } });
+      if (!exists) return code;
+    }
+    const suffix = Date.now().toString(36).toUpperCase().slice(-6);
+    return `CG-${suffix}`;
   }
 
   async update(
@@ -203,6 +217,9 @@ export class StudentsService {
     });
     if (!student) {
       throw new NotFoundException('Student not found');
+    }
+    if (!student.management_code?.trim()) {
+      student.management_code = await this.allocateManagementCode();
     }
     if (params.order_number !== undefined) {
       const nisu = normalizeNisu(params.order_number);

@@ -10,6 +10,7 @@ import { BanksAndBankAccounts1739000000007 } from './1739000000007-BanksAndBankA
 import { TeacherClassSubjectRoom1739000000008 } from './1739000000008-TeacherClassSubjectRoom';
 import { StudentPhoto1739000000009 } from './1739000000009-StudentPhoto';
 import { NormalizeStudentNisuUnique1739000000010 } from './1739000000010-NormalizeStudentNisuUnique';
+import { StudentManagementCode1739000000011 } from './1739000000011-StudentManagementCode';
 
 /** Liste des migrations (ordre d’exécution). Utilisée par l’app au démarrage (migrationsRun). */
 export const migrations = [
@@ -25,4 +26,5 @@ export const migrations = [
   TeacherClassSubjectRoom1739000000008,
   StudentPhoto1739000000009,
   NormalizeStudentNisuUnique1739000000010,
+  StudentManagementCode1739000000011,
 ];

@@ -81,9 +81,16 @@ export class Student {
   @JoinColumn({ name: 'room_id' })
   room: Room | null;
 
-  /** NISU — unique en Haïti (jamais deux élèves avec le même code). */
+  /** NISU — identifiant sensible (Haïti). Usage interne / admin uniquement — pas sur badge ni fiche publique. */
   @Column({ type: 'varchar', length: 50, unique: true, nullable: true })
   order_number: string | null;
+
+  /**
+   * Code de gestion public (badge, fiche élève, listes visibles).
+   * Généré automatiquement à l’inscription — distinct du NISU.
+   */
+  @Column({ type: 'varchar', length: 50, unique: true, nullable: true })
+  management_code: string | null;
 
   @Column({ default: true })
   active: boolean;

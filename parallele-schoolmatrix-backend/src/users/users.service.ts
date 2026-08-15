@@ -198,6 +198,7 @@ export class UsersService {
     const user = await this.usersRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
     await this.usersRepo.remove(user);
+    this.syncKick.kick('user-delete');
     return { deleted: true };
   }
 

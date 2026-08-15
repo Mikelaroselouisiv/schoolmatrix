@@ -26,6 +26,7 @@ import { Attendance } from '../discipline/attendance.entity';
 import { FileMetadata } from '../file-metadata/file-metadata.entity';
 import { ClassSubject } from '../classes/class-subject.entity';
 import { User } from '../users/user.entity';
+import { SyncTombstone } from './sync-tombstone.entity';
 
 export type SyncEntityName =
   | 'SchoolProfile'
@@ -54,7 +55,9 @@ export type SyncEntityName =
   | 'StudentClassAssignment'
   | 'ClassDecisionThreshold'
   | 'Attendance'
-  | 'FileMetadata';
+  | 'FileMetadata'
+  /** Toujours en dernier : applique les suppressions après les upserts. */
+  | 'SyncTombstone';
 
 export type SyncEntityDef = {
   name: SyncEntityName;
@@ -94,6 +97,8 @@ export const SYNC_ENTITY_DEFS: SyncEntityDef[] = [
   { name: 'FileMetadata', target: FileMetadata, timeField: 'updated_at' },
   { name: 'Attendance', target: Attendance, timeField: 'created_at' },
   { name: 'PaymentTransaction', target: PaymentTransaction, timeField: 'created_at' },
+  /** Dernier : delete LWW après éventuelle réinjection d’une ligne encore présente côté source. */
+  { name: 'SyncTombstone', target: SyncTombstone, timeField: 'updated_at' },
 ];
 
 /** Insert-only : jamais d’écrasement si uuid déjà présent. */

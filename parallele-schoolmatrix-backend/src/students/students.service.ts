@@ -9,6 +9,8 @@ import { ClassesService } from '../classes/classes.service';
 import { RoomsService } from '../rooms/rooms.service';
 import { StudentAiImportService } from './student-ai-import.service';
 import { isPostgresUniqueViolation, normalizeNisu } from './student-nisu';
+import { SyncService } from '../sync/sync.service';
+import { SyncKickService } from '../sync/sync-kick.service';
 
 export type ImportResult = {
   created: number;
@@ -26,6 +28,8 @@ export class StudentsService {
     private readonly classesService: ClassesService,
     private readonly roomsService: RoomsService,
     private readonly studentAiImport: StudentAiImportService,
+    private readonly syncService: SyncService,
+    private readonly syncKick: SyncKickService,
   ) {}
 
   async findAll(filters?: {
@@ -323,7 +327,10 @@ export class StudentsService {
     if (!student) {
       throw new NotFoundException('Student not found');
     }
+    // Tombstone explicite avant hard delete (subscriber ORM en filet de sécurité).
+    await this.syncService.markDeleted('Student', id, undefined, { kick: false });
     await this.studentRepo.remove(student);
+    this.syncKick.kick('student-delete');
   }
 
   /** Import en masse depuis un CSV (UTF-8, séparateur ;). Première ligne = en-têtes. */

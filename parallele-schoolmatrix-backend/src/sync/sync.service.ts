@@ -1,18 +1,23 @@
 /**
  * Sync SchoolMatrix — protocole état (uuid + curseur temporel composite).
  * Conflits : last-write-wins (updatedAt) ; à horodatage égal, le local gagne.
+ * Suppressions : sync_tombstone (LWW deleted_at vs updated_at cible).
  * SchoolProfile est un singleton (dédup + adoption UUID gagnant).
  */
 import {
   BadRequestException,
   Injectable,
   OnModuleInit,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityMetadata, In, Repository } from 'typeorm';
 import { SyncNode } from './sync-node.entity';
 import { SyncEvent } from './sync-event.entity';
+import { SyncTombstone } from './sync-tombstone.entity';
+import { SyncKickService } from './sync-kick.service';
 import {
   APPEND_ONLY_ENTITIES,
   SYNC_ENTITY_MAP,
@@ -31,6 +36,8 @@ export type SyncWireRecord = {
 @Injectable()
 export class SyncService implements OnModuleInit {
   private nodeId: string = 'LOCAL';
+  /** Évite les boucles subscriber pendant apply tombstone distant. */
+  private applyingRemoteTombstone = 0;
 
   constructor(
     private readonly configService: ConfigService,
@@ -39,6 +46,10 @@ export class SyncService implements OnModuleInit {
     private readonly syncNodeRepo: Repository<SyncNode>,
     @InjectRepository(SyncEvent)
     private readonly syncEventRepo: Repository<SyncEvent>,
+    @InjectRepository(SyncTombstone)
+    private readonly tombstoneRepo: Repository<SyncTombstone>,
+    @Inject(forwardRef(() => SyncKickService))
+    private readonly syncKick: SyncKickService,
   ) {}
 
   async onModuleInit() {
@@ -55,6 +66,10 @@ export class SyncService implements OnModuleInit {
 
   listEntities(): SyncEntityName[] {
     return listSyncEntityNames();
+  }
+
+  isApplyingRemoteTombstone(): boolean {
+    return this.applyingRemoteTombstone > 0;
   }
 
   private async ensureNodeRegistered(): Promise<void> {
@@ -86,6 +101,43 @@ export class SyncService implements OnModuleInit {
         payload: payload ?? null,
       }),
     );
+  }
+
+  /**
+   * Enregistre / rafraîchit un tombstone puis kick l’agent.
+   * Appelé avant/après hard delete métier (ou via subscriber ORM).
+   */
+  async markDeleted(
+    entityName: SyncEntityName,
+    entityId: string | number,
+    deletedAt?: Date,
+    opts?: { kick?: boolean },
+  ): Promise<void> {
+    if (entityName === 'SyncTombstone' || entityName === 'SchoolProfile') {
+      return;
+    }
+    const when = deletedAt ?? new Date();
+    const eid = String(entityId);
+    let row = await this.tombstoneRepo.findOne({
+      where: { entity_name: entityName, entity_id: eid },
+    });
+    if (row) {
+      if (this.parseTime(row.deleted_at).getTime() >= when.getTime()) {
+        if (opts?.kick !== false) this.syncKick.kick(`tombstone:${entityName}`);
+        return;
+      }
+      row.deleted_at = when;
+      row.updated_at = when;
+    } else {
+      row = this.tombstoneRepo.create({
+        entity_name: entityName,
+        entity_id: eid,
+        deleted_at: when,
+        updated_at: when,
+      });
+    }
+    await this.tombstoneRepo.save(row);
+    if (opts?.kick !== false) this.syncKick.kick(`tombstone:${entityName}`);
   }
 
   private isLocalTruthNode(): boolean {
@@ -175,10 +227,14 @@ export class SyncService implements OnModuleInit {
       const cursorTs =
         cursorTsById.get(String(full.id)) ||
         this.toIso(full[timeProp] ?? row[timeProp]);
+      const deletedAt =
+        entityName === 'SyncTombstone'
+          ? this.toIso(full.deleted_at ?? cursorTs)
+          : null;
       return {
         uuid: String(full.id),
         updatedAt: cursorTs,
-        deletedAt: null,
+        deletedAt,
         data: this.toWireData(full, meta),
       };
     });
@@ -239,7 +295,7 @@ export class SyncService implements OnModuleInit {
     const meta = repo.metadata;
     const results: Array<{
       uuid: string;
-      action: 'created' | 'updated' | 'skipped' | 'error';
+      action: 'created' | 'updated' | 'skipped' | 'deleted' | 'error';
       error?: string;
     }> = [];
 
@@ -250,23 +306,33 @@ export class SyncService implements OnModuleInit {
         continue;
       }
       try {
-        const action =
-          def.name === 'SchoolProfile'
-            ? await this.applySchoolProfileSingleton(
-                repo,
-                meta,
-                def.timeField,
-                record,
-                body.sourceNodeId,
-              )
-            : await this.applyOne(
-                def.name,
-                repo,
-                meta,
-                def.timeField,
-                record,
-                body.sourceNodeId,
-              );
+        let action: 'created' | 'updated' | 'skipped' | 'deleted';
+        if (def.name === 'SchoolProfile') {
+          action = await this.applySchoolProfileSingleton(
+            repo,
+            meta,
+            def.timeField,
+            record,
+            body.sourceNodeId,
+          );
+        } else if (def.name === 'SyncTombstone') {
+          action = await this.applyTombstone(
+            repo,
+            meta,
+            def.timeField,
+            record,
+            body.sourceNodeId,
+          );
+        } else {
+          action = await this.applyOne(
+            def.name,
+            repo,
+            meta,
+            def.timeField,
+            record,
+            body.sourceNodeId,
+          );
+        }
         results.push({ uuid, action });
       } catch (err: any) {
         results.push({
@@ -278,7 +344,10 @@ export class SyncService implements OnModuleInit {
     }
 
     const applied = results.filter(
-      (r) => r.action === 'created' || r.action === 'updated',
+      (r) =>
+        r.action === 'created' ||
+        r.action === 'updated' ||
+        r.action === 'deleted',
     ).length;
     const skipped = results.filter((r) => r.action === 'skipped').length;
     const errors = results.filter((r) => r.action === 'error').length;
@@ -333,7 +402,6 @@ export class SyncService implements OnModuleInit {
         out[f] = existing[f];
       }
     }
-    // Propriétés absentes du filaire cloud (ancienne version) → garder le local
     for (const f of fields) {
       if (
         !Object.prototype.hasOwnProperty.call(out, f) &&
@@ -367,10 +435,6 @@ export class SyncService implements OnModuleInit {
     );
   }
 
-  /**
-   * SchoolProfile = une seule ligne. LWW adopte l’UUID gagnant et
-   * supprime les doublons locaux.
-   */
   private async applySchoolProfileSingleton(
     repo: Repository<any>,
     meta: EntityMetadata,
@@ -412,14 +476,12 @@ export class SyncService implements OnModuleInit {
       return 'skipped';
     }
 
-    // Fusionner le contact local avant d’appliquer le filaire cloud (souvent null).
     const merged = this.mergeSchoolProfileData(
       newestLocal as Record<string, unknown>,
       record.data,
     );
 
     const existed = all.some((p) => String(p.id) === keepId);
-    // Réassigner les signatures avant suppression (évite CASCADE wipe).
     try {
       const localIds = all.map((p) => String(p.id));
       await this.dataSource.query(
@@ -454,6 +516,116 @@ export class SyncService implements OnModuleInit {
       .execute();
   }
 
+  private async applyTombstone(
+    repo: Repository<any>,
+    meta: EntityMetadata,
+    timeField: 'updated_at' | 'created_at',
+    record: {
+      uuid: string;
+      updatedAt?: string;
+      deletedAt?: string | null;
+      data: Record<string, unknown>;
+    },
+    sourceNodeId?: string,
+  ): Promise<'created' | 'updated' | 'skipped' | 'deleted'> {
+    const entityName = String(
+      record.data?.entity_name || '',
+    ) as SyncEntityName;
+    const entityId = String(record.data?.entity_id || '');
+    if (!entityName || !entityId || entityName === 'SyncTombstone') {
+      throw new Error('tombstone invalide (entity_name / entity_id)');
+    }
+
+    const deletedAtRaw =
+      record.data?.deleted_at ?? record.deletedAt ?? record.updatedAt;
+    const deletedAt = this.parseTime(deletedAtRaw);
+
+    let existing = await repo.findOne({
+      where: { entity_name: entityName, entity_id: entityId } as any,
+    });
+    if (!existing) {
+      existing = await repo.findOne({
+        where: { id: record.uuid } as any,
+      });
+    }
+
+    if (existing) {
+      const existingAt = this.parseTime(
+        existing.deleted_at ?? existing[timeField],
+      );
+      if (!this.shouldApply(deletedAt, existingAt, sourceNodeId)) {
+        await this.deleteTargetIfStale(
+          entityName,
+          entityId,
+          existingAt,
+          sourceNodeId,
+        );
+        return 'skipped';
+      }
+    }
+
+    const payload = {
+      entity_name: entityName,
+      entity_id: entityId,
+      deleted_at: deletedAt.toISOString(),
+      updated_at: deletedAt.toISOString(),
+      created_at: existing?.created_at
+        ? this.toIso(existing.created_at)
+        : deletedAt.toISOString(),
+    };
+
+    const tombId = existing ? existing.id : record.uuid;
+    await this.persist(repo, meta, tombId, payload, record.updatedAt, timeField);
+    await this.dataSource.query(
+      `UPDATE sync_tombstone
+       SET deleted_at = $2::timestamptz,
+           updated_at = $2::timestamptz
+       WHERE id = $1::uuid`,
+      [tombId, deletedAt.toISOString()],
+    );
+
+    const removed = await this.deleteTargetIfStale(
+      entityName,
+      entityId,
+      deletedAt,
+      sourceNodeId,
+    );
+    return removed ? 'deleted' : existing ? 'updated' : 'created';
+  }
+
+  private async deleteTargetIfStale(
+    entityName: SyncEntityName,
+    entityId: string,
+    deletedAt: Date,
+    sourceNodeId?: string,
+  ): Promise<boolean> {
+    const def = SYNC_ENTITY_MAP.get(entityName);
+    if (!def || entityName === 'SyncTombstone') return false;
+    const targetRepo = this.dataSource.getRepository(def.target);
+    const meta = targetRepo.metadata;
+    let primaryId: string | number;
+    try {
+      primaryId = this.coercePrimaryId(meta, entityId);
+    } catch {
+      return false;
+    }
+    const existing = await targetRepo.findOne({
+      where: { id: primaryId } as any,
+    });
+    if (!existing) return false;
+    const existingAt = this.parseTime(existing[def.timeField]);
+    // Tombstone explicite : delete si deleted_at >= updated_at cible.
+    if (deletedAt.getTime() < existingAt.getTime()) return false;
+
+    this.applyingRemoteTombstone += 1;
+    try {
+      await targetRepo.delete(primaryId as any);
+    } finally {
+      this.applyingRemoteTombstone -= 1;
+    }
+    return true;
+  }
+
   private async applyOne(
     entityName: SyncEntityName,
     repo: Repository<any>,
@@ -466,12 +638,36 @@ export class SyncService implements OnModuleInit {
       data: Record<string, unknown>;
     },
     sourceNodeId?: string,
-  ): Promise<'created' | 'updated' | 'skipped'> {
+  ): Promise<'created' | 'updated' | 'skipped' | 'deleted'> {
     const primaryId = this.coercePrimaryId(meta, record.uuid);
     const existing = await repo.findOne({
       where: { id: primaryId } as any,
       loadRelationIds: true,
     });
+
+    const tomb = await this.tombstoneRepo.findOne({
+      where: {
+        entity_name: entityName,
+        entity_id: String(record.uuid),
+      },
+    });
+    if (tomb) {
+      const tombAt = this.parseTime(tomb.deleted_at);
+      const incomingAt = this.parseTime(record.updatedAt);
+      if (tombAt.getTime() >= incomingAt.getTime()) {
+        if (existing) {
+          this.applyingRemoteTombstone += 1;
+          try {
+            await repo.delete(primaryId as any);
+          } finally {
+            this.applyingRemoteTombstone -= 1;
+          }
+          return 'deleted';
+        }
+        return 'skipped';
+      }
+      await this.tombstoneRepo.delete({ id: tomb.id });
+    }
 
     if (APPEND_ONLY_ENTITIES.has(entityName)) {
       if (existing) return 'skipped';
@@ -524,7 +720,6 @@ export class SyncService implements OnModuleInit {
     return 'updated';
   }
 
-  /** PK int (users) ou uuid string — le filaire est toujours string. */
   private coercePrimaryId(meta: EntityMetadata, uuid: string): string | number {
     const col = meta.primaryColumns[0];
     const t = col?.type;
@@ -553,10 +748,6 @@ export class SyncService implements OnModuleInit {
     return uuid;
   }
 
-  /**
-   * Last-write-wins sur updatedAt.
-   * À égalité : le nœud local conserve ; le cloud accepte le local.
-   */
   private shouldApply(
     incomingAt: Date,
     existingAt: Date,
@@ -588,7 +779,10 @@ export class SyncService implements OnModuleInit {
     return d.toISOString();
   }
 
-  private toWireData(entity: any, meta: EntityMetadata): Record<string, unknown> {
+  private toWireData(
+    entity: any,
+    meta: EntityMetadata,
+  ): Record<string, unknown> {
     const data: Record<string, unknown> = {};
     for (const col of meta.columns) {
       if (col.relationMetadata) continue;
@@ -648,7 +842,6 @@ export class SyncService implements OnModuleInit {
     }
 
     const payload: Record<string, unknown> = { id: primaryId };
-    // Chemins uploads/… → URL GCS publique (affichage Server ↔ Remote).
     normalizeMediaFieldsInPlace(incoming);
 
     for (const col of meta.columns) {
@@ -682,14 +875,14 @@ export class SyncService implements OnModuleInit {
     await repo.save(entity);
 
     if (typeof primaryId === 'number') {
-      const table = meta.tableName.replace(/"/g, '');
+      const tableName = meta.tableName.replace(/"/g, '');
       const schema = (meta.schema || 'public').replace(/"/g, '');
       await this.dataSource.query(
         `SELECT setval(
            pg_get_serial_sequence($1, 'id'),
-           (SELECT COALESCE(MAX(id), 1) FROM "${schema}"."${table}")
+           (SELECT COALESCE(MAX(id), 1) FROM "${schema}"."${tableName}")
          )`,
-        [`${schema}.${table}`],
+        [`${schema}.${tableName}`],
       );
     }
   }

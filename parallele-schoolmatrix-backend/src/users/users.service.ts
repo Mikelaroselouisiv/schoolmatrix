@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
@@ -7,6 +7,8 @@ import { UserLinkedStudent } from './user-linked-student.entity';
 import { Role } from '../roles/role.entity';
 import { Student } from '../students/student.entity';
 import { SyncKickService } from '../sync/sync-kick.service';
+import { DEFAULT_STAFF_EMAIL_DOMAIN, DEFAULT_STAFF_PASSWORD } from './staff-account.constants';
+import { buildStaffEmail } from './staff-email';
 
 @Injectable()
 export class UsersService {
@@ -48,6 +50,14 @@ export class UsersService {
     return this.usersRepo.find({ order: { id: 'ASC' } });
   }
 
+  async findParents(): Promise<User[]> {
+    return this.usersRepo
+      .createQueryBuilder('u')
+      .leftJoinAndSelect('u.role', 'r')
+      .where('r.name = :role', { role: 'PARENT' })
+      .getMany();
+  }
+
   async findOne(id: number): Promise<User> {
     const user = await this.usersRepo.findOne({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
@@ -67,6 +77,7 @@ export class UsersService {
     cover_photo_url?: string;
     order_number?: string;
     linked_student_ids?: string[];
+    must_change_password?: boolean;
   }): Promise<User> {
     const email = params.email.toLowerCase().trim();
     const first_name = params.first_name?.trim() || '—';
@@ -94,20 +105,38 @@ export class UsersService {
       password_hash,
       role,
       active: true,
+      must_change_password: params.must_change_password === true,
     });
     const saved = await this.usersRepo.save(user);
     if (params.linked_student_ids?.length) {
-      const uniqueIds = [...new Set(params.linked_student_ids.filter(Boolean))];
-      for (const studentId of uniqueIds) {
-        const student = await this.studentRepo.findOne({ where: { id: studentId } });
-        if (student) {
-          const link = this.linkedStudentRepo.create({ user: { id: saved.id } as User, student: { id: studentId } as Student });
-          await this.linkedStudentRepo.save(link);
-        }
+      for (const studentId of [...new Set(params.linked_student_ids.filter(Boolean))]) {
+        await this.linkStudent(saved.id, studentId, false);
       }
     }
     this.syncKick.kick('user-create');
     return saved;
+  }
+
+  /**
+   * Lien officiel compte ↔ élève (`user_linked_student`) — même table que
+   * l’écran Utilisateurs (« Dossiers élèves liés » / n° ministère).
+   * Ajoute sans retirer les autres enfants déjà liés.
+   */
+  async linkStudent(userId: number, studentId: string, kick = true): Promise<boolean> {
+    const student = await this.studentRepo.findOne({ where: { id: studentId } });
+    if (!student) return false;
+    const existing = await this.linkedStudentRepo.findOne({
+      where: { user: { id: userId }, student: { id: studentId } },
+    });
+    if (existing) return false;
+    await this.linkedStudentRepo.save(
+      this.linkedStudentRepo.create({
+        user: { id: userId } as User,
+        student: { id: studentId } as Student,
+      }),
+    );
+    if (kick) this.syncKick.kick('user-link-student');
+    return true;
   }
 
   async setUserRole(userId: number, roleName: string): Promise<User> {
@@ -157,13 +186,8 @@ export class UsersService {
     }
     if (params.linked_student_ids !== undefined) {
       await this.linkedStudentRepo.delete({ user: { id: userId } });
-      const uniqueIds = [...new Set(params.linked_student_ids.filter(Boolean))];
-      for (const studentId of uniqueIds) {
-        const student = await this.studentRepo.findOne({ where: { id: studentId } });
-        if (student) {
-          const link = this.linkedStudentRepo.create({ user: { id: userId } as User, student: { id: studentId } as Student });
-          await this.linkedStudentRepo.save(link);
-        }
+      for (const studentId of [...new Set(params.linked_student_ids.filter(Boolean))]) {
+        await this.linkStudent(userId, studentId, false);
       }
     }
     const saved = await this.usersRepo.save(user);
@@ -212,8 +236,159 @@ export class UsersService {
     const pwd = newPassword?.trim() ?? '';
     if (pwd.length < 6) throw new BadRequestException('Le mot de passe doit faire au moins 6 caractères');
     user.password_hash = await bcrypt.hash(pwd, 10);
+    user.must_change_password = true;
     const saved = await this.usersRepo.save(user);
     this.syncKick.kick('user-password');
     return saved;
+  }
+
+  private phoneDigits(phone: string): string {
+    return phone.replace(/\D/g, '');
+  }
+
+  async findByPhoneDigits(digits: string): Promise<User | null> {
+    if (digits.length < 6) return null;
+    return (
+      (await this.usersRepo
+        .createQueryBuilder('u')
+        .where("REGEXP_REPLACE(COALESCE(u.phone, ''), '[^0-9]', '', 'g') = :digits", { digits })
+        .getOne()) ?? null
+    );
+  }
+
+  async assertEmailAvailable(email: string, exceptUserId?: number): Promise<void> {
+    const exists = await this.usersRepo.findOne({ where: { email } });
+    if (exists && exists.id !== exceptUserId) {
+      throw new BadRequestException('Cet e-mail est déjà utilisé');
+    }
+  }
+
+  async assertPhoneAvailable(phone: string, exceptUserId?: number): Promise<void> {
+    const digits = this.phoneDigits(phone);
+    if (digits.length < 6) return;
+    const existing = await this.findByPhoneDigits(digits);
+    if (existing && existing.id !== exceptUserId) {
+      throw new BadRequestException('Ce numéro de téléphone est déjà utilisé');
+    }
+  }
+
+  async nextAvailableStaffEmail(lastName: string, firstName: string, domain: string): Promise<string> {
+    const base = buildStaffEmail(lastName, firstName, domain);
+    const at = base.indexOf('@');
+    const local = base.slice(0, at);
+    const host = base.slice(at);
+    let candidate = base;
+    let n = 1;
+    while (await this.usersRepo.findOne({ where: { email: candidate } })) {
+      n += 1;
+      candidate = `${local}${n}${host}`;
+    }
+    return candidate;
+  }
+
+  async updateOwnProfile(
+    userId: number,
+    params: Partial<{ first_name: string; last_name: string; email: string; phone: string; profile_photo_url: string }>,
+  ): Promise<User> {
+    const user = await this.findOne(userId);
+    if (params.first_name !== undefined) {
+      const v = params.first_name.trim();
+      if (!v) throw new BadRequestException('Le prénom est requis');
+      user.first_name = v;
+    }
+    if (params.last_name !== undefined) {
+      const v = params.last_name.trim();
+      if (!v) throw new BadRequestException('Le nom est requis');
+      user.last_name = v;
+    }
+    if (params.email !== undefined) {
+      const email = params.email.toLowerCase().trim();
+      if (!email.includes('@')) throw new BadRequestException('E-mail invalide');
+      await this.assertEmailAvailable(email, userId);
+      user.email = email;
+    }
+    if (params.phone !== undefined) {
+      const phone = params.phone.trim();
+      if (!phone) throw new BadRequestException('Le téléphone est requis');
+      await this.assertPhoneAvailable(phone, userId);
+      user.phone = phone;
+    }
+    if (params.profile_photo_url !== undefined) {
+      user.profile_photo_url = params.profile_photo_url.trim() || null;
+    }
+    const saved = await this.usersRepo.save(user);
+    this.syncKick.kick('user-self-profile');
+    return saved;
+  }
+
+  async changeOwnPassword(userId: number, currentPassword: string, newPassword: string): Promise<User> {
+    const user = await this.findOne(userId);
+    const current = (currentPassword ?? '').trim();
+    const next = (newPassword ?? '').trim();
+    if (!(await this.validatePassword(user, current))) {
+      throw new UnauthorizedException('Mot de passe actuel incorrect');
+    }
+    if (next.length < 6) {
+      throw new BadRequestException('Le nouveau mot de passe doit faire au moins 6 caractères');
+    }
+    if (next === current) {
+      throw new BadRequestException('Le nouveau mot de passe doit être différent de l’actuel');
+    }
+    if (next === DEFAULT_STAFF_PASSWORD) {
+      throw new BadRequestException('Choisissez un mot de passe personnel, pas le mot de passe par défaut');
+    }
+    user.password_hash = await bcrypt.hash(next, 10);
+    user.must_change_password = false;
+    const saved = await this.usersRepo.save(user);
+    this.syncKick.kick('user-self-password');
+    return saved;
+  }
+
+  async provisionTeachers(params: {
+    teachers: { last_name: string; first_name: string; phone: string }[];
+    email_domain?: string;
+    password?: string;
+  }): Promise<{
+    created: { id: number; last_name: string; first_name: string; email: string; phone: string }[];
+    skipped: { last_name: string; first_name: string; phone: string; reason: string }[];
+  }> {
+    const domain = (params.email_domain ?? DEFAULT_STAFF_EMAIL_DOMAIN).replace(/^@/, '').trim();
+    const password = (params.password ?? DEFAULT_STAFF_PASSWORD).trim();
+    const created: { id: number; last_name: string; first_name: string; email: string; phone: string }[] = [];
+    const skipped: { last_name: string; first_name: string; phone: string; reason: string }[] = [];
+
+    for (const raw of params.teachers) {
+      const last_name = (raw.last_name ?? '').trim();
+      const first_name = (raw.first_name ?? '').trim();
+      const phone = (raw.phone ?? '').trim();
+      if (!last_name || !first_name || !phone) {
+        skipped.push({ last_name, first_name, phone, reason: 'nom, prénom et téléphone requis' });
+        continue;
+      }
+      const digits = this.phoneDigits(phone);
+      const existingPhone = await this.findByPhoneDigits(digits);
+      if (existingPhone) {
+        skipped.push({ last_name, first_name, phone, reason: `téléphone déjà utilisé (${existingPhone.email})` });
+        continue;
+      }
+      const email = await this.nextAvailableStaffEmail(last_name, first_name, domain);
+      const user = await this.createUser({
+        last_name,
+        first_name,
+        phone,
+        email,
+        password,
+        roleName: 'TEACHER',
+        must_change_password: true,
+      });
+      created.push({
+        id: user.id,
+        last_name: user.last_name ?? last_name,
+        first_name: user.first_name ?? first_name,
+        email: user.email,
+        phone: user.phone ?? phone,
+      });
+    }
+    return { created, skipped };
   }
 }

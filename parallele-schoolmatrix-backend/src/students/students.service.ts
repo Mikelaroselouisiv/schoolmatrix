@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Student } from './student.entity';
@@ -11,6 +11,7 @@ import { StudentAiImportService } from './student-ai-import.service';
 import { isPostgresUniqueViolation, normalizeNisu } from './student-nisu';
 import { SyncService } from '../sync/sync.service';
 import { SyncKickService } from '../sync/sync-kick.service';
+import { ParentAccountService } from '../users/parent-account.service';
 
 export type ImportResult = {
   created: number;
@@ -20,6 +21,8 @@ export type ImportResult = {
 
 @Injectable()
 export class StudentsService {
+  private readonly logger = new Logger(StudentsService.name);
+
   constructor(
     @InjectRepository(Student)
     private readonly studentRepo: Repository<Student>,
@@ -30,6 +33,7 @@ export class StudentsService {
     private readonly studentAiImport: StudentAiImportService,
     private readonly syncService: SyncService,
     private readonly syncKick: SyncKickService,
+    private readonly parentAccounts: ParentAccountService,
   ) {}
 
   async findAll(filters?: {
@@ -163,7 +167,19 @@ export class StudentsService {
         params.class_id,
       );
     }
-    return this.findOne(saved.id);
+    const created = await this.findOne(saved.id);
+    await this.attachGuardianQuietly(created);
+    return created;
+  }
+
+  private async attachGuardianQuietly(student: Student): Promise<void> {
+    try {
+      await this.parentAccounts.ensureForStudent(student);
+    } catch (err: any) {
+      this.logger.warn(
+        `Compte parent non provisionné pour ${student.last_name} ${student.first_name}: ${err?.message || err}`,
+      );
+    }
   }
 
   /** NISU unique global (Haïti) — refuse tout doublon. Usage interne / sensible. */
@@ -310,7 +326,9 @@ export class StudentsService {
       }
       throw err;
     }
-    return this.findOne(id);
+    const updated = await this.findOne(id);
+    await this.attachGuardianQuietly(updated);
+    return updated;
   }
 
   async findByOrderNumber(orderNumber: string): Promise<Student | null> {

@@ -10,6 +10,7 @@ import { StudentAiImportService } from './student-ai-import.service';
 import { FormationClasseModule } from '../formation-classe/formation-classe.module';
 import { ClassesModule } from '../classes/classes.module';
 import { RoomsModule } from '../rooms/rooms.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { RoomsModule } from '../rooms/rooms.module';
     forwardRef(() => FormationClasseModule),
     ClassesModule,
     RoomsModule,
+    UsersModule,
   ],
   controllers: [StudentsController, StudentPhotosController],
   providers: [StudentsService, StudentPhotosService, StudentAiImportService],

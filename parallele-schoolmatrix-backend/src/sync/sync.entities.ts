@@ -26,6 +26,8 @@ import { Attendance } from '../discipline/attendance.entity';
 import { FileMetadata } from '../file-metadata/file-metadata.entity';
 import { ClassSubject } from '../classes/class-subject.entity';
 import { User } from '../users/user.entity';
+import { UserLinkedStudent } from '../users/user-linked-student.entity';
+import { StudentParent } from '../student-parents/student-parent.entity';
 import { SyncTombstone } from './sync-tombstone.entity';
 
 export type SyncEntityName =
@@ -39,6 +41,8 @@ export type SyncEntityName =
   | 'Class'
   | 'ClassSubject'
   | 'Student'
+  | 'UserLinkedStudent'
+  | 'StudentParent'
   | 'StudentPhoto'
   | 'FeeService'
   | 'ClassFee'
@@ -80,6 +84,8 @@ export const SYNC_ENTITY_DEFS: SyncEntityDef[] = [
   { name: 'Room', target: Room, timeField: 'updated_at' },
   { name: 'ClassSubject', target: ClassSubject, timeField: 'created_at' },
   { name: 'Student', target: Student, timeField: 'updated_at' },
+  { name: 'UserLinkedStudent', target: UserLinkedStudent, timeField: 'created_at' },
+  { name: 'StudentParent', target: StudentParent, timeField: 'created_at' },
   { name: 'StudentPhoto', target: StudentPhoto, timeField: 'updated_at' },
   { name: 'FeeService', target: FeeService, timeField: 'updated_at' },
   { name: 'ClassFee', target: ClassFee, timeField: 'updated_at' },

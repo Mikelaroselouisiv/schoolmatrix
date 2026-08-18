@@ -12,6 +12,7 @@ import { StudentPhoto1739000000009 } from './1739000000009-StudentPhoto';
 import { NormalizeStudentNisuUnique1739000000010 } from './1739000000010-NormalizeStudentNisuUnique';
 import { StudentManagementCode1739000000011 } from './1739000000011-StudentManagementCode';
 import { SyncTombstone1739000000012 } from './1739000000012-SyncTombstone';
+import { UserMustChangePassword1739000000013 } from './1739000000013-UserMustChangePassword';
 
 /** Liste des migrations (ordre d’exécution). Utilisée par l’app au démarrage (migrationsRun). */
 export const migrations = [
@@ -29,4 +30,5 @@ export const migrations = [
   NormalizeStudentNisuUnique1739000000010,
   StudentManagementCode1739000000011,
   SyncTombstone1739000000012,
+  UserMustChangePassword1739000000013,
 ];

@@ -1,12 +1,25 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards, Req, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards, Req, ParseIntPipe, ForbiddenException, BadRequestException, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { User } from './user.entity';
+import { ROLES_USER_ADMIN } from '../roles/roles.constants';
+import { UploadsService } from '../uploads/uploads.service';
+
+const PROFILE_PHOTO_MIMES = [
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+];
 
 @Controller('users')
 @UseGuards(JwtAuthGuard)
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly uploadsService: UploadsService,
+  ) {}
 
   private toUserResponse(u: User, linkedStudentIds?: string[]) {
     const base = {
@@ -23,6 +36,7 @@ export class UsersController {
       role: u.role?.name,
       role_permissions: u.role?.permissions ?? [],
       active: u.active,
+      must_change_password: !!u.must_change_password,
       created_at: u.created_at,
       updated_at: u.updated_at,
     };
@@ -30,20 +44,133 @@ export class UsersController {
     return base;
   }
 
+  private authUserId(req: { user?: { userId?: number; sub?: number; id?: number } }): number {
+    const userId = req.user?.userId ?? req.user?.sub ?? req.user?.id;
+    if (!userId) throw new ForbiddenException('Non authentifié');
+    return userId as number;
+  }
+
   @Get('me')
   async me(@Req() req: { user?: { userId?: number; sub?: number; id?: number } }) {
-    const userId = req.user?.userId ?? req.user?.sub ?? req.user?.id;
-    if (!userId) return { ok: true, user: req.user };
-    const user = await this.usersService.findOne(userId as number);
+    const user = await this.usersService.findOne(this.authUserId(req));
+    return { ok: true, user: this.toUserResponse(user) };
+  }
+
+  /** Mobile / site : nom, prénom, e-mail, téléphone (tout ou partie). */
+  @Patch('me')
+  async updateMe(
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number } },
+    @Body() body: Partial<{ first_name: string; last_name: string; email: string; phone: string; profile_photo_url: string }>,
+  ) {
+    const user = await this.usersService.updateOwnProfile(this.authUserId(req), body);
+    return { ok: true, user: this.toUserResponse(user) };
+  }
+
+  @Patch('me/name')
+  async updateMyName(
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number } },
+    @Body() body: { first_name?: string; last_name?: string },
+  ) {
+    const user = await this.usersService.updateOwnProfile(this.authUserId(req), {
+      first_name: body.first_name,
+      last_name: body.last_name,
+    });
+    return { ok: true, user: this.toUserResponse(user) };
+  }
+
+  @Patch('me/email')
+  async updateMyEmail(
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number } },
+    @Body() body: { email?: string },
+  ) {
+    if (!body.email?.trim()) throw new BadRequestException('E-mail requis');
+    const user = await this.usersService.updateOwnProfile(this.authUserId(req), { email: body.email });
+    return { ok: true, user: this.toUserResponse(user) };
+  }
+
+  @Patch('me/phone')
+  async updateMyPhone(
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number } },
+    @Body() body: { phone?: string },
+  ) {
+    if (!body.phone?.trim()) throw new BadRequestException('Téléphone requis');
+    const user = await this.usersService.updateOwnProfile(this.authUserId(req), { phone: body.phone });
+    return { ok: true, user: this.toUserResponse(user) };
+  }
+
+  /** Mobile / site : envoyer le fichier (champ multipart `file`). */
+  @Post('me/photo')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  async uploadMyPhoto(
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number } },
+    @UploadedFile() file: { buffer: Buffer; mimetype: string; originalname?: string },
+  ) {
+    if (!file?.buffer) throw new BadRequestException('Aucun fichier envoyé');
+    const mimetype = file.mimetype?.toLowerCase() ?? '';
+    if (!PROFILE_PHOTO_MIMES.includes(mimetype)) {
+      throw new BadRequestException('Type de fichier non autorisé. Utilisez JPEG, PNG, GIF ou WebP.');
+    }
+    const url = await this.uploadsService.saveFile(
+      file.buffer,
+      mimetype,
+      file.originalname ?? 'photo',
+    );
+    const user = await this.usersService.updateOwnProfile(this.authUserId(req), {
+      profile_photo_url: url,
+    });
+    return { ok: true, url, user: this.toUserResponse(user) };
+  }
+
+  /** Si l’app a déjà uploadé via POST /uploads : coller l’URL. */
+  @Patch('me/photo')
+  async setMyPhotoUrl(
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number } },
+    @Body() body: { profile_photo_url?: string },
+  ) {
+    const user = await this.usersService.updateOwnProfile(this.authUserId(req), {
+      profile_photo_url: body.profile_photo_url ?? '',
+    });
+    return { ok: true, user: this.toUserResponse(user) };
+  }
+
+  @Patch('me/password')
+  async updateMyPassword(
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number } },
+    @Body() body: { current_password?: string; new_password?: string },
+  ) {
+    const user = await this.usersService.changeOwnPassword(
+      this.authUserId(req),
+      body.current_password ?? '',
+      body.new_password ?? '',
+    );
     return { ok: true, user: this.toUserResponse(user) };
   }
 
   @Get('me/linked-students')
   async myLinkedStudents(@Req() req: { user?: { userId?: number; sub?: number; id?: number } }) {
-    const userId = req.user?.userId ?? req.user?.sub ?? req.user?.id;
-    if (!userId) return { ok: true, linked_students: [] };
-    const list = await this.usersService.getLinkedStudentsForFiche(userId as number);
+    const list = await this.usersService.getLinkedStudentsForFiche(this.authUserId(req));
     return { ok: true, linked_students: list };
+  }
+
+  /** Crée des comptes TEACHER (e-mail nom.prenom@domaine, mot de passe défaut, must_change_password). */
+  @Post('provision-teachers')
+  async provisionTeachers(
+    @Req() req: { user?: { role?: string } },
+    @Body() body: {
+      teachers: { last_name: string; first_name: string; phone: string }[];
+      email_domain?: string;
+      password?: string;
+    },
+  ) {
+    const role = (req.user?.role ?? '').toUpperCase();
+    if (!(ROLES_USER_ADMIN as readonly string[]).includes(role)) {
+      throw new ForbiddenException('Réservé à l’administration');
+    }
+    if (!Array.isArray(body.teachers) || body.teachers.length === 0) {
+      throw new BadRequestException('Liste teachers requise');
+    }
+    const result = await this.usersService.provisionTeachers(body);
+    return { ok: true, ...result };
   }
 
   @Get('admin-only')

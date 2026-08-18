@@ -120,6 +120,8 @@ export class ParentAccountService {
     }
     return null;
   }
+
+  private digits(phone: string): string {
     return phone.replace(/\D/g, '');
   }
 

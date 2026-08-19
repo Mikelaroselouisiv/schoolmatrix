@@ -65,7 +65,9 @@ Effets du garde :
 - Autre rôle → `return true` immédiatement après la validation de format.
 
 `ParentScopeModule` exporte le garde et importe `TypeOrmModule.forFeature([Lien])`.
-Chaque module métier **importe** `ParentScopeModule` (le garde a besoin du repo).
+Chaque module métier **importe** `ParentScopeModule`. Le module **exporte**
+aussi `TypeOrmModule` (repo de la table d’appartenance) : sans ça, Nest plante
+au boot (`can't resolve UserLinkedStudentRepository in XModule`).
 
 ## Où coller quoi
 

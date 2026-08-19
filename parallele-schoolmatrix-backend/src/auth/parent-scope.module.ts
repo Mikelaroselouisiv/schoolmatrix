@@ -7,6 +7,6 @@ import { ParentScopeGuard } from './parent-scope.guard';
 @Module({
   imports: [TypeOrmModule.forFeature([UserLinkedStudent])],
   providers: [ParentScopeGuard],
-  exports: [ParentScopeGuard],
+  exports: [ParentScopeGuard, TypeOrmModule],
 })
 export class ParentScopeModule {}

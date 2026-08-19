@@ -173,7 +173,7 @@ Pas de préfixe `/api` global. Auth : `Authorization: Bearer <JWT>` (sauf login 
 | Formulaires inline page | Écrans dédiés / modales bottom sheet |
 | PDF preview / badges | Share sheet / WebView / génération différée |
 | Crop carré images | Camera + crop natif |
-| Electron updater | Store / OTA Expo |
+| Electron updater | Feed GCS `installers/mobile/latest.json` + bannière in-app APK |
 
 ---
 

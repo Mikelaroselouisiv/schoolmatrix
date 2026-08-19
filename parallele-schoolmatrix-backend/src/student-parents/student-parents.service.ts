@@ -1,43 +1,61 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { StudentParent } from './student-parent.entity';
-import { User } from '../users/user.entity';
+import { UserLinkedStudent } from '../users/user-linked-student.entity';
 
+export interface ParentChild {
+  id: string;
+  order_number: string | null;
+  first_name: string;
+  last_name: string;
+  class_id: string | null;
+  class_name: string | null;
+  photo_identity_student: string | null;
+}
+
+/**
+ * Rattachement parent → élève.
+ *
+ * Source unique : `user_linked_student`, alimentée par `linked_student_ids`
+ * dans l'administration des utilisateurs. L'ancienne table `student_parent`
+ * n'était écrite par aucun code : cet endpoint renvoyait donc toujours une
+ * liste vide. Elle n'est plus lue.
+ */
 @Injectable()
 export class StudentParentsService {
   constructor(
-    @InjectRepository(StudentParent)
-    private readonly studentParentRepo: Repository<StudentParent>,
-    @InjectRepository(User)
-    private readonly userRepo: Repository<User>,
+    @InjectRepository(UserLinkedStudent)
+    private readonly linkedRepo: Repository<UserLinkedStudent>,
   ) {}
 
-  async getChildrenForParent(parentUserId: number): Promise<any[]> {
-    const user = await this.userRepo.findOne({
-      where: { id: parentUserId },
-      relations: ['role'],
-    });
-    if (!user) return [];
-    const roleName = user.role?.name ?? (typeof user.role === 'string' ? user.role : '');
-    if (roleName !== 'PARENT') return [];
-    const links = await this.studentParentRepo
-      .createQueryBuilder('sp')
-      .innerJoinAndSelect('sp.student', 's')
+  async getChildrenForParent(parentUserId: number): Promise<ParentChild[]> {
+    const links = await this.linkedRepo
+      .createQueryBuilder('l')
+      .innerJoinAndSelect('l.student', 's')
       .leftJoinAndSelect('s.class', 'c')
-      .where('sp.user_id = :uid', { uid: parentUserId })
-      .orderBy('sp.created_at', 'ASC')
+      .where('l.user_id = :uid', { uid: parentUserId })
+      .orderBy('s.last_name', 'ASC')
+      .addOrderBy('s.first_name', 'ASC')
       .getMany();
-    return links.map((sp) => {
-      const s = sp.student;
-      return {
-        id: s?.id,
-        first_name: s?.first_name,
-        last_name: s?.last_name,
-        class_id: s?.class?.id,
-        class_name: s?.class?.name,
-        photo_identity_student: s?.photo_identity_student,
-      };
-    });
+
+    return links.map((l) => ({
+      id: l.student.id,
+      order_number: l.student.order_number ?? null,
+      first_name: l.student.first_name,
+      last_name: l.student.last_name,
+      class_id: l.student.class?.id ?? null,
+      class_name: l.student.class?.name ?? null,
+      photo_identity_student: l.student.photo_identity_student ?? null,
+    }));
+  }
+
+  /** Identifiants d'élèves rattachés — utilisé par le périmètre parent. */
+  async getLinkedStudentIds(parentUserId: number): Promise<string[]> {
+    const rows = await this.linkedRepo
+      .createQueryBuilder('l')
+      .select('l.student_id', 'student_id')
+      .where('l.user_id = :uid', { uid: parentUserId })
+      .getRawMany<{ student_id: string }>();
+    return rows.map((r) => r.student_id).filter(Boolean);
   }
 }

@@ -83,6 +83,9 @@ export async function clearToken(): Promise<void> {
 
 function axiosMessage(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err)) {
+    if (!err.response) {
+      return 'Impossible de joindre le serveur. Vérifiez votre connexion internet.';
+    }
     const data = err.response?.data as { message?: string | string[] } | undefined;
     const msg = data?.message;
     if (Array.isArray(msg)) return msg.join(', ');
@@ -223,15 +226,39 @@ export function getImageUrl(storedUrl: string | null | undefined): string | null
 }
 
 export type DashboardStats = {
-  classes?: number;
-  students?: number;
-  teachers?: number;
+  classesCount: number;
+  studentsCount: number;
+  teachersCount: number;
 };
 
 export async function getDashboardStats(): Promise<DashboardStats | null> {
   try {
-    const { data } = await api.get<DashboardStats>('/school/dashboard-stats');
-    return data ?? null;
+    const { data } = await api.get<{
+      ok?: boolean;
+      classesCount?: number;
+      studentsCount?: number;
+      teachersCount?: number;
+      // anciens alias éventuels
+      classes?: number;
+      students?: number;
+      teachers?: number;
+    }>('/school/dashboard-stats');
+    if (!data) return null;
+    const classesCount = Number(data.classesCount ?? data.classes);
+    const studentsCount = Number(data.studentsCount ?? data.students);
+    const teachersCount = Number(data.teachersCount ?? data.teachers);
+    if (
+      Number.isNaN(classesCount) &&
+      Number.isNaN(studentsCount) &&
+      Number.isNaN(teachersCount)
+    ) {
+      return null;
+    }
+    return {
+      classesCount: Number.isFinite(classesCount) ? classesCount : 0,
+      studentsCount: Number.isFinite(studentsCount) ? studentsCount : 0,
+      teachersCount: Number.isFinite(teachersCount) ? teachersCount : 0,
+    };
   } catch {
     return null;
   }
@@ -338,6 +365,8 @@ export type ExamResults = {
       order_index: number;
       coefficient: number;
       grade_value: number;
+      /** false = aucune note saisie ; grade_value vaut alors 0 par défaut. */
+      has_grade?: boolean;
     }[];
   }[];
 };

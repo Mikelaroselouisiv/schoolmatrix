@@ -4,9 +4,16 @@ import { FinanceService } from '../finance/finance.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { ParentScopeGuard } from '../auth/parent-scope.guard';
+import {
+  DenyParents,
+  ParentScopedStudent,
+} from '../auth/parent-scope.decorator';
+
+const STUDENT_QUERY = { in: 'query', key: 'student_id' } as const;
 
 @Controller('economat')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ParentScopeGuard)
 export class EconomatController {
   constructor(
     private readonly economatService: EconomatService,
@@ -24,18 +31,21 @@ export class EconomatController {
     return { ok: true, fee_services: list };
   }
 
+  @DenyParents()
   @Post('fee-services')
   async createFeeService(@Body() body: { name: string; code?: string; nature?: string }) {
     const s = await this.economatService.createFeeService({ name: body.name, code: body.code, nature: body.nature });
     return { ok: true, fee_service: { id: s.id, name: s.name, code: s.code, active: s.active, nature: s.nature } };
   }
 
+  @DenyParents()
   @Patch('fee-services/:id')
   async updateFeeService(@Param('id') id: string, @Body() body: Partial<{ name: string; code: string; active: boolean; nature: string }>) {
     const s = await this.economatService.updateFeeService(id, body);
     return { ok: true, fee_service: s };
   }
 
+  @DenyParents()
   @Delete('fee-services/:id')
   async deleteFeeService(@Param('id') id: string) {
     await this.economatService.deleteFeeService(id);
@@ -95,6 +105,7 @@ export class EconomatController {
     return { ok: true, deleted: true };
   }
 
+  @ParentScopedStudent(STUDENT_QUERY)
   @Get('balance')
   async getBalance(
     @Query('student_id') studentId?: string,
@@ -105,6 +116,8 @@ export class EconomatController {
     return { ok: true, ...balance };
   }
 
+  /** Enregistrement d'un encaissement : réservé à l'économat. */
+  @DenyParents()
   @Post('payments')
   async recordPayment(@Body() body: {
     student_id: string;
@@ -137,6 +150,7 @@ export class EconomatController {
     };
   }
 
+  @ParentScopedStudent(STUDENT_QUERY)
   @Get('transactions')
   async listTransactions(
     @Query('student_id') studentId?: string,
@@ -151,6 +165,7 @@ export class EconomatController {
     return { ok: true, transactions: list };
   }
 
+  @ParentScopedStudent({ in: 'param', key: 'studentId' })
   @Get('student-payment-status/:studentId')
   async getStudentPaymentStatus(
     @Param('studentId') studentId: string,
@@ -160,6 +175,7 @@ export class EconomatController {
     return { ok: true, ...status };
   }
 
+  @ParentScopedStudent(STUDENT_QUERY)
   @Get('exemptions')
   async listExemptions(
     @Query('student_id') studentId?: string,

@@ -140,9 +140,8 @@ export function HomeScreen({ navigation }: { navigation: Nav }) {
                 <LoadingBlock label="Stats…" />
               ) : (
                 <View style={styles.kpiRow}>
-                  <Kpi label="Classes" value={stats?.classes} />
-                  <Kpi label="Élèves" value={stats?.students} />
-                  <Kpi label="Profs" value={stats?.teachers} />
+                  <Kpi label="Classes" value={stats?.classesCount} />
+                  <Kpi label="Élèves" value={stats?.studentsCount} />
                 </View>
               )}
             </View>

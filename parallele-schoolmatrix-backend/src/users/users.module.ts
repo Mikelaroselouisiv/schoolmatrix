@@ -6,9 +6,13 @@ import { Role } from '../roles/role.entity';
 import { Student } from '../students/student.entity';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
+import { ParentScopeModule } from '../auth/parent-scope.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, UserLinkedStudent, Role, Student])],
+  imports: [
+    TypeOrmModule.forFeature([User, UserLinkedStudent, Role, Student]),
+    ParentScopeModule,
+  ],
   providers: [UsersService],
   controllers: [UsersController],
   exports: [UsersService],

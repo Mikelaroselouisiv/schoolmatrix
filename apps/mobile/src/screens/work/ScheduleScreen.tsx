@@ -4,13 +4,13 @@ import {
   FlatList,
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { FormModal } from '../../components/FormModal';
 import {
   Button,
   EmptyState,
@@ -553,124 +553,118 @@ export function ScheduleScreen({}: Props) {
         />
       )}
 
-      <Modal visible={showForm} animationType="slide" transparent>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.formSheet}>
-            <ScrollView>
-              <Text style={styles.formTitle}>
-                {tab === 'cours'
-                  ? 'Nouveau créneau'
-                  : tab === 'examens'
-                    ? 'Nouvel examen'
-                    : 'Nouvelle activité'}
-              </Text>
-              <SelectChip
-                label="Classe"
-                value={classes.find((c) => c.id === formClassId)?.name || 'Choisir'}
-                onPress={() => setPicker('formClass')}
-              />
-              {(tab === 'cours' || tab === 'examens') && (
-                <SelectChip
-                  label="Matière"
-                  value={subjects.find((s) => s.id === formSubjectId)?.name || 'Choisir'}
-                  onPress={() => setPicker('formSubject')}
-                />
-              )}
-              {tab === 'cours' ? (
-                <>
-                  <SelectChip
-                    label="Professeur"
-                    value={
-                      teachers.find((t) => String(t.id) === formTeacherId)
-                        ? teacherLabel(
-                            teachers.find((t) => String(t.id) === formTeacherId)!,
-                          )
-                        : 'Choisir'
-                    }
-                    onPress={() => setPicker('formTeacher')}
-                  />
-                  <SelectChip
-                    label="Salle"
-                    value={rooms.find((r) => r.id === formRoomId)?.name || 'Choisir'}
-                    onPress={() => setPicker('formRoom')}
-                  />
-                  <SelectChip
-                    label="Jour"
-                    value={dayLabel(formDay)}
-                    onPress={() => setPicker('formDay')}
-                  />
-                </>
-              ) : null}
-              {tab === 'examens' ? (
-                <SelectChip
-                  label="Période"
-                  value={formPeriod || 'Choisir'}
-                  onPress={() => setPicker('formPeriod')}
-                />
-              ) : null}
-              {tab !== 'cours' ? (
-                <DateField label="Date" value={formDate} onChange={setFormDate} />
-              ) : null}
-              {tab === 'parascolaires' ? (
-                <>
-                  <TextField
-                    label="Occasion"
-                    value={formOccasion}
-                    onChangeText={setFormOccasion}
-                  />
-                  <TextField
-                    label="Frais (optionnel)"
-                    value={formFee}
-                    onChangeText={setFormFee}
-                    keyboardType="decimal-pad"
-                  />
-                  <TextField
-                    label="Tenue (optionnel)"
-                    value={formDress}
-                    onChangeText={setFormDress}
-                  />
-                </>
-              ) : null}
-              <View style={styles.timeRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.timeLabel}>Début</Text>
-                  <TextInput
-                    style={styles.timeInput}
-                    value={formStart}
-                    onChangeText={setFormStart}
-                    placeholder="08:00"
-                    autoCapitalize="none"
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.timeLabel}>Fin</Text>
-                  <TextInput
-                    style={styles.timeInput}
-                    value={formEnd}
-                    onChangeText={setFormEnd}
-                    placeholder="09:00"
-                    autoCapitalize="none"
-                  />
-                </View>
-              </View>
-              <ErrorBanner message={error} />
-              <View style={styles.formActions}>
-                <Button
-                  title={saving ? 'Enregistrement…' : 'Enregistrer'}
-                  onPress={() => void handleCreate()}
-                  disabled={saving}
-                />
-                <Button
-                  title="Annuler"
-                  variant="ghost"
-                  onPress={() => setShowForm(false)}
-                  disabled={saving}
-                />
-              </View>
-            </ScrollView>
+      <FormModal visible={showForm} onRequestClose={() => setShowForm(false)}>
+        <Text style={styles.formTitle}>
+          {tab === 'cours'
+            ? 'Nouveau créneau'
+            : tab === 'examens'
+              ? 'Nouvel examen'
+              : 'Nouvelle activité'}
+        </Text>
+        <SelectChip
+          label="Classe"
+          value={classes.find((c) => c.id === formClassId)?.name || 'Choisir'}
+          onPress={() => setPicker('formClass')}
+        />
+        {(tab === 'cours' || tab === 'examens') && (
+          <SelectChip
+            label="Matière"
+            value={subjects.find((s) => s.id === formSubjectId)?.name || 'Choisir'}
+            onPress={() => setPicker('formSubject')}
+          />
+        )}
+        {tab === 'cours' ? (
+          <>
+            <SelectChip
+              label="Professeur"
+              value={
+                teachers.find((t) => String(t.id) === formTeacherId)
+                  ? teacherLabel(
+                      teachers.find((t) => String(t.id) === formTeacherId)!,
+                    )
+                  : 'Choisir'
+              }
+              onPress={() => setPicker('formTeacher')}
+            />
+            <SelectChip
+              label="Salle"
+              value={rooms.find((r) => r.id === formRoomId)?.name || 'Choisir'}
+              onPress={() => setPicker('formRoom')}
+            />
+            <SelectChip
+              label="Jour"
+              value={dayLabel(formDay)}
+              onPress={() => setPicker('formDay')}
+            />
+          </>
+        ) : null}
+        {tab === 'examens' ? (
+          <SelectChip
+            label="Période"
+            value={formPeriod || 'Choisir'}
+            onPress={() => setPicker('formPeriod')}
+          />
+        ) : null}
+        {tab !== 'cours' ? (
+          <DateField label="Date" value={formDate} onChange={setFormDate} />
+        ) : null}
+        {tab === 'parascolaires' ? (
+          <>
+            <TextField
+              label="Occasion"
+              value={formOccasion}
+              onChangeText={setFormOccasion}
+            />
+            <TextField
+              label="Frais (optionnel)"
+              value={formFee}
+              onChangeText={setFormFee}
+              keyboardType="decimal-pad"
+            />
+            <TextField
+              label="Tenue (optionnel)"
+              value={formDress}
+              onChangeText={setFormDress}
+            />
+          </>
+        ) : null}
+        <View style={styles.timeRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.timeLabel}>Début</Text>
+            <TextInput
+              style={styles.timeInput}
+              value={formStart}
+              onChangeText={setFormStart}
+              placeholder="08:00"
+              autoCapitalize="none"
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.timeLabel}>Fin</Text>
+            <TextInput
+              style={styles.timeInput}
+              value={formEnd}
+              onChangeText={setFormEnd}
+              placeholder="09:00"
+              autoCapitalize="none"
+            />
           </View>
         </View>
-      </Modal>
+        <ErrorBanner message={error} />
+        <View style={styles.formActions}>
+          <Button
+            title={saving ? 'Enregistrement…' : 'Enregistrer'}
+            onPress={() => void handleCreate()}
+            disabled={saving}
+          />
+          <Button
+            title="Annuler"
+            variant="ghost"
+            onPress={() => setShowForm(false)}
+            disabled={saving}
+          />
+        </View>
+      </FormModal>
 
       <Modal visible={!!picker} animationType="slide" transparent>
         <Pressable style={styles.modalBackdrop} onPress={() => setPicker(null)}>

@@ -15,6 +15,7 @@
     "dev:mobile:ios:fresh": "npm --prefix apps/mobile run ios:fresh",
     "dev:mobile:android": "npm --prefix apps/mobile run android",
     "dev:mobile:android:fresh": "npm --prefix apps/mobile run android:fresh",
+    "ship:mobile": "powershell -NoProfile -ExecutionPolicy Bypass -File ./infra/scripts/ship-mobile.ps1",
     "dev:sync-agent": "npm --prefix apps/sync-agent start"
   }
 }

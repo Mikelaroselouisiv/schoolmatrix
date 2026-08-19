@@ -1,19 +1,38 @@
 import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
+import { LoginThrottleService } from './login-throttle.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly users: UsersService,
     private readonly jwt: JwtService,
+    private readonly throttle: LoginThrottleService,
   ) {}
 
-  async login(login: string, password: string, rememberMe = false) {
+  async login(login: string, password: string, rememberMe = false, ip?: string) {
+    this.throttle.assertAllowed(login, ip);
+
     const user = await this.users.findByEmailOrPhone(login);
-    if (!user) throw new UnauthorizedException('Invalid credentials');
-    const ok = await this.users.validatePassword(user, password);
-    if (!ok) throw new UnauthorizedException('Invalid credentials');
+    const ok = user
+      ? await this.users.validatePassword(user, password)
+      : false;
+    if (!user || !ok) {
+      this.throttle.recordFailure(login, ip);
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    // Mot de passe correct : le compteur repart, y compris si le compte est
+    // désactivé (inutile de pénaliser le titulaire légitime).
+    this.throttle.recordSuccess(login, ip);
+
+    // Vérifié APRÈS le mot de passe : ne révèle pas l'existence d'un compte.
+    if (user.active === false) {
+      throw new UnauthorizedException(
+        "Compte désactivé. Contactez l'administration de l'école.",
+      );
+    }
+
     const roleName = user.role?.name ?? (typeof user.role === 'string' ? user.role : 'PARENT');
     const payload = { sub: user.id, role: roleName, email: user.email };
     const expiresIn = rememberMe ? '365d' : '7d';

@@ -51,8 +51,21 @@ Prérequis : `gcloud` config `schoolmatrix`, `gsutil`, Node 20, Docker (pour Ser
 
 - Remote : https://storage.googleapis.com/parallele-schoolmatrix-assets/installers/remote/latest.yml  
 - Server : https://storage.googleapis.com/parallele-schoolmatrix-assets/installers/server/latest.yml  
+- Mobile APK : https://storage.googleapis.com/parallele-schoolmatrix-assets/installers/mobile/latest.json  
 
-Les apps installées notifient → téléchargent → redémarrent.
+Les apps installées notifient → téléchargent → redémarrent (desktop) / ouvrent l’APK (mobile).
+
+### Mobile (Expo APK)
+
+```powershell
+# Bump version + versionCode → eas build --wait --json → download artifacts.buildUrl → GCS
+powershell -ExecutionPolicy Bypass -File infra/scripts/ship-mobile.ps1 -Bump patch
+
+# Upload APK + latest.json seulement
+powershell -ExecutionPolicy Bypass -File infra/scripts/upload-mobile-apk.ps1 -ApkPath ./path/to.apk
+```
+
+Ne pas utiliser `eas build:download` pour les APK (utiliser `artifacts.buildUrl` ; `--json` peut être un tableau).
 
 ## Autre machine de dev
 

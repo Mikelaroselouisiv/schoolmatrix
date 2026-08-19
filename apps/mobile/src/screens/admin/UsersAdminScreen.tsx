@@ -4,12 +4,12 @@ import {
   FlatList,
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { FormModal } from '../../components/FormModal';
 import {
   Button,
   EmptyState,
@@ -307,99 +307,89 @@ export function UsersAdminScreen({}: Props) {
         )}
       />
 
-      <Modal visible={formOpen} animationType="slide" transparent>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.sheet}>
-            <ScrollView keyboardShouldPersistTaps="handled">
-              <Text style={styles.sheetTitle}>
-                {editing ? 'Modifier l’utilisateur' : 'Nouvel utilisateur'}
-              </Text>
-              <TextField label="Prénom" value={firstName} onChangeText={setFirstName} />
-              <TextField label="Nom" value={lastName} onChangeText={setLastName} />
-              <TextField
-                label="Email *"
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-              />
-              <TextField
-                label="Téléphone"
-                value={phone}
-                onChangeText={setPhone}
-                keyboardType="phone-pad"
-              />
-              <Pressable style={styles.chip} onPress={() => setRolePicker(true)}>
-                <Text style={styles.chipLabel}>Rôle</Text>
-                <Text style={styles.chipValue}>{roleName}</Text>
-              </Pressable>
-              <TextField
-                label={editing ? 'Mot de passe (optionnel)' : 'Mot de passe *'}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-              />
+      <FormModal visible={formOpen} onRequestClose={() => setFormOpen(false)}>
+        <Text style={styles.sheetTitle}>
+          {editing ? 'Modifier l’utilisateur' : 'Nouvel utilisateur'}
+        </Text>
+        <TextField label="Prénom" value={firstName} onChangeText={setFirstName} />
+        <TextField label="Nom" value={lastName} onChangeText={setLastName} />
+        <TextField
+          label="Email *"
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          keyboardType="email-address"
+        />
+        <TextField
+          label="Téléphone"
+          value={phone}
+          onChangeText={setPhone}
+          keyboardType="phone-pad"
+        />
+        <Pressable style={styles.chip} onPress={() => setRolePicker(true)}>
+          <Text style={styles.chipLabel}>Rôle</Text>
+          <Text style={styles.chipValue}>{roleName}</Text>
+        </Pressable>
+        <TextField
+          label={editing ? 'Mot de passe (optionnel)' : 'Mot de passe *'}
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+        />
 
-              <Text style={styles.subHead}>Élèves liés (NISU)</Text>
-              <TextField
-                label="NISU"
-                value={nisuInput}
-                onChangeText={setNisuInput}
-                autoCapitalize="characters"
-              />
-              <Button
-                title={linking ? '…' : 'Lier'}
-                variant="ghost"
-                onPress={() => void addByNisu()}
-                disabled={linking}
-              />
-              {linkedIds.map((id) => (
-                <View key={id} style={styles.linkRow}>
-                  <Text style={styles.cardTitle}>{linkedLabels[id] || id}</Text>
-                  <Pressable
-                    onPress={() => setLinkedIds((prev) => prev.filter((x) => x !== id))}
-                  >
-                    <Text style={styles.danger}>Retirer</Text>
-                  </Pressable>
-                </View>
-              ))}
-
-              <ErrorBanner message={error} />
-              <View style={{ gap: 8, marginTop: 12, marginBottom: 28 }}>
-                <Button
-                  title={saving ? '…' : 'Enregistrer'}
-                  onPress={() => void save()}
-                  disabled={saving}
-                />
-                <Button title="Annuler" variant="ghost" onPress={() => setFormOpen(false)} />
-              </View>
-            </ScrollView>
+        <Text style={styles.subHead}>Élèves liés (NISU)</Text>
+        <TextField
+          label="NISU"
+          value={nisuInput}
+          onChangeText={setNisuInput}
+          autoCapitalize="characters"
+        />
+        <Button
+          title={linking ? '…' : 'Lier'}
+          variant="ghost"
+          onPress={() => void addByNisu()}
+          disabled={linking}
+        />
+        {linkedIds.map((id) => (
+          <View key={id} style={styles.linkRow}>
+            <Text style={styles.cardTitle}>{linkedLabels[id] || id}</Text>
+            <Pressable
+              onPress={() => setLinkedIds((prev) => prev.filter((x) => x !== id))}
+            >
+              <Text style={styles.danger}>Retirer</Text>
+            </Pressable>
           </View>
-        </View>
-      </Modal>
+        ))}
 
-      <Modal visible={!!resetUser} animationType="slide" transparent>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.sheet}>
-            <Text style={styles.sheetTitle}>
-              Réinitialiser · {resetUser ? displayName(resetUser) : ''}
-            </Text>
-            <TextField
-              label="Nouveau mot de passe *"
-              value={newPassword}
-              onChangeText={setNewPassword}
-              secureTextEntry
-            />
-            <ErrorBanner message={error} />
-            <Button
-              title={saving ? '…' : 'Réinitialiser'}
-              onPress={() => void doResetPassword()}
-              disabled={saving}
-            />
-            <Button title="Annuler" variant="ghost" onPress={() => setResetUser(null)} />
-          </View>
+        <ErrorBanner message={error} />
+        <View style={{ gap: 8, marginTop: 12, marginBottom: 28 }}>
+          <Button
+            title={saving ? '…' : 'Enregistrer'}
+            onPress={() => void save()}
+            disabled={saving}
+          />
+          <Button title="Annuler" variant="ghost" onPress={() => setFormOpen(false)} />
         </View>
-      </Modal>
+      </FormModal>
+
+      <FormModal visible={!!resetUser} onRequestClose={() => setResetUser(null)}>
+        <Text style={styles.sheetTitle}>
+          Réinitialiser · {resetUser ? displayName(resetUser) : ''}
+        </Text>
+        <TextField
+          label="Nouveau mot de passe *"
+          value={newPassword}
+          onChangeText={setNewPassword}
+          secureTextEntry
+        />
+        <ErrorBanner message={error} />
+        <Button
+          title={saving ? '…' : 'Réinitialiser'}
+          onPress={() => void doResetPassword()}
+          disabled={saving}
+        />
+        <Button title="Annuler" variant="ghost" onPress={() => setResetUser(null)} />
+      </FormModal>
 
       <Modal visible={rolePicker} animationType="slide" transparent>
         <Pressable style={styles.modalBackdrop} onPress={() => setRolePicker(false)}>

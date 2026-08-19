@@ -1,10 +1,12 @@
 import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards, Req, ParseIntPipe } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { ParentScopeGuard } from '../auth/parent-scope.guard';
+import { DenyParents } from '../auth/parent-scope.decorator';
 import { User } from './user.entity';
 
 @Controller('users')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ParentScopeGuard)
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
@@ -46,11 +48,14 @@ export class UsersController {
     return { ok: true, linked_students: list };
   }
 
+  @DenyParents()
   @Get('admin-only')
   adminOnly() {
     return { ok: true, message: 'Admin access' };
   }
 
+  /** Annuaire complet (e-mails, téléphones, enfants liés) : hors périmètre parent. */
+  @DenyParents()
   @Get()
   async listUsers() {
     const users = await this.usersService.findAll();
@@ -63,6 +68,7 @@ export class UsersController {
     return { ok: true, users: withLinks };
   }
 
+  @DenyParents()
   @Get(':id')
   async one(@Param('id', ParseIntPipe) id: number) {
     const user = await this.usersService.findOne(id);
@@ -70,6 +76,7 @@ export class UsersController {
     return { ok: true, user: this.toUserResponse(user, linkedStudentIds) };
   }
 
+  @DenyParents()
   @Post()
   async createUser(@Body() body: {
     first_name?: string;
@@ -103,6 +110,8 @@ export class UsersController {
     return { ok: true, user: this.toUserResponse(user, linkedStudentIds) };
   }
 
+  /** Changement de rôle : sans ce garde, un parent pouvait se promouvoir SUPER_ADMIN. */
+  @DenyParents()
   @Patch(':id/role')
   async setUserRole(
     @Param('id', ParseIntPipe) id: number,
@@ -112,6 +121,7 @@ export class UsersController {
     return { ok: true, user: this.toUserResponse(user) };
   }
 
+  @DenyParents()
   @Post(':id/reset-password')
   async resetPassword(
     @Param('id', ParseIntPipe) id: number,
@@ -121,6 +131,7 @@ export class UsersController {
     return { ok: true, user: this.toUserResponse(user) };
   }
 
+  @DenyParents()
   @Patch(':id')
   async updateUser(
     @Param('id', ParseIntPipe) id: number,
@@ -144,6 +155,7 @@ export class UsersController {
     return { ok: true, user: this.toUserResponse(user, linkedStudentIds) };
   }
 
+  @DenyParents()
   @Delete(':id')
   async deleteUser(@Param('id', ParseIntPipe) id: number) {
     await this.usersService.deleteUser(id);

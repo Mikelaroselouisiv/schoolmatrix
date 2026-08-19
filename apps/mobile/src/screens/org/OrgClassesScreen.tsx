@@ -2,14 +2,13 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   FlatList,
-  Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { FormModal } from '../../components/FormModal';
 import {
   Button,
   EmptyState,
@@ -190,45 +189,39 @@ export function OrgClassesScreen({}: Props) {
         )}
       />
 
-      <Modal visible={formOpen} animationType="slide" transparent>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.sheet}>
-            <ScrollView>
-              <Text style={styles.sheetTitle}>
-                {editing ? 'Modifier la classe' : 'Nouvelle classe'}
-              </Text>
-              <TextField label="Nom *" value={name} onChangeText={setName} />
-              <TextField label="Niveau" value={level} onChangeText={setLevel} />
-              <TextField
-                label="Description"
-                value={description}
-                onChangeText={setDescription}
-              />
-              <Text style={styles.subHead}>Matières</Text>
-              {subjects.map((s) => {
-                const on = subjectIds.includes(s.id);
-                return (
-                  <Pressable
-                    key={s.id}
-                    style={[styles.chip, on && styles.chipOn]}
-                    onPress={() => toggleSubject(s.id)}
-                  >
-                    <Text style={[styles.chipText, on && styles.chipTextOn]}>{s.name}</Text>
-                  </Pressable>
-                );
-              })}
-              <View style={{ gap: 8, marginTop: 12, marginBottom: 24 }}>
-                <Button
-                  title={saving ? '…' : 'Enregistrer'}
-                  onPress={() => void save()}
-                  disabled={saving}
-                />
-                <Button title="Annuler" variant="ghost" onPress={() => setFormOpen(false)} />
-              </View>
-            </ScrollView>
-          </View>
+      <FormModal visible={formOpen} onRequestClose={() => setFormOpen(false)}>
+        <Text style={styles.sheetTitle}>
+          {editing ? 'Modifier la classe' : 'Nouvelle classe'}
+        </Text>
+        <TextField label="Nom *" value={name} onChangeText={setName} />
+        <TextField label="Niveau" value={level} onChangeText={setLevel} />
+        <TextField
+          label="Description"
+          value={description}
+          onChangeText={setDescription}
+        />
+        <Text style={styles.subHead}>Matières</Text>
+        {subjects.map((s) => {
+          const on = subjectIds.includes(s.id);
+          return (
+            <Pressable
+              key={s.id}
+              style={[styles.chip, on && styles.chipOn]}
+              onPress={() => toggleSubject(s.id)}
+            >
+              <Text style={[styles.chipText, on && styles.chipTextOn]}>{s.name}</Text>
+            </Pressable>
+          );
+        })}
+        <View style={{ gap: 8, marginTop: 12, marginBottom: 24 }}>
+          <Button
+            title={saving ? '…' : 'Enregistrer'}
+            onPress={() => void save()}
+            disabled={saving}
+          />
+          <Button title="Annuler" variant="ghost" onPress={() => setFormOpen(false)} />
         </View>
-      </Modal>
+      </FormModal>
     </Screen>
   );
 }

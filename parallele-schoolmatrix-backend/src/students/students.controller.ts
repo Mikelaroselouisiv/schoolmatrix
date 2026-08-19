@@ -15,13 +15,20 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { StudentsService } from './students.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { ParentScopeGuard } from '../auth/parent-scope.guard';
+import {
+  DenyParents,
+  ParentScopedStudent,
+} from '../auth/parent-scope.decorator';
 import { isPreschoolClass } from '../utils/preschool';
 
 @Controller('students')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ParentScopeGuard)
 export class StudentsController {
   constructor(private readonly studentsService: StudentsService) {}
 
+  /** Liste de toute l'école : jamais accessible depuis un compte parent. */
+  @DenyParents()
   @Get()
   async list(
     @Query('class_id') classId?: string,
@@ -65,6 +72,8 @@ export class StudentsController {
     };
   }
 
+  /** Recherche par numéro d'ordre : permettrait à un parent d'énumérer l'école. */
+  @DenyParents()
   @Get('by-order-number/:orderNumber')
   async byOrderNumber(@Param('orderNumber') orderNumber: string) {
     const s = await this.studentsService.findByOrderNumber(decodeURIComponent(orderNumber));
@@ -84,6 +93,7 @@ export class StudentsController {
     };
   }
 
+  @ParentScopedStudent({ in: 'param', key: 'id' })
   @Get(':id')
   async one(@Param('id') id: string) {
     const s = await this.studentsService.findOne(id);
@@ -124,6 +134,7 @@ export class StudentsController {
     };
   }
 
+  @DenyParents()
   @Post('import')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024 } }))
   async importCsv(
@@ -150,6 +161,7 @@ export class StudentsController {
   }
 
   /** Aperçu PDF (heuristique + IA) — n’écrit pas en base. */
+  @DenyParents()
   @Post('import-pdf/preview')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 15 * 1024 * 1024 } }))
   async importPdfPreview(@UploadedFile() file: { buffer?: Buffer }) {
@@ -169,6 +181,7 @@ export class StudentsController {
   }
 
   /** Confirme l’inscription PDF dans la classe choisie (sans salle). */
+  @DenyParents()
   @Post('import-pdf')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 15 * 1024 * 1024 } }))
   async importPdf(
@@ -200,6 +213,7 @@ export class StudentsController {
     return { ok: true, ...result };
   }
 
+  @DenyParents()
   @Post()
   async create(@Body() body: Record<string, unknown>) {
     const s = await this.studentsService.create(body as any);
@@ -236,6 +250,7 @@ export class StudentsController {
     };
   }
 
+  @DenyParents()
   @Patch(':id')
   async update(@Param('id') id: string, @Body() body: Record<string, unknown>) {
     const s = await this.studentsService.update(id, body as any);
@@ -272,6 +287,7 @@ export class StudentsController {
     };
   }
 
+  @DenyParents()
   @Delete(':id')
   async delete(@Param('id') id: string) {
     await this.studentsService.delete(id);

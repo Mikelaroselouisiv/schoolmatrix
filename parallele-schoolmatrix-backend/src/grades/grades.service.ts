@@ -293,6 +293,7 @@ export class GradesService {
       const subjName = (g.subject as any)?.name ?? coefBySubject.get(sid)?.subjectName ?? '—';
       const coef = (Number(g.coefficient) || coefBySubject.get(sid)?.coefficient) ?? 0;
       const val = Number(g.grade_value) || 0;
+      // Une ligne en base = note saisie, y compris un vrai zéro.
       const period = g.period as any;
       const orderIndex = period?.order_index ?? 0;
       const periodName = period?.name ?? '—';
@@ -308,6 +309,7 @@ export class GradesService {
           order_index: orderIndex,
           coefficient: coef,
           grade_value: val,
+          has_grade: true,
         });
       }
     }
@@ -317,12 +319,15 @@ export class GradesService {
       for (const p of periods) {
         const pid = String(p.id);
         if (existingPids.has(pid)) continue;
+        // Période sans note : grade_value reste à 0 pour la compatibilité des
+        // clients déjà déployés, has_grade=false dit que rien n'a été saisi.
         sub.periods.push({
           period_id: p.id,
           period_name: p.name ?? '—',
           order_index: p.order_index ?? 0,
           coefficient: coefBySubject.get(sub.subject_id)?.coefficient ?? 0,
           grade_value: 0,
+          has_grade: false,
         });
       }
       sub.periods.sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
@@ -338,6 +343,7 @@ export class GradesService {
           order_index: p.order_index ?? 0,
           coefficient,
           grade_value: 0,
+          has_grade: false,
         });
       }
       subjectMap.set(sid, sub);

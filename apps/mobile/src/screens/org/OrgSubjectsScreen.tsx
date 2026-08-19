@@ -2,13 +2,13 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   FlatList,
-  Modal,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { FormModal } from '../../components/FormModal';
 import {
   Button,
   EmptyState,
@@ -158,23 +158,19 @@ export function OrgSubjectsScreen({}: Props) {
         )}
       />
 
-      <Modal visible={formOpen} animationType="slide" transparent>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.sheet}>
-            <Text style={styles.sheetTitle}>
-              {editing ? 'Modifier' : 'Nouvelle matière'}
-            </Text>
-            <TextField label="Nom *" value={name} onChangeText={setName} />
-            <TextField label="Code" value={code} onChangeText={setCode} />
-            <Button
-              title={saving ? '…' : 'Enregistrer'}
-              onPress={() => void save()}
-              disabled={saving}
-            />
-            <Button title="Annuler" variant="ghost" onPress={() => setFormOpen(false)} />
-          </View>
-        </View>
-      </Modal>
+      <FormModal visible={formOpen} onRequestClose={() => setFormOpen(false)}>
+        <Text style={styles.sheetTitle}>
+          {editing ? 'Modifier' : 'Nouvelle matière'}
+        </Text>
+        <TextField label="Nom *" value={name} onChangeText={setName} />
+        <TextField label="Code" value={code} onChangeText={setCode} />
+        <Button
+          title={saving ? '…' : 'Enregistrer'}
+          onPress={() => void save()}
+          disabled={saving}
+        />
+        <Button title="Annuler" variant="ghost" onPress={() => setFormOpen(false)} />
+      </FormModal>
     </Screen>
   );
 }

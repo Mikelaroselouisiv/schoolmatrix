@@ -5,12 +5,12 @@ import {
   Image,
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { FormScrollView } from '../../components/FormScrollView';
 import {
   Button,
   ErrorBanner,
@@ -344,7 +344,7 @@ export function EnrollmentScreen({ navigation, route }: Props) {
 
   return (
     <Screen style={{ paddingHorizontal: 0, paddingBottom: 0 }}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <FormScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Title>{editing ? 'Modifier l’élève' : 'Inscription'}</Title>
 
         <View style={{ marginTop: 12 }}>
@@ -550,7 +550,7 @@ export function EnrollmentScreen({ navigation, route }: Props) {
             />
           )}
         </View>
-      </ScrollView>
+      </FormScrollView>
 
       <Modal
         visible={!!picker}

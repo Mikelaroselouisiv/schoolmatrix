@@ -297,7 +297,11 @@ export function StudentFicheScreen({ navigation, route }: Props) {
                   <Text style={styles.detailTitle}>{sub.subject_name}</Text>
                   <Text style={styles.detailMeta}>
                     {sub.periods
-                      .map((p) => `${p.period_name}: ${p.grade_value}`)
+                      .map((p) =>
+                        p.has_grade === false
+                          ? `${p.period_name}: —`
+                          : `${p.period_name}: ${p.grade_value}`,
+                      )
                       .join(' · ')}
                   </Text>
                 </View>

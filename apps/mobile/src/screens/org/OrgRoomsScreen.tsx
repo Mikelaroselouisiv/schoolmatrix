@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { FormModal } from '../../components/FormModal';
 import {
   Button,
   EmptyState,
@@ -177,30 +178,26 @@ export function OrgRoomsScreen({}: Props) {
         }}
       />
 
-      <Modal visible={formOpen} animationType="slide" transparent>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.sheet}>
-            <Text style={styles.sheetTitle}>{editing ? 'Modifier' : 'Nouvelle salle'}</Text>
-            <TextField label="Nom *" value={name} onChangeText={setName} />
-            <TextField
-              label="Capacité"
-              value={capacity}
-              onChangeText={setCapacity}
-              keyboardType="number-pad"
-            />
-            <Pressable style={styles.chip} onPress={() => setClassPicker(true)}>
-              <Text style={styles.chipLabel}>Classe</Text>
-              <Text style={styles.chipValue}>{classLabel}</Text>
-            </Pressable>
-            <Button
-              title={saving ? '…' : 'Enregistrer'}
-              onPress={() => void save()}
-              disabled={saving}
-            />
-            <Button title="Annuler" variant="ghost" onPress={() => setFormOpen(false)} />
-          </View>
-        </View>
-      </Modal>
+      <FormModal visible={formOpen} onRequestClose={() => setFormOpen(false)}>
+        <Text style={styles.sheetTitle}>{editing ? 'Modifier' : 'Nouvelle salle'}</Text>
+        <TextField label="Nom *" value={name} onChangeText={setName} />
+        <TextField
+          label="Capacité"
+          value={capacity}
+          onChangeText={setCapacity}
+          keyboardType="number-pad"
+        />
+        <Pressable style={styles.chip} onPress={() => setClassPicker(true)}>
+          <Text style={styles.chipLabel}>Classe</Text>
+          <Text style={styles.chipValue}>{classLabel}</Text>
+        </Pressable>
+        <Button
+          title={saving ? '…' : 'Enregistrer'}
+          onPress={() => void save()}
+          disabled={saving}
+        />
+        <Button title="Annuler" variant="ghost" onPress={() => setFormOpen(false)} />
+      </FormModal>
 
       <Modal visible={classPicker} animationType="slide" transparent>
         <Pressable style={styles.modalBackdrop} onPress={() => setClassPicker(false)}>

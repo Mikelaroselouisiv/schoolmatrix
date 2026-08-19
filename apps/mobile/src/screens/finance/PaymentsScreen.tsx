@@ -4,13 +4,13 @@ import {
   FlatList,
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { FormScrollView } from '../../components/FormScrollView';
 import {
   Button,
   EmptyState,
@@ -372,7 +372,7 @@ export function PaymentsScreen({}: Props) {
 
   return (
     <Screen style={{ paddingHorizontal: 0 }}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <FormScrollView contentContainerStyle={styles.content}>
         <View style={styles.form}>
           <SelectRow
             label="Année scolaire"
@@ -513,7 +513,7 @@ export function PaymentsScreen({}: Props) {
             </View>
           ))
         )}
-      </ScrollView>
+      </FormScrollView>
 
       <Modal visible={!!picker} animationType="slide" transparent>
         <Pressable style={styles.modalBackdrop} onPress={() => setPicker(null)}>

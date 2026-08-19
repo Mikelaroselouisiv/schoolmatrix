@@ -2,7 +2,7 @@
   "expo": {
     "name": "School Matrix",
     "slug": "schoolmatrix-mobile",
-    "version": "1.0.0",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/logo.png",
     "userInterfaceStyle": "light",
@@ -13,19 +13,50 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.schoolmatrix.app"
+      "bundleIdentifier": "com.schoolmatrix.app",
+      "buildNumber": "6",
+      "appleTeamId": "P227YQ54ZL",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true,
+          "NSAllowsLocalNetworking": true,
+          "NSExceptionDomains": {
+            "34.95.43.132": {
+              "NSExceptionAllowsInsecureHTTPLoads": true,
+              "NSIncludesSubdomains": true,
+              "NSExceptionRequiresForwardSecrecy": false
+            },
+            "localhost": {
+              "NSExceptionAllowsInsecureHTTPLoads": true,
+              "NSIncludesSubdomains": true
+            }
+          }
+        }
+      }
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#F5F3F1",
         "foregroundImage": "./assets/logo.png"
       },
-      "package": "com.schoolmatrix.app"
+      "package": "com.schoolmatrix.app",
+      "versionCode": 5,
+      "usesCleartextTraffic": true,
+      "softwareKeyboardLayoutMode": "resize",
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/logo.png"
     },
     "plugins": [
+      "./plugins/withCleartextTraffic",
+      "./plugins/withAndroidApkInstall",
+      "./plugins/withEmbedExpoModulesJSI",
+      "expo-file-system",
       "expo-secure-store",
       [
         "expo-image-picker",
@@ -38,8 +69,9 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "REPLACE_AFTER_EAS_INIT"
+        "projectId": "c3e243d8-9622-4117-a49a-eba5f3427d0c"
       }
-    }
+    },
+    "owner": "larosemike"
   }
 }

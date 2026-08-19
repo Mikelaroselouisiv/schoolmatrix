@@ -121,10 +121,15 @@ export class ParentScopeGuard implements CanActivate {
   }
 
   private read(
-    req: { params?: Record<string, unknown>; query?: Record<string, unknown> },
+    req: {
+      params?: Record<string, unknown>;
+      query?: Record<string, unknown>;
+      body?: Record<string, unknown>;
+    },
     src: StudentIdSource,
   ): unknown {
-    const bag = src.in === 'param' ? req.params : req.query;
+    const bag =
+      src.in === 'param' ? req.params : src.in === 'body' ? req.body : req.query;
     return bag?.[src.key];
   }
 

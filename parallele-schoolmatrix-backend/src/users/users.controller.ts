@@ -52,6 +52,13 @@ export class UsersController {
     return userId as number;
   }
 
+  private assertUserAdmin(req: { user?: { role?: string } }) {
+    const role = (req.user?.role ?? '').toUpperCase();
+    if (!(ROLES_USER_ADMIN as readonly string[]).includes(role)) {
+      throw new ForbiddenException('Réservé à l’administration');
+    }
+  }
+
   @Get('me')
   async me(@Req() req: { user?: { userId?: number; sub?: number; id?: number } }) {
     const user = await this.usersService.findOne(this.authUserId(req));
@@ -185,7 +192,8 @@ export class UsersController {
   /** Annuaire complet (e-mails, téléphones, enfants liés) : hors périmètre parent. */
   @DenyParents()
   @Get()
-  async listUsers() {
+  async listUsers(@Req() req: { user?: { role?: string } }) {
+    this.assertUserAdmin(req);
     const users = await this.usersService.findAll();
     const withLinks = await Promise.all(
       users.map(async (u) => {
@@ -198,7 +206,11 @@ export class UsersController {
 
   @DenyParents()
   @Get(':id')
-  async one(@Param('id', ParseIntPipe) id: number) {
+  async one(
+    @Req() req: { user?: { role?: string } },
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    this.assertUserAdmin(req);
     const user = await this.usersService.findOne(id);
     const linkedStudentIds = await this.usersService.getLinkedStudentIds(id);
     return { ok: true, user: this.toUserResponse(user, linkedStudentIds) };
@@ -206,7 +218,9 @@ export class UsersController {
 
   @DenyParents()
   @Post()
-  async createUser(@Body() body: {
+  async createUser(
+    @Req() req: { user?: { role?: string } },
+    @Body() body: {
     first_name?: string;
     last_name?: string;
     email: string;
@@ -220,6 +234,7 @@ export class UsersController {
     order_number?: string;
     linked_student_ids?: string[];
   }) {
+    this.assertUserAdmin(req);
     const user = await this.usersService.createUser({
       first_name: body.first_name,
       last_name: body.last_name,
@@ -242,9 +257,11 @@ export class UsersController {
   @DenyParents()
   @Patch(':id/role')
   async setUserRole(
+    @Req() req: { user?: { role?: string } },
     @Param('id', ParseIntPipe) id: number,
     @Body() body: { roleName: string },
   ) {
+    this.assertUserAdmin(req);
     const user = await this.usersService.setUserRole(id, body.roleName);
     return { ok: true, user: this.toUserResponse(user) };
   }
@@ -252,9 +269,11 @@ export class UsersController {
   @DenyParents()
   @Post(':id/reset-password')
   async resetPassword(
+    @Req() req: { user?: { role?: string } },
     @Param('id', ParseIntPipe) id: number,
     @Body() body: { newPassword: string },
   ) {
+    this.assertUserAdmin(req);
     const user = await this.usersService.resetPassword(id, body.newPassword ?? '');
     return { ok: true, user: this.toUserResponse(user) };
   }
@@ -262,6 +281,7 @@ export class UsersController {
   @DenyParents()
   @Patch(':id')
   async updateUser(
+    @Req() req: { user?: { role?: string } },
     @Param('id', ParseIntPipe) id: number,
     @Body() body: Partial<{
       first_name: string;
@@ -278,6 +298,7 @@ export class UsersController {
       linked_student_ids: string[];
     }>,
   ) {
+    this.assertUserAdmin(req);
     const user = await this.usersService.updateUser(id, body);
     const linkedStudentIds = await this.usersService.getLinkedStudentIds(id);
     return { ok: true, user: this.toUserResponse(user, linkedStudentIds) };
@@ -285,7 +306,11 @@ export class UsersController {
 
   @DenyParents()
   @Delete(':id')
-  async deleteUser(@Param('id', ParseIntPipe) id: number) {
+  async deleteUser(
+    @Req() req: { user?: { role?: string } },
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    this.assertUserAdmin(req);
     await this.usersService.deleteUser(id);
     return { ok: true, deleted: true };
   }

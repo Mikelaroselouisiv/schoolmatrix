@@ -12,9 +12,11 @@ import { Room } from '../rooms/room.entity';
 import { TeachersService } from './teachers.service';
 import { TeachersController } from './teachers.controller';
 import { ScheduleSlotsController } from './schedule-slots.controller';
+import { ParentScopeModule } from '../auth/parent-scope.module';
 
 @Module({
   imports: [
+    ParentScopeModule,
     TypeOrmModule.forFeature([
       ClassTeacher,
       TeacherSubject,

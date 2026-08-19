@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 import { LoginThrottleService } from './login-throttle.service';
@@ -52,6 +52,10 @@ export class AuthService {
   }
 
   async registerSuperAdmin(email: string, password: string) {
+    const count = await this.users.countUsers();
+    if (count > 0) {
+      throw new ForbiddenException('Setup already completed');
+    }
     const exists = await this.users.findByEmail(email.toLowerCase().trim());
     if (exists) throw new ConflictException('Email already exists');
     const user = await this.users.createUser({

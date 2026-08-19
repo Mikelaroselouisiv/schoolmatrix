@@ -2,7 +2,7 @@ import { SetMetadata } from '@nestjs/common';
 
 /** Où lire l'identifiant d'élève ciblé par la requête. */
 export interface StudentIdSource {
-  in: 'param' | 'query';
+  in: 'param' | 'query' | 'body';
   key: string;
 }
 

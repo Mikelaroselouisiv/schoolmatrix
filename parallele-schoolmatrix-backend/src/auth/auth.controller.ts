@@ -30,7 +30,15 @@ export class AuthController {
   @Post('login')
   login(
     @Req() req: Request,
-    @Body() body: { login?: string; email?: string; password: string; remember_me?: boolean },
+    @Body()
+    body: {
+      login?: string;
+      email?: string;
+      password: string;
+      remember_me?: boolean;
+      /** true = jeton d'accès court + refresh token révocable. */
+      refresh?: boolean;
+    },
   ) {
     const login = (body.login ?? body.email ?? '').trim();
     if (!login) {
@@ -41,6 +49,27 @@ export class AuthController {
       body.password,
       body.remember_me === true,
       clientIp(req),
+      body.refresh === true,
     );
+  }
+
+  /**
+   * Renouvelle un jeton d'accès à partir d'un refresh token.
+   * Le refresh token est tourné à chaque appel : réutilisez toujours le
+   * dernier reçu, l'ancien devient invalide immédiatement.
+   */
+  @Post('refresh')
+  refresh(@Body() body: { refresh_token?: string }) {
+    const token = (body?.refresh_token ?? '').trim();
+    if (!token) {
+      throw new BadRequestException('refresh_token requis');
+    }
+    return this.auth.refresh(token);
+  }
+
+  /** Ferme la session correspondant au refresh token fourni. */
+  @Post('logout')
+  logout(@Body() body: { refresh_token?: string }) {
+    return this.auth.logout((body?.refresh_token ?? '').trim());
   }
 }

@@ -1,11 +1,12 @@
 import { Injectable, NotFoundException, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, IsNull } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User } from './user.entity';
 import { UserLinkedStudent } from './user-linked-student.entity';
 import { Role } from '../roles/role.entity';
 import { Student } from '../students/student.entity';
+import { RefreshToken } from '../auth/refresh-token.entity';
 import { SyncKickService } from '../sync/sync-kick.service';
 import { DEFAULT_STAFF_EMAIL_DOMAIN, DEFAULT_STAFF_PASSWORD } from './staff-account.constants';
 import { buildStaffEmail } from './staff-email';
@@ -21,8 +22,22 @@ export class UsersService {
     private readonly rolesRepo: Repository<Role>,
     @InjectRepository(Student)
     private readonly studentRepo: Repository<Student>,
+    @InjectRepository(RefreshToken)
+    private readonly refreshTokenRepo: Repository<RefreshToken>,
     private readonly syncKick: SyncKickService,
   ) {}
+
+  /**
+   * Ferme toutes les sessions renouvelables d'un compte.
+   * Le jeton d'accès déjà émis reste valable jusqu'à son expiration (30 min
+   * par défaut) : c'est la limite d'un JWT sans introspection.
+   */
+  private async revokeSessions(userId: number, reason: string): Promise<void> {
+    await this.refreshTokenRepo.update(
+      { user_id: userId, revoked_at: IsNull() },
+      { revoked_at: new Date(), revoked_reason: reason.slice(0, 40) },
+    );
+  }
 
   async findByEmail(email: string): Promise<User | null> {
     // relations explicites : le QueryBuilder téléphone (ci-dessous) n’applique pas eager.
@@ -217,6 +232,13 @@ export class UsersService {
         await this.linkStudent(userId, studentId, false);
       }
     }
+    // Désactivation / MDP admin : révoque les sessions renouvelables.
+    if (params.active === false) {
+      await this.revokeSessions(userId, 'account_disabled');
+    }
+    if (params.password !== undefined && params.password.length > 0) {
+      await this.revokeSessions(userId, 'password_changed');
+    }
     this.syncKick.kick('user-update');
     return this.findOne(userId);
   }
@@ -265,6 +287,7 @@ export class UsersService {
       password_hash: await bcrypt.hash(pwd, 10),
       must_change_password: true,
     });
+    await this.revokeSessions(userId, 'password_reset');
     this.syncKick.kick('user-password');
     return this.findOne(userId);
   }
@@ -376,6 +399,7 @@ export class UsersService {
       password_hash: await bcrypt.hash(next, 10),
       must_change_password: false,
     });
+    await this.revokeSessions(userId, 'password_self_changed');
     this.syncKick.kick('user-self-password');
     return this.findOne(userId);
   }

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -8,10 +9,13 @@ import { UsersModule } from '../users/users.module';
 import { JwtStrategy } from './jwt.strategy';
 import { RolesGuard } from './roles.guard';
 import { LoginThrottleService } from './login-throttle.service';
+import { RefreshTokenService } from './refresh-token.service';
+import { RefreshToken } from './refresh-token.entity';
 
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
+    TypeOrmModule.forFeature([RefreshToken]),
     UsersModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -24,7 +28,13 @@ import { LoginThrottleService } from './login-throttle.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, RolesGuard, LoginThrottleService],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    RolesGuard,
+    LoginThrottleService,
+    RefreshTokenService,
+  ],
   exports: [RolesGuard, UsersModule, JwtModule, PassportModule],
 })
 export class AuthModule {}

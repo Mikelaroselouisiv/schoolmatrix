@@ -78,7 +78,8 @@ export class UsersController {
   @Get('me')
   async me(@Req() req: { user?: { userId?: number; sub?: number; id?: number } }) {
     const user = await this.usersService.findOne(this.authUserId(req));
-    return { ok: true, user: this.toUserResponse(user) };
+    const linkedStudentIds = await this.usersService.getLinkedStudentIds(user.id);
+    return { ok: true, user: this.toUserResponse(user, linkedStudentIds) };
   }
 
   /** Mobile / site : nom, prénom, e-mail, téléphone (tout ou partie). */

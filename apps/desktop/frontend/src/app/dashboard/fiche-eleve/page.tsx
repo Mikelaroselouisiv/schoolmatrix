@@ -223,23 +223,25 @@ export default function FicheElevePage() {
   useEffect(() => {
     async function init() {
       setLoading(true);
-      const isParentOrTeacher = roleName === "PARENT" || roleName === "TEACHER";
+      const isParentOnly = roleName === "PARENT";
       const [_, __, linkedRes] = await Promise.all([
         loadClasses(),
         loadAcademicYears(),
-        isParentOrTeacher ? fetchWithAuth(`${API_BASE}/users/me/linked-students`) : Promise.resolve(null),
+        fetchWithAuth(`${API_BASE}/users/me/linked-students`),
       ]);
-      if (isParentOrTeacher && linkedRes) {
+      if (linkedRes) {
         const linkedData = await linkedRes.json();
         const list: LinkedStudent[] = linkedData.linked_students ?? [];
         if (list.length > 0) {
           setLinkedStudents(list);
-          setRestrictToLinkedStudents(true);
-          setStudents(list.map((s: LinkedStudent) => ({ id: s.id, order_number: s.order_number, first_name: s.first_name, last_name: s.last_name, class_id: s.class_id })));
-          const toSelect = initialStudentId && list.some((x) => x.id === initialStudentId) ? initialStudentId : list[0].id;
-          const sel = list.find((x) => x.id === toSelect) ?? list[0];
-          setSelectedStudentId(toSelect);
-          setSelectedClassId(sel.class_id);
+          if (isParentOnly) {
+            setRestrictToLinkedStudents(true);
+            setStudents(list.map((s: LinkedStudent) => ({ id: s.id, order_number: s.order_number, first_name: s.first_name, last_name: s.last_name, class_id: s.class_id })));
+            const toSelect = initialStudentId && list.some((x) => x.id === initialStudentId) ? initialStudentId : list[0].id;
+            const sel = list.find((x) => x.id === toSelect) ?? list[0];
+            setSelectedStudentId(toSelect);
+            setSelectedClassId(sel.class_id);
+          }
         }
       }
       setLoading(false);

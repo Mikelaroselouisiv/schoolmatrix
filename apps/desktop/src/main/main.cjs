@@ -18,12 +18,16 @@ let mainWindow = null;
 
 function resolveIcon() {
   const candidates = [
-    path.join(__dirname, '../../build/icon.png'),
-    path.join(__dirname, '../../build/icon.ico'),
+    path.join(process.resourcesPath || '', 'icon.ico'),
     path.join(process.resourcesPath || '', 'icon.png'),
+    path.join(__dirname, '../../build/icon.ico'),
+    path.join(__dirname, '../../build/icon.png'),
   ];
   for (const p of candidates) {
-    if (p && fs.existsSync(p)) return nativeImage.createFromPath(p);
+    if (p && fs.existsSync(p)) {
+      const img = nativeImage.createFromPath(p);
+      if (!img.isEmpty()) return img;
+    }
   }
   return undefined;
 }

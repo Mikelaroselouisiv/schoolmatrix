@@ -33,6 +33,8 @@ type RequestUser = {
  *
  * - Rôle PARENT : l'élève ciblé doit figurer dans `user_linked_student`
  *   pour le `sub` du jeton, sinon 403. Une route marquée @DenyParents() répond 403.
+ * - Avoir des élèves liés ne change PAS le rôle : SUPER_ADMIN / TEACHER / etc.
+ *   restent du staff. Seul le nom de rôle `PARENT` active ce périmètre.
  * - Tous les autres rôles : comportement strictement inchangé (aucune requête
  *   supplémentaire, aucun contrôle ajouté). Le desktop et le mobile qui
  *   utilisent ces routes avec des jetons admin/enseignant ne sont pas touchés.

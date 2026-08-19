@@ -18,11 +18,18 @@ sur un autre NestJS (école, POS, portail client).
 | Jeton | Comportement |
 |-------|----------------|
 | Staff (admin, enseignant, caisse…) | **Inchangé** : pas de requête extra, pas de 403 nouveau |
+| Staff **+** ressources liées (ex. enfants) | Le rôle **ne change pas**. Les liens sont un overlay (fiche famille, « mes enfants ») ; `@DenyParents()` ne s’applique **pas**. |
 | Rôle restreint (ex. `PARENT`) | Interdit sur les listes / écritures d’école ; lectures **uniquement** de ses ressources liées |
 | Anonyme | Login + bootstrap initial seulement |
 
 Ne **pas** coller `@Roles()` partout : ça casse le desktop/staff. Le garde de
 périmètre ignore les non-parents.
+
+**Lier une ressource ≠ changer le rôle.** `user_linked_student` n’appelle jamais
+`setUserRole('PARENT')`. Un `save({ user: { id } })` TypeORM sur la table de
+lien peut persister un User partiel et **écraser `role_id`** — utiliser
+`insert()` / `update()` colonnes. Le JWT `validate` relit le rôle **en base**,
+pas le payload (jeton périmé). Ne jamais faire `role ?? 'PARENT'` au login.
 
 ## Trois couches (dans cet ordre)
 

@@ -27,9 +27,6 @@ export class StudentParentsService {
   async getChildrenForParent(parentUserId: number): Promise<ParentChild[]> {
     const user = await this.users.findOne(parentUserId).catch(() => null);
     if (!user) return [];
-    const roleName =
-      user.role?.name ?? (typeof user.role === 'string' ? user.role : '');
-    if (roleName !== 'PARENT') return [];
     const list = await this.users.getLinkedStudentsForFiche(parentUserId);
     return list.map((s) => ({
       id: s.id,

@@ -44,7 +44,7 @@ type Props = NativeStackScreenProps<StudentsStackParamList, 'StudentsMain'>;
 type PickerKind = 'year' | 'class' | null;
 
 function useLinkedOnly(roleName: string): boolean {
-  return roleName === 'PARENT' || roleName === 'TEACHER';
+  return roleName === 'PARENT';
 }
 
 export function StudentsScreen({ navigation }: Props) {

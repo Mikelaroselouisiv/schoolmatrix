@@ -129,6 +129,7 @@ export class UsersService {
    * Lien officiel compte ↔ élève (`user_linked_student`) — même table que
    * l’écran Utilisateurs (« Dossiers élèves liés » / n° ministère).
    * Ajoute sans retirer les autres enfants déjà liés.
+   * Ne change JAMAIS le rôle : un SUPER_ADMIN / TEACHER reste lui-même.
    */
   async linkStudent(userId: number, studentId: string, kick = true): Promise<boolean> {
     const student = await this.studentRepo.findOne({ where: { id: studentId } });
@@ -137,12 +138,18 @@ export class UsersService {
       where: { user: { id: userId }, student: { id: studentId } },
     });
     if (existing) return false;
-    await this.linkedStudentRepo.save(
-      this.linkedStudentRepo.create({
+    // insert() et non save({ user: { id } }) : TypeORM persistait l'User
+    // partiel et pouvait écraser role_id (staff → PARENT / rôle vide).
+    await this.linkedStudentRepo
+      .createQueryBuilder()
+      .insert()
+      .into(UserLinkedStudent)
+      .values({
         user: { id: userId } as User,
         student: { id: studentId } as Student,
-      }),
-    );
+      })
+      .orIgnore()
+      .execute();
     if (kick) this.syncKick.kick('user-link-student');
     return true;
   }
@@ -152,10 +159,14 @@ export class UsersService {
     if (!user) throw new NotFoundException('User not found');
     const role = await this.rolesRepo.findOne({ where: { name: roleName.toUpperCase().trim() } });
     if (!role) throw new BadRequestException(`Role not found: ${roleName}`);
-    user.role = role;
-    const saved = await this.usersRepo.save(user);
+    await this.usersRepo
+      .createQueryBuilder()
+      .update(User)
+      .set({ role })
+      .where('id = :id', { id: userId })
+      .execute();
     this.syncKick.kick('user-role');
-    return saved;
+    return this.findOne(userId);
   }
 
   async updateUser(userId: number, params: Partial<{
@@ -174,23 +185,31 @@ export class UsersService {
   }>): Promise<User> {
     const user = await this.usersRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
-    if (params.first_name !== undefined) user.first_name = params.first_name.trim() || undefined;
-    if (params.last_name !== undefined) user.last_name = params.last_name.trim() || undefined;
+    const patch: Record<string, unknown> = {};
+    if (params.first_name !== undefined) patch.first_name = params.first_name.trim() || undefined;
+    if (params.last_name !== undefined) patch.last_name = params.last_name.trim() || undefined;
     if (params.email !== undefined) {
       const email = params.email.toLowerCase().trim();
       const exists = await this.usersRepo.findOne({ where: { email } });
       if (exists && exists.id !== userId) throw new BadRequestException('Email already exists');
-      user.email = email;
+      patch.email = email;
     }
-    if (params.address !== undefined) user.address = params.address.trim() || undefined;
-    if (params.phone !== undefined) user.phone = params.phone.trim() || undefined;
-    if (params.whatsapp !== undefined) user.whatsapp = params.whatsapp.trim() || undefined;
-    if (params.active !== undefined) user.active = params.active;
-    if (params.profile_photo_url !== undefined) user.profile_photo_url = params.profile_photo_url.trim() || undefined;
-    if (params.cover_photo_url !== undefined) user.cover_photo_url = params.cover_photo_url.trim() || undefined;
-    if (params.order_number !== undefined) user.order_number = params.order_number.trim() || null;
+    if (params.address !== undefined) patch.address = params.address.trim() || undefined;
+    if (params.phone !== undefined) patch.phone = params.phone.trim() || undefined;
+    if (params.whatsapp !== undefined) patch.whatsapp = params.whatsapp.trim() || undefined;
+    if (params.active !== undefined) patch.active = params.active;
+    if (params.profile_photo_url !== undefined) {
+      patch.profile_photo_url = params.profile_photo_url.trim() || undefined;
+    }
+    if (params.cover_photo_url !== undefined) {
+      patch.cover_photo_url = params.cover_photo_url.trim() || undefined;
+    }
+    if (params.order_number !== undefined) patch.order_number = params.order_number.trim() || null;
     if (params.password !== undefined && params.password.length > 0) {
-      user.password_hash = await bcrypt.hash(params.password, 10);
+      patch.password_hash = await bcrypt.hash(params.password, 10);
+    }
+    if (Object.keys(patch).length > 0) {
+      await this.usersRepo.update(userId, patch);
     }
     if (params.linked_student_ids !== undefined) {
       await this.linkedStudentRepo.delete({ user: { id: userId } });
@@ -198,9 +217,8 @@ export class UsersService {
         await this.linkStudent(userId, studentId, false);
       }
     }
-    const saved = await this.usersRepo.save(user);
     this.syncKick.kick('user-update');
-    return saved;
+    return this.findOne(userId);
   }
 
   async getLinkedStudentIds(userId: number): Promise<string[]> {
@@ -243,11 +261,12 @@ export class UsersService {
     if (!user) throw new NotFoundException('User not found');
     const pwd = newPassword?.trim() ?? '';
     if (pwd.length < 6) throw new BadRequestException('Le mot de passe doit faire au moins 6 caractères');
-    user.password_hash = await bcrypt.hash(pwd, 10);
-    user.must_change_password = true;
-    const saved = await this.usersRepo.save(user);
+    await this.usersRepo.update(userId, {
+      password_hash: await bcrypt.hash(pwd, 10),
+      must_change_password: true,
+    });
     this.syncKick.kick('user-password');
-    return saved;
+    return this.findOne(userId);
   }
 
   private phoneDigits(phone: string): string {
@@ -259,6 +278,7 @@ export class UsersService {
     return (
       (await this.usersRepo
         .createQueryBuilder('u')
+        .leftJoinAndSelect('u.role', 'r')
         .where("REGEXP_REPLACE(COALESCE(u.phone, ''), '[^0-9]', '', 'g') = :digits", { digits })
         .getOne()) ?? null
     );
@@ -324,9 +344,16 @@ export class UsersService {
     if (params.profile_photo_url !== undefined) {
       user.profile_photo_url = params.profile_photo_url.trim() || null;
     }
-    const saved = await this.usersRepo.save(user);
+    const { role: _role, ...scalars } = user;
+    await this.usersRepo.update(userId, {
+      first_name: scalars.first_name,
+      last_name: scalars.last_name,
+      email: scalars.email,
+      phone: scalars.phone,
+      profile_photo_url: scalars.profile_photo_url,
+    });
     this.syncKick.kick('user-self-profile');
-    return saved;
+    return this.findOne(userId);
   }
 
   async changeOwnPassword(userId: number, currentPassword: string, newPassword: string): Promise<User> {
@@ -345,11 +372,12 @@ export class UsersService {
     if (next === DEFAULT_STAFF_PASSWORD) {
       throw new BadRequestException('Choisissez un mot de passe personnel, pas le mot de passe par défaut');
     }
-    user.password_hash = await bcrypt.hash(next, 10);
-    user.must_change_password = false;
-    const saved = await this.usersRepo.save(user);
+    await this.usersRepo.update(userId, {
+      password_hash: await bcrypt.hash(next, 10),
+      must_change_password: false,
+    });
     this.syncKick.kick('user-self-password');
-    return saved;
+    return this.findOne(userId);
   }
 
   async provisionTeachers(params: {

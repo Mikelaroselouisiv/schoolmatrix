@@ -186,7 +186,7 @@ export function UsersAdminScreen({}: Props) {
           linked_student_ids: linkedIds,
           ...(password.trim() ? { password: password.trim() } : {}),
         });
-        if (roleName && roleName !== editing.role) {
+        if (editing.role && roleName && roleName !== editing.role) {
           await setUserRole(editing.id, roleName);
         }
       } else {

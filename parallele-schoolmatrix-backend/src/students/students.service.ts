@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Student } from './student.entity';
@@ -9,6 +9,9 @@ import { ClassesService } from '../classes/classes.service';
 import { RoomsService } from '../rooms/rooms.service';
 import { StudentAiImportService } from './student-ai-import.service';
 import { isPostgresUniqueViolation, normalizeNisu } from './student-nisu';
+import { SyncService } from '../sync/sync.service';
+import { SyncKickService } from '../sync/sync-kick.service';
+import { ParentAccountService } from '../users/parent-account.service';
 
 export type ImportResult = {
   created: number;
@@ -18,6 +21,8 @@ export type ImportResult = {
 
 @Injectable()
 export class StudentsService {
+  private readonly logger = new Logger(StudentsService.name);
+
   constructor(
     @InjectRepository(Student)
     private readonly studentRepo: Repository<Student>,
@@ -26,6 +31,9 @@ export class StudentsService {
     private readonly classesService: ClassesService,
     private readonly roomsService: RoomsService,
     private readonly studentAiImport: StudentAiImportService,
+    private readonly syncService: SyncService,
+    private readonly syncKick: SyncKickService,
+    private readonly parentAccounts: ParentAccountService,
   ) {}
 
   async findAll(filters?: {
@@ -114,8 +122,10 @@ export class StudentsService {
     const room = params.room_id?.trim()
       ? await this.resolveRoomForClass(params.class_id, params.room_id)
       : null;
+    const management_code = await this.allocateManagementCode();
     const student = this.studentRepo.create({
       order_number: nisu,
+      management_code,
       first_name: params.first_name.trim(),
       last_name: params.last_name.trim(),
       email: params.email?.trim(),
@@ -157,10 +167,22 @@ export class StudentsService {
         params.class_id,
       );
     }
-    return this.findOne(saved.id);
+    const created = await this.findOne(saved.id);
+    await this.attachGuardianQuietly(created);
+    return created;
   }
 
-  /** NISU unique global (Haïti) — refuse tout doublon. */
+  private async attachGuardianQuietly(student: Student): Promise<void> {
+    try {
+      await this.parentAccounts.ensureForStudent(student);
+    } catch (err: any) {
+      this.logger.warn(
+        `Compte parent non provisionné pour ${student.last_name} ${student.first_name}: ${err?.message || err}`,
+      );
+    }
+  }
+
+  /** NISU unique global (Haïti) — refuse tout doublon. Usage interne / sensible. */
   private async assertNisuAvailable(nisu: string, excludeStudentId?: string): Promise<void> {
     const existing = await this.studentRepo.findOne({ where: { order_number: nisu } });
     if (existing && existing.id !== excludeStudentId) {
@@ -168,6 +190,18 @@ export class StudentsService {
         `Le NISU « ${nisu} » est déjà utilisé — un élève ne peut pas être inscrit deux fois.`,
       );
     }
+  }
+
+  /** Code de gestion public (badge, fiche) — distinct du NISU. */
+  private async allocateManagementCode(): Promise<string> {
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const seq = (await this.studentRepo.count()) + 1 + attempt;
+      const code = `CG-${String(seq).padStart(6, '0')}`;
+      const exists = await this.studentRepo.findOne({ where: { management_code: code } });
+      if (!exists) return code;
+    }
+    const suffix = Date.now().toString(36).toUpperCase().slice(-6);
+    return `CG-${suffix}`;
   }
 
   async update(
@@ -203,6 +237,9 @@ export class StudentsService {
     });
     if (!student) {
       throw new NotFoundException('Student not found');
+    }
+    if (!student.management_code?.trim()) {
+      student.management_code = await this.allocateManagementCode();
     }
     if (params.order_number !== undefined) {
       const nisu = normalizeNisu(params.order_number);
@@ -289,7 +326,9 @@ export class StudentsService {
       }
       throw err;
     }
-    return this.findOne(id);
+    const updated = await this.findOne(id);
+    await this.attachGuardianQuietly(updated);
+    return updated;
   }
 
   async findByOrderNumber(orderNumber: string): Promise<Student | null> {
@@ -306,7 +345,10 @@ export class StudentsService {
     if (!student) {
       throw new NotFoundException('Student not found');
     }
+    // Tombstone explicite avant hard delete (subscriber ORM en filet de sécurité).
+    await this.syncService.markDeleted('Student', id, undefined, { kick: false });
     await this.studentRepo.remove(student);
+    this.syncKick.kick('student-delete');
   }
 
   /** Import en masse depuis un CSV (UTF-8, séparateur ;). Première ligne = en-têtes. */

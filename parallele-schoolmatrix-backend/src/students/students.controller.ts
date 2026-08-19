@@ -43,6 +43,7 @@ export class StudentsController {
       students: students.map((s) => ({
         id: s.id,
         order_number: s.order_number,
+        management_code: s.management_code,
         first_name: s.first_name,
         last_name: s.last_name,
         email: s.email,
@@ -85,6 +86,7 @@ export class StudentsController {
       student: {
         id: s.id,
         order_number: s.order_number,
+        management_code: s.management_code,
         first_name: s.first_name,
         last_name: s.last_name,
         class_id: s.class?.id,
@@ -104,6 +106,7 @@ export class StudentsController {
       student: {
         id: s.id,
         order_number: s.order_number,
+        management_code: s.management_code,
         first_name: s.first_name,
         last_name: s.last_name,
         email: s.email,
@@ -222,6 +225,7 @@ export class StudentsController {
       student: {
         id: s.id,
         order_number: s.order_number,
+        management_code: s.management_code,
         first_name: s.first_name,
         last_name: s.last_name,
         email: s.email,
@@ -259,6 +263,7 @@ export class StudentsController {
       student: {
         id: s.id,
         order_number: s.order_number,
+        management_code: s.management_code,
         first_name: s.first_name,
         last_name: s.last_name,
         email: s.email,

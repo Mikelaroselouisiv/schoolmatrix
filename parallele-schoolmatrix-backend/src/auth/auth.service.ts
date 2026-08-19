@@ -38,7 +38,16 @@ export class AuthService {
     const expiresIn = rememberMe ? '365d' : '7d';
     return {
       access_token: await this.jwt.signAsync(payload, { expiresIn }),
-      user: { id: user.id, email: user.email, role: user.role?.name ?? user.role },
+      user: {
+        id: user.id,
+        email: user.email,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        phone: user.phone,
+        profile_photo_url: user.profile_photo_url,
+        role: user.role?.name ?? user.role,
+        must_change_password: !!user.must_change_password,
+      },
     };
   }
 

@@ -11,6 +11,7 @@ import { FormationClasseModule } from '../formation-classe/formation-classe.modu
 import { ClassesModule } from '../classes/classes.module';
 import { RoomsModule } from '../rooms/rooms.module';
 import { ParentScopeModule } from '../auth/parent-scope.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { ParentScopeModule } from '../auth/parent-scope.module';
     ClassesModule,
     RoomsModule,
     ParentScopeModule,
+    UsersModule,
   ],
   controllers: [StudentsController, StudentPhotosController],
   providers: [StudentsService, StudentPhotosService, StudentAiImportService],

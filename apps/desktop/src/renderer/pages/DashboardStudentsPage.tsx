@@ -9,6 +9,7 @@ import { DateInputJJMMAAAA } from "@/components/DateInputJJMMAAAA";
 type Student = {
   id: string;
   order_number: string | null;
+  management_code: string | null;
   first_name: string;
   last_name: string;
   email: string | null;
@@ -60,6 +61,7 @@ export function DashboardStudentsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
   const [createdOrderNumber, setCreatedOrderNumber] = useState<string | null>(null);
+  const [createdManagementCode, setCreatedManagementCode] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     order_number: "",
@@ -166,6 +168,7 @@ export function DashboardStudentsPage() {
     setSaving(true);
     setError("");
     setCreatedOrderNumber(null);
+    setCreatedManagementCode(null);
     try {
       const body = {
         order_number: nisu,
@@ -209,6 +212,7 @@ export function DashboardStudentsPage() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || "Erreur");
         setCreatedOrderNumber(data.student?.order_number ?? (form.order_number.trim() || null));
+        setCreatedManagementCode(data.student?.management_code ?? null);
         setForm({ order_number: "", first_name: "", last_name: "", class_id: "", room_id: "", academic_year_id: academicYears[0]?.id ?? "", email: "", phone: "", address: "", birth_date: "", birth_place: "", gender: "", photo_identity_student: "", photo_identity_mother: "", photo_identity_father: "", photo_identity_responsible: "", mother_name: "", mother_phone: "", father_name: "", father_phone: "", responsible_name: "", responsible_phone: "" });
         load();
       }
@@ -262,6 +266,7 @@ export function DashboardStudentsPage() {
     });
     setShowForm(true);
     setCreatedOrderNumber(null);
+    setCreatedManagementCode(null);
   }
 
   function openCreate() {
@@ -270,6 +275,7 @@ export function DashboardStudentsPage() {
     setForm({ order_number: "", first_name: "", last_name: "", class_id: "", room_id: "", academic_year_id: defaultYearId, email: "", phone: "", address: "", birth_date: "", birth_place: "", gender: "", photo_identity_student: "", photo_identity_mother: "", photo_identity_father: "", photo_identity_responsible: "", mother_name: "", mother_phone: "", father_name: "", father_phone: "", responsible_name: "", responsible_phone: "" });
     setShowForm(true);
     setCreatedOrderNumber(null);
+    setCreatedManagementCode(null);
   }
 
   if (loading) return <div className="animate-pulse text-slate-500">Chargement...</div>;
@@ -290,7 +296,11 @@ export function DashboardStudentsPage() {
         <div className="p-4 rounded-xl bg-green-50 border border-green-200">
           <p className="font-semibold text-green-800">Élève inscrit</p>
           <p className="text-green-700 mt-1">
-            NISU : <span className="font-mono font-bold">{createdOrderNumber}</span>
+            Code de gestion :{" "}
+            <span className="font-mono font-bold">{createdManagementCode ?? "—"}</span>
+          </p>
+          <p className="text-green-700/80 text-sm mt-1">
+            NISU (interne) : <span className="font-mono">{createdOrderNumber}</span>
           </p>
         </div>
       )}
@@ -352,7 +362,7 @@ export function DashboardStudentsPage() {
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
-              NISU *
+              NISU (interne) *
             </label>
             <input
               type="text"
@@ -364,10 +374,18 @@ export function DashboardStudentsPage() {
                   order_number: f.order_number.trim().replace(/[\s\u00A0]+/g, "").toUpperCase(),
                 }))
               }
-              placeholder="Code NISU unique (Haïti)"
+              placeholder="Code NISU — usage interne uniquement"
               className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 font-mono"
               required
             />
+            <p className="text-xs text-slate-500 mt-1">
+              Le NISU n’apparaît pas sur la fiche ni sur le badge. Un code de gestion public est créé automatiquement.
+            </p>
+            {editing?.management_code && (
+              <p className="text-xs text-slate-600 mt-1">
+                Code de gestion : <span className="font-mono font-semibold">{editing.management_code}</span>
+              </p>
+            )}
           </div>
 
           {!editing && (
@@ -501,7 +519,7 @@ export function DashboardStudentsPage() {
 
           <div className="flex gap-3">
             <button type="submit" disabled={saving} className="app-btn-primary disabled:opacity-60">{saving ? "Enregistrement..." : editing ? "Enregistrer" : "Inscrire"}</button>
-            <button type="button" onClick={() => { setShowForm(false); setEditing(null); setCreatedOrderNumber(null); }} className="app-btn-secondary">Annuler</button>
+            <button type="button" onClick={() => { setShowForm(false); setEditing(null); setCreatedOrderNumber(null); setCreatedManagementCode(null); }} className="app-btn-secondary">Annuler</button>
           </div>
         </form>
       )}
@@ -511,7 +529,8 @@ export function DashboardStudentsPage() {
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 border-b border-[var(--app-border)]">
             <tr>
-              <th className="px-4 py-3 font-medium text-slate-900">NISU</th>
+              <th className="px-4 py-3 font-medium text-slate-900">Code gestion</th>
+              <th className="px-4 py-3 font-medium text-slate-900">NISU (interne)</th>
               <th className="px-4 py-3 font-medium text-slate-900">Nom</th>
               <th className="px-4 py-3 font-medium text-slate-900">Classe</th>
               <th className="px-4 py-3 font-medium text-slate-900">Salle</th>
@@ -522,11 +541,12 @@ export function DashboardStudentsPage() {
           </thead>
           <tbody>
             {students.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">Aucun élève</td></tr>
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-500">Aucun élève</td></tr>
             ) : (
               students.map((s) => (
                 <tr key={s.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
-                  <td className="px-4 py-3 font-mono font-semibold text-slate-900">{s.order_number ?? "—"}</td>
+                  <td className="px-4 py-3 font-mono font-semibold text-slate-900">{s.management_code ?? "—"}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-500">{s.order_number ?? "—"}</td>
                   <td className="px-4 py-3 font-medium text-slate-900">{s.first_name} {s.last_name}</td>
                   <td className="px-4 py-3 text-slate-600">{s.class_name}</td>
                   <td className="px-4 py-3 text-slate-600">{s.room_name ?? "—"}</td>

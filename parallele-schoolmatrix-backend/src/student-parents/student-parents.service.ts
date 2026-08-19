@@ -1,7 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { UserLinkedStudent } from '../users/user-linked-student.entity';
+import { UsersService } from '../users/users.service';
 
 export interface ParentChild {
   id: string;
@@ -23,39 +21,25 @@ export interface ParentChild {
  */
 @Injectable()
 export class StudentParentsService {
-  constructor(
-    @InjectRepository(UserLinkedStudent)
-    private readonly linkedRepo: Repository<UserLinkedStudent>,
-  ) {}
+  constructor(private readonly users: UsersService) {}
 
+  /** Même source que GET /users/me/linked-students (user_linked_student). */
   async getChildrenForParent(parentUserId: number): Promise<ParentChild[]> {
-    const links = await this.linkedRepo
-      .createQueryBuilder('l')
-      .innerJoinAndSelect('l.student', 's')
-      .leftJoinAndSelect('s.class', 'c')
-      .where('l.user_id = :uid', { uid: parentUserId })
-      .orderBy('s.last_name', 'ASC')
-      .addOrderBy('s.first_name', 'ASC')
-      .getMany();
-
-    return links.map((l) => ({
-      id: l.student.id,
-      order_number: l.student.order_number ?? null,
-      first_name: l.student.first_name,
-      last_name: l.student.last_name,
-      class_id: l.student.class?.id ?? null,
-      class_name: l.student.class?.name ?? null,
-      photo_identity_student: l.student.photo_identity_student ?? null,
+    const user = await this.users.findOne(parentUserId).catch(() => null);
+    if (!user) return [];
+    const roleName =
+      user.role?.name ?? (typeof user.role === 'string' ? user.role : '');
+    if (roleName !== 'PARENT') return [];
+    const list = await this.users.getLinkedStudentsForFiche(parentUserId);
+    return list.map((s) => ({
+      id: s.id,
+      order_number: s.order_number ?? null,
+      first_name: s.first_name,
+      last_name: s.last_name,
+      class_id: s.class_id ?? null,
+      class_name: s.class_name ?? null,
+      photo_identity_student: (s as { photo_identity_student?: string | null })
+        .photo_identity_student ?? null,
     }));
-  }
-
-  /** Identifiants d'élèves rattachés — utilisé par le périmètre parent. */
-  async getLinkedStudentIds(parentUserId: number): Promise<string[]> {
-    const rows = await this.linkedRepo
-      .createQueryBuilder('l')
-      .select('l.student_id', 'student_id')
-      .where('l.user_id = :uid', { uid: parentUserId })
-      .getRawMany<{ student_id: string }>();
-    return rows.map((r) => r.student_id).filter(Boolean);
   }
 }

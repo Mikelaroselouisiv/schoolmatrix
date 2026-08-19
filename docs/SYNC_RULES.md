@@ -40,7 +40,17 @@ Sync après `SchoolProfile` dans `ENTITY_ORDER`. Les images (`image_url`) suiven
 - UUID métier (`id`) = clé de sync (sauf SchoolProfile singleton qui peut changer d’UUID gagnant).
 - Filaire : colonnes scalaires + FK ManyToOne comme uuid (via `loadRelationIds`).
 - Curseur composite `{ since, afterId }` + horodatage µs Postgres (pas de blocage sur skip).
-- Pas de soft-delete généralisé en V1 (`deletedAt` toujours `null`).
+
+## Suppressions (tombstones)
+
+Les hard deletes métier sont propagés via la table `sync_tombstone` (entité sync **`SyncTombstone`**, toujours **en dernier** dans `ENTITY_ORDER`) :
+
+1. Suppressions ORM (`.remove`) → subscriber + `SyncService.markDeleted` écrivent un tombstone (`entity_name`, `entity_id`, `deleted_at`) puis kick agent.
+2. Push / pull du tombstone → côté distant : upsert tombstone + **hard delete** de la cible si `deleted_at >= updated_at` cible.
+3. Un upsert plus ancien qu’un tombstone local **ne ressuscite pas** la ligne ; un upsert **plus récent** retire le tombstone (résurrection rare).
+
+`SchoolProfile` (singleton / dédup) n’utilise pas ce mécanisme.  
+Les suppressions faites **avant** le déploiement de cette version n’ont pas de tombstone : les supprimer une fois de l’autre côté, ou re-supprimer après MAJ.
 
 ## Append-only
 

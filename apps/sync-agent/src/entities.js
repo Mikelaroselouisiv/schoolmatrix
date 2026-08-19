@@ -10,6 +10,8 @@ export const ENTITY_ORDER = [
   'Room',
   'ClassSubject',
   'Student',
+  'UserLinkedStudent',
+  'StudentParent',
   'StudentPhoto',
   'FeeService',
   'ClassFee',
@@ -27,4 +29,5 @@ export const ENTITY_ORDER = [
   'FileMetadata',
   'Attendance',
   'PaymentTransaction',
+  'SyncTombstone',
 ];

@@ -1,5 +1,9 @@
-/** Ordre parents → enfants (doit matcher le backend SYNC_ENTITY_DEFS). */
+/** Ordre sync (doit matcher le backend SYNC_ENTITY_DEFS).
+ * SyncTombstone EN PREMIER : appliquer / propager les deletes
+ * avant tout upsert (évite la résurrection cloud→local dans le même cycle).
+ */
 export const ENTITY_ORDER = [
+  'SyncTombstone',
   'SchoolProfile',
   'SchoolSignature',
   'User',
@@ -29,5 +33,4 @@ export const ENTITY_ORDER = [
   'FileMetadata',
   'Attendance',
   'PaymentTransaction',
-  'SyncTombstone',
 ];

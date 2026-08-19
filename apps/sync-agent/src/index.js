@@ -23,6 +23,12 @@ const pushCursors = Object.create(null);
 let running = false;
 let rerun = false;
 
+/**
+ * Cycle anti-résurrection :
+ * 1) Push tombstones local→cloud EN PREMIER (la delete locale gagne côté cloud avant le pull)
+ * 2) Pull cloud→local (tombstones cloud d’abord grâce à ENTITY_ORDER)
+ * 3) Push reste local→cloud
+ */
 async function tick(reason = 'interval') {
   if (running) {
     rerun = true;
@@ -34,6 +40,16 @@ async function tick(reason = 'interval') {
       rerun = false;
       const started = Date.now();
       try {
+        const tombsOut = await replicateDirection({
+          from: local,
+          to: remote,
+          cursors: pushCursors,
+          sourceNodeId: NODE_ID,
+          label: 'push-tombs-local→gcp',
+          entities: ['SyncTombstone'],
+        });
+        console.log('[sync-agent]', JSON.stringify(tombsOut));
+
         const pullSummary = await replicateDirection({
           from: remote,
           to: local,
@@ -89,7 +105,7 @@ kickServer.listen(KICK_PORT, '0.0.0.0', () => {
 });
 
 console.log(
-  `[sync-agent] démarrage — local=${LOCAL_API_URL} remote=${REMOTE_API_URL} interval=${SYNC_INTERVAL_MS}ms LWW+kick`,
+  `[sync-agent] démarrage — local=${LOCAL_API_URL} remote=${REMOTE_API_URL} interval=${SYNC_INTERVAL_MS}ms tombs-first+LWW+kick`,
 );
 void tick('startup');
 setInterval(() => void tick('interval'), SYNC_INTERVAL_MS);

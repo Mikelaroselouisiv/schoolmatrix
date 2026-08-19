@@ -597,7 +597,7 @@ export class SyncService implements OnModuleInit {
     entityName: SyncEntityName,
     entityId: string,
     deletedAt: Date,
-    sourceNodeId?: string,
+    _sourceNodeId?: string,
   ): Promise<boolean> {
     const def = SYNC_ENTITY_MAP.get(entityName);
     if (!def || entityName === 'SyncTombstone') return false;
@@ -619,7 +619,29 @@ export class SyncService implements OnModuleInit {
 
     this.applyingRemoteTombstone += 1;
     try {
+      // Nettoyage dépendances avant delete (schémas sans CASCADE / anciennes FK).
+      if (entityName === 'User') {
+        try {
+          await this.dataSource.query(
+            `DELETE FROM user_linked_student WHERE user_id = $1`,
+            [primaryId],
+          );
+        } catch {
+          /* table absente */
+        }
+        try {
+          await this.dataSource.query(
+            `DELETE FROM student_parent WHERE user_id = $1`,
+            [primaryId],
+          );
+        } catch {
+          /* table absente */
+        }
+      }
       await targetRepo.delete(primaryId as any);
+    } catch {
+      // Ne pas faire échouer tout le batch SyncTombstone (bloque le curseur agent).
+      return false;
     } finally {
       this.applyingRemoteTombstone -= 1;
     }
@@ -651,22 +673,38 @@ export class SyncService implements OnModuleInit {
         entity_id: String(record.uuid),
       },
     });
+    // Tombstone local = suppression définitive côté sync (pas de résurrection LWW).
     if (tomb) {
-      const tombAt = this.parseTime(tomb.deleted_at);
-      const incomingAt = this.parseTime(record.updatedAt);
-      if (tombAt.getTime() >= incomingAt.getTime()) {
-        if (existing) {
-          this.applyingRemoteTombstone += 1;
-          try {
-            await repo.delete(primaryId as any);
-          } finally {
-            this.applyingRemoteTombstone -= 1;
+      if (existing) {
+        this.applyingRemoteTombstone += 1;
+        try {
+          if (entityName === 'User') {
+            try {
+              await this.dataSource.query(
+                `DELETE FROM user_linked_student WHERE user_id = $1`,
+                [primaryId],
+              );
+            } catch {
+              /* ignore */
+            }
+            try {
+              await this.dataSource.query(
+                `DELETE FROM student_parent WHERE user_id = $1`,
+                [primaryId],
+              );
+            } catch {
+              /* ignore */
+            }
           }
-          return 'deleted';
+          await repo.delete(primaryId as any);
+        } catch {
+          return 'skipped';
+        } finally {
+          this.applyingRemoteTombstone -= 1;
         }
-        return 'skipped';
+        return 'deleted';
       }
-      await this.tombstoneRepo.delete({ id: tomb.id });
+      return 'skipped';
     }
 
     if (APPEND_ONLY_ENTITIES.has(entityName)) {

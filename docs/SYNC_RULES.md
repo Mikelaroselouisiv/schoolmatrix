@@ -8,11 +8,14 @@
 
 ## Cycle agent
 
-1. Pull cloud → local  
-2. Push local → cloud  
+1. **Push tombstones** local → cloud (priorité absolue)  
+2. Pull cloud → local (tombstones cloud en premier dans `ENTITY_ORDER`)  
+3. Push local → cloud (reste des entités)
 
 - Intervalle par défaut : **~5s** (`SYNC_INTERVAL_MS`).
 - Kick immédiat : l’API locale POST `SYNC_KICK_URL` (agent `:3911/kick`) après écritures école / utilisateur / upload.
+
+Pourquoi ce ordre : un pull cloud→local **avant** d’avoir poussé le tombstone local **ressuscitait** les comptes / élèves encore présents online.
 
 ## Conflits : last-write-wins
 
@@ -43,11 +46,12 @@ Sync après `SchoolProfile` dans `ENTITY_ORDER`. Les images (`image_url`) suiven
 
 ## Suppressions (tombstones)
 
-Les hard deletes métier sont propagés via la table `sync_tombstone` (entité sync **`SyncTombstone`**, toujours **en dernier** dans `ENTITY_ORDER`) :
+Les hard deletes métier sont propagés via la table `sync_tombstone` (entité sync **`SyncTombstone`**, toujours **en premier** dans `ENTITY_ORDER`) :
 
 1. Suppressions ORM (`.remove`) → subscriber + `SyncService.markDeleted` écrivent un tombstone (`entity_name`, `entity_id`, `deleted_at`) puis kick agent.
-2. Push / pull du tombstone → côté distant : upsert tombstone + **hard delete** de la cible si `deleted_at >= updated_at` cible.
-3. Un upsert plus ancien qu’un tombstone local **ne ressuscite pas** la ligne ; un upsert **plus récent** retire le tombstone (résurrection rare).
+2. L’agent **pousse d’abord** les tombstones local→cloud, puis pull, puis push du reste.
+3. Côté distant : upsert tombstone + **hard delete** de la cible.
+4. **Pas de résurrection sync** : tant qu’un tombstone existe, un upsert distant est ignoré (la ligne reste absente). Restauration = suppression manuelle du tombstone (hors sync V1).
 
 `SchoolProfile` (singleton / dédup) n’utilise pas ce mécanisme.  
 Les suppressions faites **avant** le déploiement de cette version n’ont pas de tombstone : les supprimer une fois de l’autre côté, ou re-supprimer après MAJ.

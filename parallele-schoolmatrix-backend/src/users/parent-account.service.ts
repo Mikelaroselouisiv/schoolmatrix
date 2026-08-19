@@ -89,6 +89,20 @@ export class ParentAccountService {
     this.syncKick.kick('parent-placeholder');
   }
 
+  /**
+   * Purge de test : supprime tous les comptes rôle PARENT (+ liens élèves).
+   * N’affecte pas le staff (enseignants, admins, etc.).
+   */
+  async deleteAllParentAccounts(): Promise<{ deleted: number; ids: number[] }> {
+    const parents = await this.users.findParents();
+    const ids = parents.map((p) => p.id);
+    for (const id of ids) {
+      await this.users.deleteUser(id);
+    }
+    this.logger.warn(`Purge PARENT: ${ids.length} compte(s) supprimé(s)`);
+    return { deleted: ids.length, ids };
+  }
+
   private collectHints(student: Student): GuardianHint[] {
     const out: GuardianHint[] = [];
     const add = (

@@ -354,17 +354,16 @@ export class SchoolProfileService implements OnModuleInit {
 
   /** Statistiques tableau de bord (réservé directeurs / superadmin). */
   async getDashboardStats(): Promise<DashboardStats> {
-    const [classesCount, studentsCount, teacherRole] = await Promise.all([
+    const [classesCount, studentsCount, teachersCount] = await Promise.all([
       this.classRepo.count(),
       this.studentRepo.count(),
-      this.roleRepo.findOne({ where: { name: 'TEACHER' } }),
+      this.userRepo
+        .createQueryBuilder('u')
+        .innerJoin('u.role', 'r')
+        .where('r.name = :role', { role: 'TEACHER' })
+        .andWhere('u.active = :active', { active: true })
+        .getCount(),
     ]);
-    let teachersCount = 0;
-    if (teacherRole) {
-      teachersCount = await this.userRepo.count({
-        where: { role: { id: teacherRole.id }, active: true },
-      });
-    }
     return { classesCount, studentsCount, teachersCount };
   }
 }

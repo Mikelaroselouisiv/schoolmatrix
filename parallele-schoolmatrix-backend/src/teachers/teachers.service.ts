@@ -108,12 +108,14 @@ export class TeachersService {
   }
 
   async findTeachers(): Promise<User[]> {
-    const teacherRole = await this.roleRepo.findOne({ where: { name: 'TEACHER' } });
-    if (!teacherRole) return [];
-    return this.userRepo.find({
-      where: { role: { id: teacherRole.id }, active: true },
-      order: { last_name: 'ASC', first_name: 'ASC' },
-    });
+    return this.userRepo
+      .createQueryBuilder('u')
+      .leftJoinAndSelect('u.role', 'r')
+      .where('r.name = :role', { role: 'TEACHER' })
+      .andWhere('u.active = :active', { active: true })
+      .orderBy('u.last_name', 'ASC')
+      .addOrderBy('u.first_name', 'ASC')
+      .getMany();
   }
 
   async findOneTeacher(teacherId: number): Promise<User> {

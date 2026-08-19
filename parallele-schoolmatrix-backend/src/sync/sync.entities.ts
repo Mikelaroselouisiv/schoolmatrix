@@ -60,7 +60,7 @@ export type SyncEntityName =
   | 'ClassDecisionThreshold'
   | 'Attendance'
   | 'FileMetadata'
-  /** Toujours en dernier : applique les suppressions après les upserts. */
+  /** Toujours en premier dans ENTITY_ORDER : deletes avant upserts. */
   | 'SyncTombstone';
 
 export type SyncEntityDef = {
@@ -70,8 +70,10 @@ export type SyncEntityDef = {
   timeField: 'updated_at' | 'created_at';
 };
 
-/** Ordre parents → enfants (agent + doc). */
+/** Ordre parents → enfants (agent + doc). SyncTombstone en premier. */
 export const SYNC_ENTITY_DEFS: SyncEntityDef[] = [
+  /** Premier : deletes avant upserts (anti-résurrection dans le même cycle). */
+  { name: 'SyncTombstone', target: SyncTombstone, timeField: 'updated_at' },
   { name: 'SchoolProfile', target: SchoolProfile, timeField: 'updated_at' },
   { name: 'SchoolSignature', target: SchoolSignature, timeField: 'updated_at' },
   /** Comptes login Server → Remote (PK int acceptée comme uuid filaire). Roles seedés identiques des deux côtés. */
@@ -103,8 +105,6 @@ export const SYNC_ENTITY_DEFS: SyncEntityDef[] = [
   { name: 'FileMetadata', target: FileMetadata, timeField: 'updated_at' },
   { name: 'Attendance', target: Attendance, timeField: 'created_at' },
   { name: 'PaymentTransaction', target: PaymentTransaction, timeField: 'created_at' },
-  /** Dernier : delete LWW après éventuelle réinjection d’une ligne encore présente côté source. */
-  { name: 'SyncTombstone', target: SyncTombstone, timeField: 'updated_at' },
 ];
 
 /** Insert-only : jamais d’écrasement si uuid déjà présent. */

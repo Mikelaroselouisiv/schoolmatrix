@@ -8,6 +8,7 @@ import { Role } from '../roles/role.entity';
 import { Student } from '../students/student.entity';
 import { RefreshToken } from '../auth/refresh-token.entity';
 import { SyncKickService } from '../sync/sync-kick.service';
+import { SyncService } from '../sync/sync.service';
 import { DEFAULT_STAFF_EMAIL_DOMAIN, DEFAULT_STAFF_PASSWORD } from './staff-account.constants';
 import { buildStaffEmail } from './staff-email';
 
@@ -25,6 +26,7 @@ export class UsersService {
     @InjectRepository(RefreshToken)
     private readonly refreshTokenRepo: Repository<RefreshToken>,
     private readonly syncKick: SyncKickService,
+    private readonly syncService: SyncService,
   ) {}
 
   /**
@@ -269,6 +271,9 @@ export class UsersService {
   async deleteUser(userId: number): Promise<{ deleted: boolean }> {
     const user = await this.usersRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
+    // Tombstone AVANT hard delete : le prochain pull cloud ne peut pas ressusciter.
+    await this.syncService.markDeleted('User', userId, undefined, { kick: false });
+    await this.linkedStudentRepo.delete({ user: { id: userId } });
     await this.usersRepo.remove(user);
     this.syncKick.kick('user-delete');
     return { deleted: true };

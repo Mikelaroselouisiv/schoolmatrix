@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards, Req, ParseIntPipe, ForbiddenException, BadRequestException, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
+import { ParentAccountService } from './parent-account.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ParentScopeGuard } from '../auth/parent-scope.guard';
 import { DenyParents } from '../auth/parent-scope.decorator';
@@ -21,6 +22,7 @@ export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly uploadsService: UploadsService,
+    private readonly parentAccountService: ParentAccountService,
   ) {}
 
   private toUserResponse(u: User, linkedStudentIds?: string[]) {
@@ -216,6 +218,20 @@ export class UsersController {
       }),
     );
     return { ok: true, users: withLinks };
+  }
+
+  /**
+   * Purge de test : tous les comptes PARENT (+ liens élèves).
+   * Ne touche pas au staff. Sync via tombstones ORM.
+   */
+  @DenyParents()
+  @Delete('parents')
+  async deleteAllParents(
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number; role?: string } },
+  ) {
+    await this.assertUserAdmin(req);
+    const result = await this.parentAccountService.deleteAllParentAccounts();
+    return { ok: true, ...result };
   }
 
   @DenyParents()

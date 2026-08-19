@@ -26,6 +26,9 @@ function readCursor(cursors, entity) {
  * Pull deltas from `from` and push them to `to`.
  * Curseur avancé seulement si le batch a 0 erreur.
  * Curseur composite { t, id } pour éviter le blocage µs.
+ *
+ * @param {object} opts
+ * @param {string[]} [opts.entities] sous-ensemble (ex. ['SyncTombstone'])
  */
 export async function replicateDirection({
   from,
@@ -33,10 +36,12 @@ export async function replicateDirection({
   cursors,
   sourceNodeId,
   label,
+  entities = ENTITY_ORDER,
 }) {
   const summary = { label, entities: {} };
+  const list = entities?.length ? entities : ENTITY_ORDER;
 
-  for (const entity of ENTITY_ORDER) {
+  for (const entity of list) {
     let cursor = readCursor(cursors, entity);
     let pulled = 0;
     let applied = 0;

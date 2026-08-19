@@ -8,6 +8,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { User } from '../users/user.entity';
 import { UserLinkedStudent } from '../users/user-linked-student.entity';
 import {
   PARENT_DENIED_KEY,
@@ -35,6 +36,9 @@ type RequestUser = {
  * - Tous les autres rôles : comportement strictement inchangé (aucune requête
  *   supplémentaire, aucun contrôle ajouté). Le desktop et le mobile qui
  *   utilisent ces routes avec des jetons admin/enseignant ne sont pas touchés.
+ *
+ * Si le JWT dit PARENT (ou n’a pas de rôle), on confirme en base : un login
+ * téléphone sans jointure `role` pouvait emballer un admin en « PARENT ».
  */
 @Injectable()
 export class ParentScopeGuard implements CanActivate {
@@ -42,6 +46,8 @@ export class ParentScopeGuard implements CanActivate {
     private readonly reflector: Reflector,
     @InjectRepository(UserLinkedStudent)
     private readonly linkedRepo: Repository<UserLinkedStudent>,
+    @InjectRepository(User)
+    private readonly usersRepo: Repository<User>,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -74,8 +80,8 @@ export class ParentScopeGuard implements CanActivate {
       provided.push(value);
     }
 
-    // 2. Périmètre parent — uniquement pour le rôle PARENT.
-    if (!this.isParent(req.user)) return true;
+    // 2. Périmètre parent — uniquement pour le rôle PARENT (confirmé DB si besoin).
+    if (!(await this.isParent(req.user))) return true;
 
     if (denied) {
       throw new ForbiddenException(
@@ -133,11 +139,32 @@ export class ParentScopeGuard implements CanActivate {
     return bag?.[src.key];
   }
 
-  private isParent(user: RequestUser | undefined): boolean {
+  private jwtRoleName(user: RequestUser | undefined): string {
+    if (!user?.role) return '';
+    return typeof user.role === 'string' ? user.role : (user.role?.name ?? '');
+  }
+
+  /**
+   * Chemin rapide : JWT clairement non-parent → pas de requête.
+   * JWT PARENT / vide → confirmation en base (évite faux 403 admin).
+   */
+  private async isParent(user: RequestUser | undefined): Promise<boolean> {
     if (!user) return false;
-    const role =
-      typeof user.role === 'string' ? user.role : (user.role?.name ?? '');
-    return role === 'PARENT';
+    const jwtRole = this.jwtRoleName(user);
+    if (jwtRole && jwtRole !== 'PARENT') return false;
+
+    const userId = this.userId(user);
+    if (!userId) return jwtRole === 'PARENT';
+
+    try {
+      const dbUser = await this.usersRepo.findOne({
+        where: { id: userId },
+        relations: ['role'],
+      });
+      return (dbUser?.role?.name ?? '') === 'PARENT';
+    } catch {
+      return jwtRole === 'PARENT';
+    }
   }
 
   private userId(user: RequestUser | undefined): number | undefined {

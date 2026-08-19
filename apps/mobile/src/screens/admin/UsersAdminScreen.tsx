@@ -78,6 +78,10 @@ export function UsersAdminScreen({}: Props) {
   }, []);
 
   useEffect(() => {
+    if (!allowed) {
+      setBoot(false);
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -91,7 +95,7 @@ export function UsersAdminScreen({}: Props) {
     return () => {
       cancelled = true;
     };
-  }, [load]);
+  }, [allowed, load]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

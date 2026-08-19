@@ -1564,8 +1564,12 @@ export async function removeTeacherClassSubject(
 }
 
 export async function listUsers(): Promise<OrgUser[]> {
-  const { data } = await api.get('/users');
-  return unwrapList<OrgUser>(data);
+  try {
+    const { data } = await api.get('/users');
+    return unwrapList<OrgUser>(data);
+  } catch (err) {
+    throw new Error(axiosMessage(err, 'Impossible de charger les utilisateurs'));
+  }
 }
 
 export async function setUserRole(userId: number, roleName: string): Promise<void> {
@@ -1615,8 +1619,12 @@ export async function deleteUser(id: number): Promise<void> {
 }
 
 export async function listRoles(): Promise<RoleItem[]> {
-  const { data } = await api.get('/roles');
-  return unwrapList<RoleItem>(data);
+  try {
+    const { data } = await api.get('/roles');
+    return unwrapList<RoleItem>(data);
+  } catch (err) {
+    throw new Error(axiosMessage(err, 'Impossible de charger les rôles'));
+  }
 }
 
 export async function findStudentByOrderNumber(

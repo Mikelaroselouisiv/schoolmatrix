@@ -33,7 +33,12 @@ export class AuthService {
       );
     }
 
-    const roleName = user.role?.name ?? (typeof user.role === 'string' ? user.role : 'PARENT');
+    const roleName =
+      user.role?.name ?? (typeof user.role === 'string' ? user.role : null);
+    // Ne jamais inventer PARENT : un jeton « faux parent » bloque @DenyParents (ex. GET /users).
+    if (!roleName) {
+      throw new UnauthorizedException('Compte sans rôle assigné. Contactez l’administration.');
+    }
     const payload = { sub: user.id, role: roleName, email: user.email };
     const expiresIn = rememberMe ? '365d' : '7d';
     return {

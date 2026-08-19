@@ -25,7 +25,11 @@ export class UsersService {
   ) {}
 
   async findByEmail(email: string): Promise<User | null> {
-    return this.usersRepo.findOne({ where: { email: email.toLowerCase().trim() } });
+    // relations explicites : le QueryBuilder téléphone (ci-dessous) n’applique pas eager.
+    return this.usersRepo.findOne({
+      where: { email: email.toLowerCase().trim() },
+      relations: ['role'],
+    });
   }
 
   async findByEmailOrPhone(login: string): Promise<User | null> {
@@ -35,9 +39,13 @@ export class UsersService {
     if (byEmail) return byEmail;
     const digitsOnly = trimmed.replace(/\D/g, '');
     if (digitsOnly.length < 6) return null;
+    // QueryBuilder : pas d’eager TypeORM → joindre role sinon le JWT login tombe sur PARENT.
     const users = await this.usersRepo
       .createQueryBuilder('u')
-      .where("REGEXP_REPLACE(COALESCE(u.phone, ''), '[^0-9]', '', 'g') = :digits", { digits: digitsOnly })
+      .leftJoinAndSelect('u.role', 'r')
+      .where("REGEXP_REPLACE(COALESCE(u.phone, ''), '[^0-9]', '', 'g') = :digits", {
+        digits: digitsOnly,
+      })
       .getMany();
     return users[0] ?? null;
   }

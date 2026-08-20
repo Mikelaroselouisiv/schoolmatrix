@@ -40,6 +40,7 @@ import {
 } from '../../services/api';
 import type { MoreStackParamList } from '../../navigation/types';
 import { AccessDenied, useCanAccess } from '../../lib/access';
+import { isTeacherRole } from '../../lib/permissions';
 
 type Props = NativeStackScreenProps<MoreStackParamList, 'OrgTeachers'>;
 type PickerKind = 'promote' | 'class' | 'subject' | 'room' | null;
@@ -70,7 +71,7 @@ export function OrgTeachersScreen({}: Props) {
   const [classSubjects, setClassSubjects] = useState<SubjectOrg[]>([]);
 
   const nonTeachers = useMemo(
-    () => users.filter((u) => (u.role || '').toUpperCase() !== 'TEACHER'),
+    () => users.filter((u) => !isTeacherRole(u.role)),
     [users],
   );
 
@@ -287,7 +288,7 @@ export function OrgTeachersScreen({}: Props) {
       <Modal visible={promoteOpen} animationType="slide" transparent>
         <View style={styles.modalBackdrop}>
           <View style={styles.sheet}>
-            <Text style={styles.sheetTitle}>Promouvoir en TEACHER</Text>
+            <Text style={styles.sheetTitle}>Promouvoir en professeur</Text>
             <Pressable style={styles.chip} onPress={() => setPicker('promote')}>
               <Text style={styles.chipLabel}>Utilisateur</Text>
               <Text style={styles.chipValue}>

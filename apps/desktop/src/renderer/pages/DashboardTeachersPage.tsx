@@ -1,6 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { API_BASE, fetchWithAuth } from "@/services/api";
 import { Link } from "react-router-dom";
+import { isTeacherRole } from "@/lib/dashboardRoles";
 
 type Teacher = {
   id: number;
@@ -149,7 +150,7 @@ export function DashboardTeachersPage() {
     if (selectedTeacher?.id) loadTeacherDetail(selectedTeacher.id);
   }, [selectedTeacher?.id]);
 
-  const nonTeachers = users.filter((u) => u.role !== "TEACHER");
+  const nonTeachers = users.filter((u) => !isTeacherRole(u.role));
 
   async function handlePromote(e: React.FormEvent) {
     e.preventDefault();

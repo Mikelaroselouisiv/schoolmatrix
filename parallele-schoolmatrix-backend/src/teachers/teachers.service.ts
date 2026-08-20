@@ -11,6 +11,10 @@ import { Class } from '../classes/class.entity';
 import { Subject } from '../subjects/subject.entity';
 import { Room } from '../rooms/room.entity';
 import { Student } from '../students/student.entity';
+import {
+  TEACHER_ROLE_NAMES,
+  isTeacherRoleName,
+} from '../roles/roles.constants';
 
 @Injectable()
 export class TeachersService {
@@ -111,7 +115,7 @@ export class TeachersService {
     return this.userRepo
       .createQueryBuilder('u')
       .leftJoinAndSelect('u.role', 'r')
-      .where('r.name = :role', { role: 'TEACHER' })
+      .where('UPPER(r.name) IN (:...roles)', { roles: TEACHER_ROLE_NAMES })
       .andWhere('u.active = :active', { active: true })
       .orderBy('u.last_name', 'ASC')
       .addOrderBy('u.first_name', 'ASC')
@@ -124,7 +128,7 @@ export class TeachersService {
       relations: ['role'],
     });
     if (!user) throw new NotFoundException('User not found');
-    if (user.role?.name !== 'TEACHER') {
+    if (!isTeacherRoleName(user.role?.name)) {
       throw new BadRequestException('User is not a teacher');
     }
     return user;
@@ -344,7 +348,7 @@ export class TeachersService {
       relations: ['role'],
       order: { last_name: 'ASC', first_name: 'ASC' },
     });
-    return users.filter((u) => u.role?.name === 'TEACHER');
+    return users.filter((u) => isTeacherRoleName(u.role?.name));
   }
 
   async getScheduleSlots(filters: {

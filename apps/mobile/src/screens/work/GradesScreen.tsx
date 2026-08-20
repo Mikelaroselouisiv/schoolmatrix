@@ -41,6 +41,7 @@ import {
 } from '../../services/api';
 import type { WorkStackParamList } from '../../navigation/types';
 import { AccessDenied, useCanAccess } from '../../lib/access';
+import { isTeacherRole } from '../../lib/permissions';
 
 type Props = NativeStackScreenProps<WorkStackParamList, 'Grades'>;
 
@@ -51,7 +52,7 @@ export function GradesScreen({}: Props) {
   const { roleName } = useAuth();
   const { context, theme } = useSchool();
   const insets = useSafeAreaInsets();
-  const isTeacher = roleName === 'TEACHER';
+  const isTeacher = isTeacherRole(roleName);
 
   const [years, setYears] = useState<AcademicYear[]>([]);
   const [classes, setClasses] = useState<ClassItem[]>([]);

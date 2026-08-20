@@ -14,6 +14,7 @@ import { Student } from '../students/student.entity';
 import { User } from '../users/user.entity';
 import { Role } from '../roles/role.entity';
 import { SyncKickService } from '../sync/sync-kick.service';
+import { TEACHER_ROLE_NAMES } from '../roles/roles.constants';
 
 export type DashboardStats = {
   classesCount: number;
@@ -360,7 +361,7 @@ export class SchoolProfileService implements OnModuleInit {
       this.userRepo
         .createQueryBuilder('u')
         .innerJoin('u.role', 'r')
-        .where('r.name = :role', { role: 'TEACHER' })
+        .where('UPPER(r.name) IN (:...roles)', { roles: TEACHER_ROLE_NAMES })
         .andWhere('u.active = :active', { active: true })
         .getCount(),
     ]);

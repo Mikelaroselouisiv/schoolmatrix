@@ -91,3 +91,5 @@ Voir `ENTITY_ORDER` dans `apps/sync-agent/src/entities.js` et `SYNC_ENTITY_DEFS`
 Ordre notable : **Class avant Room** (`room.class_id` → classe pédagogique ; une classe a plusieurs salles avec `capacity`). **Student** après Room (`student.room_id`, optionnel).
 
 Inclut **`User`** (`password_hash`, photos, `role_id`). Les rôles sont seedés identiquement (mêmes ids) des deux côtés — pas de sync `Role` en V1.
+
+Conséquence : une école qui **renomme** un rôle (ex. `TEACHER` → `PROFESSEUR`) ne change que son libellé local ; le cloud garde l’ancien nom pour le même `role_id`. Le code ne doit donc **jamais** comparer `role.name === 'TEACHER'` : utiliser `TEACHER_ROLE_NAMES` / `isTeacherRoleName()` (`roles.constants.ts`, portés côté desktop `lib/dashboardRoles.ts` et mobile `lib/permissions.ts`). Le seed ne recrée pas `TEACHER` si un alias existe déjà, sinon l’annuaire professeurs se scinde en deux rôles.

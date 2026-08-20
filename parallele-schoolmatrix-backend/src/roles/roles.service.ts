@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Role } from './role.entity';
+import { TEACHER_ROLE_NAMES, isTeacherRoleName } from './roles.constants';
 
 const DEFAULT_ROLES: {
   name: string;
@@ -43,6 +44,14 @@ export class RolesService {
   async seedDefaults(): Promise<void> {
     for (const r of DEFAULT_ROLES) {
       const exists = await this.rolesRepo.findOne({ where: { name: r.name } });
+      // Rôle renommé par l'école (TEACHER → PROFESSEUR) : ne pas en recréer un
+      // second au redémarrage, sinon l'annuaire se scinde en deux.
+      if (!exists && isTeacherRoleName(r.name)) {
+        const alias = await this.rolesRepo.findOne({
+          where: { name: In(TEACHER_ROLE_NAMES) },
+        });
+        if (alias) continue;
+      }
       if (!exists) {
         await this.rolesRepo.save(
           this.rolesRepo.create({

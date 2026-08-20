@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull } from 'typeorm';
+import { Repository, IsNull, In } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User } from './user.entity';
 import { UserLinkedStudent } from './user-linked-student.entity';
@@ -11,6 +11,10 @@ import { SyncKickService } from '../sync/sync-kick.service';
 import { SyncService } from '../sync/sync.service';
 import { DEFAULT_STAFF_EMAIL_DOMAIN, DEFAULT_STAFF_PASSWORD } from './staff-account.constants';
 import { buildStaffEmail } from './staff-email';
+import {
+  TEACHER_ROLE_NAMES,
+  isTeacherRoleName,
+} from '../roles/roles.constants';
 
 @Injectable()
 export class UsersService {
@@ -169,8 +173,7 @@ export class UsersService {
     const pwd = (params.password ?? '').trim();
     if (pwd.length < 6) throw new BadRequestException('Le mot de passe doit faire au moins 6 caractères');
     const roleName = (params.roleName ?? 'PARENT').toUpperCase().trim();
-    const role = await this.rolesRepo.findOne({ where: { name: roleName } });
-    if (!role) throw new BadRequestException(`Role not found: ${roleName}`);
+    const role = await this.resolveRole(roleName);
     const password_hash = await bcrypt.hash(pwd, 10);
     const user = this.usersRepo.create({
       first_name,
@@ -228,11 +231,27 @@ export class UsersService {
     return true;
   }
 
+  /**
+   * L'école peut avoir renommé TEACHER en PROFESSEUR : chercher les alias
+   * plutôt que d'échouer sur un nom canonique absent.
+   */
+  private async resolveRole(name: string): Promise<Role> {
+    const roleName = name.toUpperCase().trim();
+    const exact = await this.rolesRepo.findOne({ where: { name: roleName } });
+    if (exact) return exact;
+    if (isTeacherRoleName(roleName)) {
+      const alias = await this.rolesRepo.findOne({
+        where: { name: In(TEACHER_ROLE_NAMES) },
+      });
+      if (alias) return alias;
+    }
+    throw new BadRequestException(`Role not found: ${roleName}`);
+  }
+
   async setUserRole(userId: number, roleName: string): Promise<User> {
     const user = await this.usersRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
-    const role = await this.rolesRepo.findOne({ where: { name: roleName.toUpperCase().trim() } });
-    if (!role) throw new BadRequestException(`Role not found: ${roleName}`);
+    const role = await this.resolveRole(roleName);
     await this.usersRepo
       .createQueryBuilder()
       .update(User)

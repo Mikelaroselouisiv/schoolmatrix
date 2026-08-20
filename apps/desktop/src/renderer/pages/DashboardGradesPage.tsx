@@ -1,6 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { API_BASE, fetchWithAuth } from "@/services/api";
 import { ExportPdfButton } from "@/components/ExportPdfButton";
+import { isTeacherRole } from "@/lib/dashboardRoles";
 
 type AcademicYear = { id: string; name: string };
 type ClassItem = { id: string; name: string; description?: string | null; level?: string | null; is_preschool: boolean };
@@ -123,7 +124,7 @@ export function DashboardGradesPage() {
           : years[0].id;
         setAcademicYearId((prev) => (prev === "" ? defaultYearId : prev));
       }
-      if (meData.user?.role === "TEACHER") {
+      if (isTeacherRole(meData.user?.role)) {
         const tcRes = await fetchWithAuth(`${API_BASE}/teachers/me/classes`);
         const tcData = tcRes.ok ? await tcRes.json() : {};
         const tClasses = (tcData.classes ?? []).map((c: { id: string; name: string }) => ({ id: c.id, name: c.name, is_preschool: false }));
@@ -340,7 +341,7 @@ export function DashboardGradesPage() {
   }, [classId, classes]);
 
   useEffect(() => {
-    if (currentUserRole !== "TEACHER" || !classId) {
+    if (!isTeacherRole(currentUserRole) || !classId) {
       setTeacherSubjectsInClass([]);
       return;
     }
@@ -438,7 +439,7 @@ export function DashboardGradesPage() {
 
   const isPreschool = selectedClass?.is_preschool ?? false;
   const canLoadForm = academicYearId && classId && subjectId && periodId;
-  const isTeacher = currentUserRole === "TEACHER";
+  const isTeacher = isTeacherRole(currentUserRole);
   const classesForSaisie = isTeacher ? teacherClasses : classes;
   const subjectsForSaisie = isTeacher ? teacherSubjectsInClass : subjects;
   const subjectName = subjectsForSaisie.find((s) => s.id === subjectId)?.name ?? subjects.find((s) => s.id === subjectId)?.name ?? "";

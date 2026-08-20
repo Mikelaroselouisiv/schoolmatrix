@@ -27,6 +27,23 @@ export const ROLES_STUDENT_EDIT: string[] = [
   'ADMIN_SECONDAIRE',
 ];
 
+/**
+ * Une école peut renommer le rôle TEACHER (ex. « PROFESSEUR ») : le role_id
+ * reste le même, seul le libellé change. Reconnaître les alias.
+ */
+export const TEACHER_ROLE_NAMES: string[] = [
+  'TEACHER',
+  'PROFESSEUR',
+  'PROFESSEURE',
+  'PROF',
+  'ENSEIGNANT',
+  'ENSEIGNANTE',
+];
+
+export function isTeacherRole(role?: string | null): boolean {
+  return TEACHER_ROLE_NAMES.includes((role ?? '').toUpperCase().trim());
+}
+
 const ROLES_HORAIRES_ET_NOTES = ['DIRECTEUR_PEDAGOGIQUE', 'CENSEUR'];
 const ROLES_HORAIRES_SEUL = [
   'ADMIN_PRESCOLAIRE',
@@ -56,7 +73,7 @@ const DESKTOP_NAV: NavItem[] = [
   { permissionKey: 'students', allowedRoles: [...ROLES_FULL] },
   {
     permissionKey: 'grades',
-    allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, 'TEACHER'],
+    allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...TEACHER_ROLE_NAMES],
   },
   { permissionKey: 'discipline', allowedRoles: [...ROLES_FULL, ...ROLES_DISCIPLINE] },
   { permissionKey: 'formation-classe', allowedRoles: [...ROLES_FULL] },

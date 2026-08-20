@@ -24,11 +24,12 @@ let running = false;
 let rerun = false;
 
 /**
- * Cycle anti-résurrection :
- * 1) Push tombstones local→cloud
+ * Cycle LWW (local = source de vérité à horodatage égal) :
+ * 1) Push tombstones local→cloud (deletes plus récents que la ligne)
  * 2) Pull cloud→local (tombstones en premier dans ENTITY_ORDER)
  * 3) Push tombstones encore (deletes locaux nés pendant le pull / kick)
  * 4) Push reste local→cloud
+ * Un tombstone plus vieux qu’un write vivant ne veto pas (nouveau compte).
  */
 async function tick(reason = 'interval') {
   if (running) {

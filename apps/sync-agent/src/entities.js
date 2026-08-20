@@ -1,6 +1,6 @@
 /** Ordre sync (doit matcher le backend SYNC_ENTITY_DEFS).
- * SyncTombstone EN PREMIER : appliquer / propager les deletes
- * avant tout upsert (évite la résurrection cloud→local dans le même cycle).
+ * SyncTombstone EN PREMIER : propager les deletes plus récents
+ * avant les upserts du même cycle (anti-rebond). LWW vs ligne vivante.
  */
 export const ENTITY_ORDER = [
   'SyncTombstone',

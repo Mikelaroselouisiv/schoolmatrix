@@ -49,15 +49,20 @@ Sync après `SchoolProfile` dans `ENTITY_ORDER`. Les images (`image_url`) suiven
 
 ## Suppressions (tombstones)
 
-Les hard deletes métier sont propagés via la table `sync_tombstone` (entité sync **`SyncTombstone`**, toujours **en premier** dans `ENTITY_ORDER`) :
+Les hard deletes métier sont propagés via `sync_tombstone` (entité **`SyncTombstone`**, toujours **en premier** dans `ENTITY_ORDER`). Ça empêche le rebond : supprimer en local sans tombstone → le cloud rattache la ligne au prochain pull, et inversement.
 
-1. Suppressions ORM (`.remove`) → subscriber + `SyncService.markDeleted` écrivent un tombstone (`entity_name`, `entity_id`, `deleted_at`) puis kick agent.
-2. L’agent **pousse d’abord** les tombstones local→cloud, puis pull, puis push du reste.
-3. Côté distant : upsert tombstone + **hard delete** de la cible.
-4. **Pas de résurrection sync** : tant qu’un tombstone existe, un upsert distant est ignoré (la ligne reste absente). Restauration = suppression manuelle du tombstone (hors sync V1).
+Même règle LWW que le reste (`deleted_at` vs `updated_at` de la cible ; à égalité, le **local** gagne) :
+
+1. Suppressions ORM (`.remove`) → subscriber + `markDeleted` puis kick agent.
+2. L’agent pousse d’abord les tombstones local→cloud, puis pull, puis push du reste.
+3. Delete **plus récent** que la ligne → hard delete distant (anti-rebond).
+4. Ligne **plus récente** que le tombstone → le write gagne : on **retire** le tombstone et on upsert (nouveau compte après une purge, y compris si l’id serial a été réutilisé). Un vieux delete cloud ne veto pas le Server.
+5. Création locale (`createUser`) : `forgetDeleted` pour cet id.
 
 `SchoolProfile` (singleton / dédup) n’utilise pas ce mécanisme.  
-Les suppressions faites **avant** le déploiement de cette version n’ont pas de tombstone : les supprimer une fois de l’autre côté, ou re-supprimer après MAJ.
+Les séquences entières (`users_id_seq`) **n’avancent que** : jamais de `setval(MAX(id))` qui recule après un mass-delete.
+
+Les suppressions faites **avant** le déploiement des tombstones n’en ont pas : les supprimer une fois de l’autre côté, ou re-supprimer après MAJ.
 
 ## Append-only
 

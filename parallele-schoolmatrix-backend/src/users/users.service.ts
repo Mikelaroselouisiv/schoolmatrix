@@ -133,6 +133,8 @@ export class UsersService {
       must_change_password: params.must_change_password === true,
     });
     const saved = await this.usersRepo.save(user);
+    // Nouveau compte : un tombstone plus vieux pour ce serial n’a plus cours.
+    await this.syncService.forgetDeleted('User', saved.id);
     if (params.linked_student_ids?.length) {
       for (const studentId of [...new Set(params.linked_student_ids.filter(Boolean))]) {
         await this.linkStudent(saved.id, studentId, false);

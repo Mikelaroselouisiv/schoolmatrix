@@ -210,19 +210,14 @@ export class SyncService implements OnModuleInit {
       };
     }
 
-    // Ne jamais republier une ligne encore présente en base mais tombstonée
-    // (état incohérent / course delete vs sync) — le curseur avance quand même.
-    const tombstonedIds =
-      entityName === 'SyncTombstone'
-        ? new Set<string>()
-        : await this.findTombstonedIds(
-            entityName as SyncEntityName,
-            rows.map((r: any) => r.id),
-          );
     const liveRows =
-      tombstonedIds.size === 0
-        ? rows
-        : rows.filter((r: any) => !tombstonedIds.has(String(r.id)));
+      entityName === 'SyncTombstone'
+        ? await this.omitStaleTombstones(rows)
+        : await this.omitRowsBeatenByDelete(
+            entityName as SyncEntityName,
+            rows,
+            timeProp,
+          );
 
     const withIds =
       liveRows.length === 0
@@ -256,7 +251,7 @@ export class SyncService implements OnModuleInit {
       };
     });
 
-    // Curseur = dernier row lu (y compris tombstonés filtrés), pour ne pas bloquer.
+    // Curseur = dernier row lu (y compris deletes/lignes filtrés LWW).
     const lastRow: any = rows[rows.length - 1];
     const lastCursorTs =
       cursorTsById.get(String(lastRow.id)) ||
@@ -270,21 +265,117 @@ export class SyncService implements OnModuleInit {
     };
   }
 
-  /** IDs (string) ayant un tombstone actif pour cette entité sync. */
-  private async findTombstonedIds(
+  /**
+   * Ne pas exporter un delete plus vieux que la ligne vivante (nouveau compte
+   * après une purge, même id serial). LWW : le write le plus récent gagne.
+   */
+  private async omitStaleTombstones(rows: any[]): Promise<any[]> {
+    const kept: any[] = [];
+    for (const row of rows) {
+      const liveAt = await this.liveRowUpdatedAt(
+        row.entity_name,
+        row.entity_id,
+      );
+      if (
+        liveAt &&
+        !this.shouldApply(this.parseTime(row.deleted_at), liveAt, undefined)
+      ) {
+        continue;
+      }
+      kept.push(row);
+    }
+    return kept;
+  }
+
+  /** Masquer une ligne seulement si son delete est plus récent (anti-rebond). */
+  private async omitRowsBeatenByDelete(
+    entityName: SyncEntityName,
+    rows: any[],
+    timeProp: string,
+  ): Promise<any[]> {
+    const tombAt = await this.loadTombstoneDeletedAtMap(
+      entityName,
+      rows.map((r: any) => r.id),
+    );
+    if (tombAt.size === 0) return rows;
+    return rows.filter((r: any) => {
+      const deletedAt = tombAt.get(String(r.id));
+      if (!deletedAt) return true;
+      return this.shouldApply(
+        this.parseTime(r[timeProp]),
+        deletedAt,
+        undefined,
+      );
+    });
+  }
+
+  private async loadTombstoneDeletedAtMap(
     entityName: SyncEntityName,
     ids: Array<string | number>,
-  ): Promise<Set<string>> {
-    const out = new Set<string>();
+  ): Promise<Map<string, Date>> {
+    const out = new Map<string, Date>();
     if (ids.length === 0) return out;
-    const idTexts = ids.map((id) => String(id));
-    const rows: Array<{ entity_id: string }> = await this.dataSource.query(
-      `SELECT entity_id FROM sync_tombstone
-       WHERE entity_name = $1 AND entity_id = ANY($2::text[])`,
-      [entityName, idTexts],
-    );
-    for (const r of rows) out.add(String(r.entity_id));
+    const rows: Array<{ entity_id: string; deleted_at: Date | string }> =
+      await this.dataSource.query(
+        `SELECT entity_id, deleted_at FROM sync_tombstone
+         WHERE entity_name = $1 AND entity_id = ANY($2::text[])`,
+        [entityName, ids.map((id) => String(id))],
+      );
+    for (const r of rows) {
+      out.set(String(r.entity_id), this.parseTime(r.deleted_at));
+    }
     return out;
+  }
+
+  private async loadTombstoneDeletedAt(
+    entityName: SyncEntityName,
+    entityId: string,
+  ): Promise<Date | null> {
+    const rows: Array<{ deleted_at: Date | string }> =
+      await this.dataSource.query(
+        `SELECT deleted_at FROM sync_tombstone
+         WHERE entity_name = $1 AND entity_id = $2
+         LIMIT 1`,
+        [entityName, String(entityId)],
+      );
+    if (rows.length === 0) return null;
+    return this.parseTime(rows[0].deleted_at);
+  }
+
+  /**
+   * Un write vivant plus récent a gagné : ce delete ne s’applique plus
+   * (nouveau compte, même id serial, après une purge).
+   */
+  async forgetDeleted(
+    entityName: SyncEntityName,
+    entityId: string | number,
+  ): Promise<void> {
+    if (entityName === 'SyncTombstone' || entityName === 'SchoolProfile') {
+      return;
+    }
+    await this.dataSource.query(
+      `DELETE FROM sync_tombstone
+       WHERE entity_name = $1 AND entity_id = $2`,
+      [entityName, String(entityId)],
+    );
+  }
+
+  private async liveRowUpdatedAt(
+    entityName: string,
+    entityId: string,
+  ): Promise<Date | null> {
+    const def = SYNC_ENTITY_MAP.get(entityName as SyncEntityName);
+    if (!def || entityName === 'SyncTombstone') return null;
+    const repo = this.dataSource.getRepository(def.target);
+    let primaryId: string | number;
+    try {
+      primaryId = this.coercePrimaryId(repo.metadata, entityId);
+    } catch {
+      return null;
+    }
+    const row = await repo.findOne({ where: { id: primaryId } as any });
+    if (!row) return null;
+    return this.parseTime(row[def.timeField]);
   }
 
   /** Horodatage pleine précision (µs) pour le curseur — via to_json Postgres. */
@@ -578,6 +669,14 @@ export class SyncService implements OnModuleInit {
       record.data?.deleted_at ?? record.deletedAt ?? record.updatedAt;
     const deletedAt = this.parseTime(deletedAtRaw);
 
+    const liveAt = await this.liveRowUpdatedAt(entityName, entityId);
+    if (liveAt && !this.shouldApply(deletedAt, liveAt, sourceNodeId)) {
+      // Ligne vivante plus récente (ex. nouveau parent local après purge) :
+      // un vieux delete distant ne doit pas réinstaller le veto.
+      await this.forgetDeleted(entityName, entityId);
+      return 'skipped';
+    }
+
     let existing = await repo.findOne({
       where: { entity_name: entityName, entity_id: entityId } as any,
     });
@@ -704,16 +803,19 @@ export class SyncService implements OnModuleInit {
       where: { id: primaryId } as any,
       loadRelationIds: true,
     });
+    const incomingAt = this.parseTime(record.updatedAt);
+    const tombAt = await this.loadTombstoneDeletedAt(
+      entityName,
+      String(record.uuid),
+    );
 
-    const tomb = await this.tombstoneRepo.findOne({
-      where: {
-        entity_name: entityName,
-        entity_id: String(record.uuid),
-      },
-    });
-    // Tombstone local = suppression définitive côté sync (pas de résurrection LWW).
-    if (tomb) {
+    if (tombAt && !this.shouldApply(incomingAt, tombAt, sourceNodeId)) {
+      // Ce write a perdu contre un delete plus récent — anti-rebond.
       if (existing) {
+        const existingAt = this.parseTime(existing[timeField]);
+        if (existingAt.getTime() > tombAt.getTime()) {
+          return 'skipped';
+        }
         this.applyingRemoteTombstone += 1;
         try {
           if (entityName === 'User') {
@@ -745,6 +847,10 @@ export class SyncService implements OnModuleInit {
       return 'skipped';
     }
 
+    if (tombAt) {
+      await this.forgetDeleted(entityName, String(record.uuid));
+    }
+
     if (APPEND_ONLY_ENTITIES.has(entityName)) {
       if (existing) return 'skipped';
       await this.persist(
@@ -770,7 +876,6 @@ export class SyncService implements OnModuleInit {
       return 'created';
     }
 
-    const incomingAt = this.parseTime(record.updatedAt);
     const existingAt = this.parseTime(existing[timeField]);
 
     if (!this.shouldApply(incomingAt, existingAt, sourceNodeId)) {
@@ -951,15 +1056,33 @@ export class SyncService implements OnModuleInit {
     await repo.save(entity);
 
     if (typeof primaryId === 'number') {
-      const tableName = meta.tableName.replace(/"/g, '');
-      const schema = (meta.schema || 'public').replace(/"/g, '');
-      await this.dataSource.query(
-        `SELECT setval(
-           pg_get_serial_sequence($1, 'id'),
-           (SELECT COALESCE(MAX(id), 1) FROM "${schema}"."${tableName}")
-         )`,
-        [`${schema}.${tableName}`],
-      );
+      await this.bumpSerialForward(meta);
     }
+  }
+
+  /** Avancer la séquence jusqu’au MAX(id), jamais la rembobiner après un delete. */
+  private async bumpSerialForward(meta: EntityMetadata): Promise<void> {
+    const tableName = meta.tableName.replace(/"/g, '');
+    const schema = (meta.schema || 'public').replace(/"/g, '');
+    const seqRows: Array<{ seq: string | null }> = await this.dataSource.query(
+      `SELECT pg_get_serial_sequence($1, 'id') AS seq`,
+      [`${schema}.${tableName}`],
+    );
+    const seq = seqRows[0]?.seq;
+    if (!seq) return;
+    await this.dataSource.query(
+      `SELECT setval(
+         $1::regclass,
+         GREATEST(
+           COALESCE(
+             (SELECT s.last_value FROM pg_sequences s
+              WHERE (s.schemaname || '.' || s.sequencename)::regclass = $1::regclass),
+             1
+           ),
+           (SELECT COALESCE(MAX(id), 1) FROM "${schema}"."${tableName}")
+         )
+       )`,
+      [seq],
+    );
   }
 }

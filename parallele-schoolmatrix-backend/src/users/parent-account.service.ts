@@ -33,7 +33,17 @@ export class ParentAccountService {
     private readonly syncKick: SyncKickService,
   ) {}
 
-  async ensureForStudent(student: Student): Promise<void> {
+  /**
+   * Rattache un parent existant (téléphone / nom) à l’élève.
+   * @param provision si true (inscription seulement) : crée un compte PARENT
+   *   quand aucun parent n’existe. Jamais à la MAJ élève — sinon une
+   *   suppression de compte parent est annulée au prochain save élève.
+   */
+  async ensureForStudent(
+    student: Student,
+    opts?: { provision?: boolean },
+  ): Promise<void> {
+    const provision = opts?.provision === true;
     const hints = this.collectHints(student);
     let linked = false;
 
@@ -54,6 +64,10 @@ export class ParentAccountService {
     }
     if (linked) {
       this.syncKick.kick('parent-link');
+      return;
+    }
+
+    if (!provision) {
       return;
     }
 
@@ -87,6 +101,61 @@ export class ParentAccountService {
 
     await this.createChildNamedPlaceholder(student);
     this.syncKick.kick('parent-placeholder');
+  }
+
+  /**
+   * Après suppression d’élève : si un compte PARENT n’a plus aucun enfant lié,
+   * le supprimer (tombstone + sync) pour éviter des orphelins qui se re-poussent.
+   * Ne touche jamais au staff (TEACHER, admins, etc.).
+   */
+  async deleteOrphanParentsForStudent(studentId: string): Promise<number> {
+    const links = await this.linkedRepo.find({
+      where: { student: { id: studentId } },
+      relations: ['user', 'user.role'],
+    });
+    const parentIds = [
+      ...new Set(
+        links
+          .map((l) => l.user)
+          .filter((u) => u && (u.role?.name ?? '').toUpperCase() === 'PARENT')
+          .map((u) => u.id),
+      ),
+    ];
+    let deleted = 0;
+    for (const userId of parentIds) {
+      const remaining = await this.linkedRepo.count({
+        where: { user: { id: userId } },
+      });
+      // Le lien vers cet élève existe encore ici (appelé avant remove élève) :
+      // orphelin = 1 seul lien (cet élève) ou 0.
+      if (remaining > 1) continue;
+      try {
+        await this.users.deleteUser(userId);
+        deleted += 1;
+        this.logger.log(`Parent orphelin ${userId} supprimé (plus d’élève lié)`);
+      } catch (err: any) {
+        this.logger.warn(
+          `Purge parent orphelin ${userId}: ${err?.message || err}`,
+        );
+      }
+    }
+    return deleted;
+  }
+
+  /**
+   * Purge tous les PARENT sans aucun lien `user_linked_student` (orphelins).
+   */
+  async deleteAllOrphanParentAccounts(): Promise<{ deleted: number; ids: number[] }> {
+    const parents = await this.users.findParents();
+    const ids: number[] = [];
+    for (const p of parents) {
+      const n = await this.linkedRepo.count({ where: { user: { id: p.id } } });
+      if (n > 0) continue;
+      await this.users.deleteUser(p.id);
+      ids.push(p.id);
+    }
+    this.logger.warn(`Purge PARENT orphelins: ${ids.length}`);
+    return { deleted: ids.length, ids };
   }
 
   /**

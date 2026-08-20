@@ -8,14 +8,17 @@
 
 ## Cycle agent
 
-1. **Push tombstones** local → cloud (priorité absolue)  
+1. **Push tombstones** local → cloud  
 2. Pull cloud → local (tombstones cloud en premier dans `ENTITY_ORDER`)  
-3. Push local → cloud (reste des entités)
+3. **Push tombstones** encore (deletes survenues pendant le pull)  
+4. Push local → cloud (reste)
 
 - Intervalle par défaut : **~5s** (`SYNC_INTERVAL_MS`).
 - Kick immédiat : l’API locale POST `SYNC_KICK_URL` (agent `:3911/kick`) après écritures école / utilisateur / upload.
 
-Pourquoi ce ordre : un pull cloud→local **avant** d’avoir poussé le tombstone local **ressuscitait** les comptes / élèves encore présents online.
+Le `pull` **n’émet pas** les lignes encore en table mais déjà tombstonées (évite de republier une delete incomplète).
+
+**Piège métier** : le provisionnement auto des comptes PARENT ne doit avoir lieu qu’à **l’inscription** élève — pas à chaque MAJ fiche (sinon une suppression de parent est recréée au prochain save).
 
 ## Conflits : last-write-wins
 

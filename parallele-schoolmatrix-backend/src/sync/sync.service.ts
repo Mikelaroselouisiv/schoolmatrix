@@ -210,10 +210,27 @@ export class SyncService implements OnModuleInit {
       };
     }
 
-    const withIds = await repo.find({
-      where: { id: In(rows.map((r: any) => r.id)) } as any,
-      loadRelationIds: true,
-    });
+    // Ne jamais republier une ligne encore présente en base mais tombstonée
+    // (état incohérent / course delete vs sync) — le curseur avance quand même.
+    const tombstonedIds =
+      entityName === 'SyncTombstone'
+        ? new Set<string>()
+        : await this.findTombstonedIds(
+            entityName as SyncEntityName,
+            rows.map((r: any) => r.id),
+          );
+    const liveRows =
+      tombstonedIds.size === 0
+        ? rows
+        : rows.filter((r: any) => !tombstonedIds.has(String(r.id)));
+
+    const withIds =
+      liveRows.length === 0
+        ? []
+        : await repo.find({
+            where: { id: In(liveRows.map((r: any) => r.id)) } as any,
+            loadRelationIds: true,
+          });
     const byId = new Map(withIds.map((r: any) => [String(r.id), r]));
 
     const cursorTsById = await this.loadCursorTimestamps(
@@ -222,7 +239,7 @@ export class SyncService implements OnModuleInit {
       rows.map((r: any) => r.id),
     );
 
-    const records: SyncWireRecord[] = rows.map((row: any) => {
+    const records: SyncWireRecord[] = liveRows.map((row: any) => {
       const full = byId.get(String(row.id)) ?? row;
       const cursorTs =
         cursorTsById.get(String(full.id)) ||
@@ -239,14 +256,35 @@ export class SyncService implements OnModuleInit {
       };
     });
 
-    const last = records[records.length - 1];
+    // Curseur = dernier row lu (y compris tombstonés filtrés), pour ne pas bloquer.
+    const lastRow: any = rows[rows.length - 1];
+    const lastCursorTs =
+      cursorTsById.get(String(lastRow.id)) ||
+      this.toIso(lastRow[timeProp]);
     return {
       entity: entityName,
       records,
-      nextCursor: last.updatedAt,
-      nextAfterId: last.uuid,
+      nextCursor: lastCursorTs,
+      nextAfterId: String(lastRow.id),
       count: records.length,
     };
+  }
+
+  /** IDs (string) ayant un tombstone actif pour cette entité sync. */
+  private async findTombstonedIds(
+    entityName: SyncEntityName,
+    ids: Array<string | number>,
+  ): Promise<Set<string>> {
+    const out = new Set<string>();
+    if (ids.length === 0) return out;
+    const idTexts = ids.map((id) => String(id));
+    const rows: Array<{ entity_id: string }> = await this.dataSource.query(
+      `SELECT entity_id FROM sync_tombstone
+       WHERE entity_name = $1 AND entity_id = ANY($2::text[])`,
+      [entityName, idTexts],
+    );
+    for (const r of rows) out.add(String(r.entity_id));
+    return out;
   }
 
   /** Horodatage pleine précision (µs) pour le curseur — via to_json Postgres. */

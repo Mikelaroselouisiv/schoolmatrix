@@ -168,13 +168,17 @@ export class StudentsService {
       );
     }
     const created = await this.findOne(saved.id);
-    await this.attachGuardianQuietly(created);
+    // Provision parent uniquement à l’inscription (pas aux MAJ — sinon delete annulé).
+    await this.attachGuardianQuietly(created, { provision: true });
     return created;
   }
 
-  private async attachGuardianQuietly(student: Student): Promise<void> {
+  private async attachGuardianQuietly(
+    student: Student,
+    opts?: { provision?: boolean },
+  ): Promise<void> {
     try {
-      await this.parentAccounts.ensureForStudent(student);
+      await this.parentAccounts.ensureForStudent(student, opts);
     } catch (err: any) {
       this.logger.warn(
         `Compte parent non provisionné pour ${student.last_name} ${student.first_name}: ${err?.message || err}`,
@@ -327,7 +331,8 @@ export class StudentsService {
       throw err;
     }
     const updated = await this.findOne(id);
-    await this.attachGuardianQuietly(updated);
+    // Lien vers un parent déjà existant seulement — jamais de nouveau compte.
+    await this.attachGuardianQuietly(updated, { provision: false });
     return updated;
   }
 
@@ -345,6 +350,8 @@ export class StudentsService {
     if (!student) {
       throw new NotFoundException('Student not found');
     }
+    // Parents sans autre enfant → supprimer avant le CASCADE des liens.
+    await this.parentAccounts.deleteOrphanParentsForStudent(id);
     // Tombstone explicite avant hard delete (subscriber ORM en filet de sécurité).
     await this.syncService.markDeleted('Student', id, undefined, { kick: false });
     await this.studentRepo.remove(student);

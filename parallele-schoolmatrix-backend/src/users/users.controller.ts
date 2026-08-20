@@ -234,6 +234,17 @@ export class UsersController {
     return { ok: true, ...result };
   }
 
+  /** Purge PARENT sans aucun élève lié (orphelins après wipe élèves). */
+  @DenyParents()
+  @Delete('parents/orphans')
+  async deleteOrphanParents(
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number; role?: string } },
+  ) {
+    await this.assertUserAdmin(req);
+    const result = await this.parentAccountService.deleteAllOrphanParentAccounts();
+    return { ok: true, ...result };
+  }
+
   @DenyParents()
   @Get(':id')
   async one(

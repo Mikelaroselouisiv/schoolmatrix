@@ -25,9 +25,10 @@ let rerun = false;
 
 /**
  * Cycle anti-résurrection :
- * 1) Push tombstones local→cloud EN PREMIER (la delete locale gagne côté cloud avant le pull)
- * 2) Pull cloud→local (tombstones cloud d’abord grâce à ENTITY_ORDER)
- * 3) Push reste local→cloud
+ * 1) Push tombstones local→cloud
+ * 2) Pull cloud→local (tombstones en premier dans ENTITY_ORDER)
+ * 3) Push tombstones encore (deletes locaux nés pendant le pull / kick)
+ * 4) Push reste local→cloud
  */
 async function tick(reason = 'interval') {
   if (running) {
@@ -58,6 +59,16 @@ async function tick(reason = 'interval') {
           label: 'pull-gcp→local',
         });
         console.log('[sync-agent]', JSON.stringify(pullSummary));
+
+        const tombsOut2 = await replicateDirection({
+          from: local,
+          to: remote,
+          cursors: pushCursors,
+          sourceNodeId: NODE_ID,
+          label: 'push-tombs-local→gcp-2',
+          entities: ['SyncTombstone'],
+        });
+        console.log('[sync-agent]', JSON.stringify(tombsOut2));
 
         const pushSummary = await replicateDirection({
           from: local,

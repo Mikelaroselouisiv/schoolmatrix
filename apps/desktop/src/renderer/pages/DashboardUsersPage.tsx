@@ -24,8 +24,15 @@ type StudentOption = { id: string; order_number: string | null; first_name: stri
 export function DashboardUsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [metaLoading, setMetaLoading] = useState(true);
+  const [usersLoading, setUsersLoading] = useState(true);
   const [error, setError] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const take = 25;
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<User | null>(null);
   const [first_name, setFirst_name] = useState("");
@@ -58,31 +65,72 @@ export function DashboardUsersPage() {
 
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
-  async function load() {
-    setLoading(true);
+  async function loadMeta() {
+    setMetaLoading(true);
     setError("");
     try {
-      const [usersRes, rolesRes, yearsRes, classesRes] = await Promise.all([
-        fetchWithAuth(`${API_BASE}/users`),
+      const [rolesRes, yearsRes, classesRes] = await Promise.all([
         fetchWithAuth(`${API_BASE}/roles`),
         fetchWithAuth(`${API_BASE}/academic-years`),
         fetchWithAuth(`${API_BASE}/classes`),
       ]);
-      const usersData = await usersRes.json();
       const rolesData = await rolesRes.json();
       const yearsData = await yearsRes.json();
       const classesData = await classesRes.json();
-      if (!usersRes.ok) throw new Error(usersData.message || "Erreur");
-      setUsers(usersData.users ?? []);
+      if (!rolesRes.ok) throw new Error(rolesData.message || "Erreur");
       setRoles(rolesData.roles ?? []);
       setAcademicYears((yearsData.academic_years ?? []).map((y: { id: string; name: string }) => ({ id: y.id, name: y.name })));
       setClasses((classesData.classes ?? []).map((c: { id: string; name: string }) => ({ id: c.id, name: c.name })));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur de chargement");
     } finally {
-      setLoading(false);
+      setMetaLoading(false);
     }
   }
+
+  async function loadUsers(opts?: { page?: number; q?: string; role?: string }) {
+    const p = opts?.page ?? page;
+    const q = opts?.q ?? searchQuery;
+    const role = opts?.role ?? roleFilter;
+    setUsersLoading(true);
+    setError("");
+    try {
+      const params = new URLSearchParams({
+        page: String(p),
+        take: String(take),
+      });
+      if (q) params.set("q", q);
+      if (role) params.set("role", role);
+      const usersRes = await fetchWithAuth(`${API_BASE}/users?${params}`);
+      const usersData = await usersRes.json();
+      if (!usersRes.ok) throw new Error(usersData.message || "Erreur");
+      setUsers(usersData.users ?? []);
+      setTotal(Number(usersData.total) || 0);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur de chargement");
+    } finally {
+      setUsersLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadMeta();
+  }, []);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const next = searchInput.trim();
+      setSearchQuery((prev) => {
+        if (prev !== next) setPage(1);
+        return next;
+      });
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [searchInput]);
+
+  useEffect(() => {
+    loadUsers({ page, q: searchQuery, role: roleFilter });
+  }, [page, searchQuery, roleFilter]);
 
   async function loadFilteredStudents() {
     if (!studentFilterYear || !studentFilterClass) {
@@ -109,10 +157,6 @@ export function DashboardUsersPage() {
       setStudentsLoading(false);
     }
   }
-
-  useEffect(() => {
-    load();
-  }, []);
 
   useEffect(() => {
     loadFilteredStudents();
@@ -189,7 +233,7 @@ export function DashboardUsersPage() {
       setRoleName("PARENT");
       setProfile_photo_url(null);
       setLinked_student_ids([]);
-      load();
+      await loadUsers();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
     } finally {
@@ -203,7 +247,7 @@ export function DashboardUsersPage() {
       const res = await fetchWithAuth(`${API_BASE}/users/${id}/role`, { method: "PATCH", body: JSON.stringify({ roleName: newRole }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Erreur");
-      load();
+      await loadUsers();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
     }
@@ -242,23 +286,33 @@ export function DashboardUsersPage() {
         const data = await res.json();
         throw new Error(data.message || "Erreur");
       }
-      load();
+      if (users.length <= 1 && page > 1) setPage((p) => p - 1);
+      else await loadUsers();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
     }
   }
 
-  function openEdit(u: User) {
-    setEditing(u);
-    setFirst_name(u.first_name ?? "");
-    setLast_name(u.last_name ?? "");
-    setEmail(u.email);
-    setPhone(u.phone ?? "");
-    setPassword("");
-    setRoleName(u.role ?? "PARENT");
-    setProfile_photo_url(u.profile_photo_url ?? null);
-    setLinked_student_ids(u.linked_student_ids ?? []);
-    setShowForm(true);
+  async function openEdit(u: User) {
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/users/${u.id}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      const full = (data.user ?? u) as User;
+      setEditing(full);
+      setFirst_name(full.first_name ?? "");
+      setLast_name(full.last_name ?? "");
+      setEmail(full.email);
+      setPhone(full.phone ?? "");
+      setPassword("");
+      setRoleName(full.role ?? "PARENT");
+      setProfile_photo_url(full.profile_photo_url ?? null);
+      setLinked_student_ids(full.linked_student_ids ?? []);
+      setShowForm(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    }
   }
 
   function openCreate() {
@@ -340,7 +394,7 @@ export function DashboardUsersPage() {
       }
       setShowRoleForm(false);
       setEditingRole(null);
-      load();
+      await loadMeta();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
     } finally {
@@ -357,13 +411,15 @@ export function DashboardUsersPage() {
         const data = await res.json();
         throw new Error(data.message || "Erreur");
       }
-      load();
+      await loadMeta();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
     }
   }
 
-  if (loading) return <div className="animate-pulse text-slate-500">Chargement...</div>;
+  const pageCount = Math.max(1, Math.ceil(total / take));
+
+  if (metaLoading) return <div className="animate-pulse text-slate-500">Chargement...</div>;
 
   return (
     <div className="space-y-8">
@@ -626,6 +682,33 @@ export function DashboardUsersPage() {
 
       {error && !showForm && !resetPwdUser && <div className="p-3 rounded-lg bg-red-50 text-red-600 text-sm">{error}</div>}
 
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="flex-1 min-w-[240px]">
+          <label className="block text-sm font-medium text-slate-700 mb-1">Rechercher</label>
+          <input
+            type="search"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Nom, prénom, email ou téléphone…"
+            className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40"
+          />
+        </div>
+        <div className="min-w-[160px]">
+          <label className="block text-sm font-medium text-slate-700 mb-1">Rôle</label>
+          <select
+            value={roleFilter}
+            onChange={(e) => { setRoleFilter(e.target.value); setPage(1); }}
+            className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40"
+          >
+            <option value="">Tous</option>
+            {roles.map((r) => (
+              <option key={r.id} value={r.name}>{r.name}</option>
+            ))}
+          </select>
+        </div>
+        <p className="text-sm text-slate-500 pb-2">{total} utilisateur{total > 1 ? "s" : ""}</p>
+      </div>
+
       <div className="overflow-x-auto rounded-xl border border-[var(--app-border)]">
         <table className="w-full text-left">
           <thead className="bg-slate-50 border-b border-[var(--app-border)]">
@@ -639,8 +722,12 @@ export function DashboardUsersPage() {
             </tr>
           </thead>
           <tbody>
-            {users.length === 0 ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">Aucun utilisateur</td></tr>
+            {usersLoading && users.length === 0 ? (
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">Chargement...</td></tr>
+            ) : users.length === 0 ? (
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                {searchQuery || roleFilter ? "Aucun utilisateur ne correspond à la recherche." : "Aucun utilisateur"}
+              </td></tr>
             ) : (
               users.map((u) => (
                 <tr key={u.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
@@ -670,6 +757,28 @@ export function DashboardUsersPage() {
           </tbody>
         </table>
       </div>
+
+      {total > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <button
+            type="button"
+            disabled={page <= 1 || usersLoading}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            className="app-btn-secondary text-sm py-2 disabled:opacity-50"
+          >
+            Précédent
+          </button>
+          <p className="text-sm text-slate-600">Page {page} / {pageCount}</p>
+          <button
+            type="button"
+            disabled={page >= pageCount || usersLoading}
+            onClick={() => setPage((p) => p + 1)}
+            className="app-btn-secondary text-sm py-2 disabled:opacity-50"
+          >
+            Suivant
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -80,13 +80,13 @@ export function OrgTeachersScreen({}: Props) {
       getClasses(),
       listSubjects(),
       getRooms(),
-      listUsers(),
+      listUsers({ exclude_role: 'PARENT', take: 50 }),
     ]);
     setTeachers(t);
     setClasses(c);
     setSubjects(s);
     setRooms(r);
-    setUsers(u);
+    setUsers(u.users);
   }, []);
 
   const loadDetail = useCallback(async (id: number) => {

@@ -116,7 +116,7 @@ export function DashboardTeachersPage() {
         fetchWithAuth(`${API_BASE}/classes`),
         fetchWithAuth(`${API_BASE}/subjects`),
         fetchWithAuth(`${API_BASE}/rooms`),
-        fetchWithAuth(`${API_BASE}/users`),
+        fetchWithAuth(`${API_BASE}/users?exclude_role=PARENT&take=50`),
       ]);
       const classesData = await classesRes.json();
       const subjectsData = await subjectsRes.json();

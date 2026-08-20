@@ -1563,13 +1563,46 @@ export async function removeTeacherClassSubject(
   await api.delete(`/teachers/${teacherId}/class-subjects/${assignmentId}`);
 }
 
-export async function listUsers(): Promise<OrgUser[]> {
+export type UsersPage = {
+  users: OrgUser[];
+  total: number;
+  page: number;
+  take: number;
+};
+
+export async function listUsers(params?: {
+  q?: string;
+  role?: string;
+  exclude_role?: string;
+  page?: number;
+  take?: number;
+}): Promise<UsersPage> {
   try {
-    const { data } = await api.get('/users');
-    return unwrapList<OrgUser>(data);
+    const { data } = await api.get('/users', {
+      params: {
+        page: params?.page ?? 1,
+        take: params?.take ?? 25,
+        ...(params?.q ? { q: params.q } : {}),
+        ...(params?.role ? { role: params.role } : {}),
+        ...(params?.exclude_role ? { exclude_role: params.exclude_role } : {}),
+      },
+    });
+    const payload = data as { total?: number; page?: number; take?: number };
+    return {
+      users: unwrapList<OrgUser>(data),
+      total: Number(payload?.total) || 0,
+      page: Number(payload?.page) || (params?.page ?? 1),
+      take: Number(payload?.take) || (params?.take ?? 25),
+    };
   } catch (err) {
     throw new Error(axiosMessage(err, 'Impossible de charger les utilisateurs'));
   }
+}
+
+export async function getUser(id: number): Promise<OrgUser> {
+  const { data } = await api.get<{ user?: OrgUser }>(`/users/${id}`);
+  if (!data?.user) throw new Error('Utilisateur introuvable');
+  return data.user;
 }
 
 export async function setUserRole(userId: number, roleName: string): Promise<void> {

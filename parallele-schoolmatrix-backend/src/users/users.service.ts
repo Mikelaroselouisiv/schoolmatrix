@@ -75,6 +75,61 @@ export class UsersService {
     return this.usersRepo.find({ order: { id: 'ASC' } });
   }
 
+  /** Annuaire paginé : nom, email, téléphone — sans charger toute l’école. */
+  async findPage(params: {
+    q?: string;
+    role?: string;
+    excludeRole?: string;
+    page?: number;
+    take?: number;
+  }): Promise<{ users: User[]; total: number; page: number; take: number }> {
+    const take = Math.min(Math.max(Number(params.take) || 25, 1), 50);
+    const page = Math.max(Number(params.page) || 1, 1);
+    const qb = this.usersRepo
+      .createQueryBuilder('u')
+      .leftJoinAndSelect('u.role', 'r');
+
+    const q = (params.q ?? '').trim();
+    if (q) {
+      const like = `%${q.replace(/[%_\\]/g, '')}%`;
+      const digits = q.replace(/\D/g, '');
+      if (digits.length >= 3) {
+        qb.andWhere(
+          `(u.first_name ILIKE :like OR u.last_name ILIKE :like OR u.email ILIKE :like
+            OR COALESCE(u.phone, '') ILIKE :like
+            OR CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')) ILIKE :like
+            OR REGEXP_REPLACE(COALESCE(u.phone, ''), '[^0-9]', '', 'g') LIKE :digits)`,
+          { like, digits: `%${digits}%` },
+        );
+      } else {
+        qb.andWhere(
+          `(u.first_name ILIKE :like OR u.last_name ILIKE :like OR u.email ILIKE :like
+            OR COALESCE(u.phone, '') ILIKE :like
+            OR CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')) ILIKE :like)`,
+          { like },
+        );
+      }
+    }
+    if (params.role?.trim()) {
+      qb.andWhere('UPPER(r.name) = :role', {
+        role: params.role.trim().toUpperCase(),
+      });
+    }
+    if (params.excludeRole?.trim()) {
+      qb.andWhere('UPPER(r.name) != :exRole', {
+        exRole: params.excludeRole.trim().toUpperCase(),
+      });
+    }
+    qb.orderBy('u.last_name', 'ASC')
+      .addOrderBy('u.first_name', 'ASC')
+      .addOrderBy('u.id', 'ASC')
+      .skip((page - 1) * take)
+      .take(take);
+
+    const [users, total] = await qb.getManyAndCount();
+    return { users, total, page, take };
+  }
+
   async findParents(): Promise<User[]> {
     return this.usersRepo
       .createQueryBuilder('u')

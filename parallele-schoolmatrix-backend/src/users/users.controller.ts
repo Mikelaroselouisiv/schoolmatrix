@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards, Req, ParseIntPipe, ForbiddenException, BadRequestException, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, Req, ParseIntPipe, ForbiddenException, BadRequestException, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
 import { ParentAccountService } from './parent-account.service';
@@ -205,19 +205,32 @@ export class UsersController {
     return { ok: true, message: 'Admin access' };
   }
 
-  /** Annuaire complet (e-mails, téléphones, enfants liés) : hors périmètre parent. */
+  /** Annuaire paginé (recherche nom / email / téléphone). Liens élèves : GET /users/:id. */
   @DenyParents()
   @Get()
-  async listUsers(@Req() req: { user?: { userId?: number; sub?: number; id?: number; role?: string } }) {
+  async listUsers(
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number; role?: string } },
+    @Query('q') q?: string,
+    @Query('role') role?: string,
+    @Query('exclude_role') excludeRole?: string,
+    @Query('page') page?: string,
+    @Query('take') take?: string,
+  ) {
     await this.assertUserAdmin(req);
-    const users = await this.usersService.findAll();
-    const withLinks = await Promise.all(
-      users.map(async (u) => {
-        const ids = await this.usersService.getLinkedStudentIds(u.id);
-        return this.toUserResponse(u, ids);
-      }),
-    );
-    return { ok: true, users: withLinks };
+    const result = await this.usersService.findPage({
+      q,
+      role,
+      excludeRole,
+      page: page ? Number(page) : 1,
+      take: take ? Number(take) : 25,
+    });
+    return {
+      ok: true,
+      users: result.users.map((u) => this.toUserResponse(u)),
+      total: result.total,
+      page: result.page,
+      take: result.take,
+    };
   }
 
   /**

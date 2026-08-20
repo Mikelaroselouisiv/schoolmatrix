@@ -46,6 +46,8 @@ Sync après `SchoolProfile` dans `ENTITY_ORDER`. Les images (`image_url`) suiven
 - UUID métier (`id`) = clé de sync (sauf SchoolProfile singleton qui peut changer d’UUID gagnant).
 - Filaire : colonnes scalaires + FK ManyToOne comme uuid (via `loadRelationIds`).
 - Curseur composite `{ since, afterId }` + horodatage µs Postgres (pas de blocage sur skip).
+- Une ligne en erreur dans un lot **n’arrête plus** le curseur : le reste de l’école continue.
+- FK **optionnelles** absentes à l’arrivée (ex. `student.room_id`) : on enregistre la ligne **sans** la salle. Inscrire sans salle est valide ; le rattachement se fera au prochain write une fois la salle sync.
 
 ## Suppressions (tombstones)
 
@@ -85,6 +87,6 @@ Header `X-Sync-Key: <SYNC_API_KEY>` — même clé sur local, cloud et agent.
 
 Voir `ENTITY_ORDER` dans `apps/sync-agent/src/entities.js` et `SYNC_ENTITY_DEFS` dans le backend.
 
-Ordre notable : **Class avant Room** (`room.class_id` → classe pédagogique ; une classe a plusieurs salles avec `capacity`). **Student** après Room (`student.room_id`).
+Ordre notable : **Class avant Room** (`room.class_id` → classe pédagogique ; une classe a plusieurs salles avec `capacity`). **Student** après Room (`student.room_id`, optionnel).
 
 Inclut **`User`** (`password_hash`, photos, `role_id`). Les rôles sont seedés identiquement (mêmes ids) des deux côtés — pas de sync `Role` en V1.

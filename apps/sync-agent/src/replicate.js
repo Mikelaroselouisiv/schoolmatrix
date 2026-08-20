@@ -24,7 +24,8 @@ function readCursor(cursors, entity) {
 
 /**
  * Pull deltas from `from` and push them to `to`.
- * Curseur avancé seulement si le batch a 0 erreur.
+ * Curseur avancé même si certaines lignes échouent (une salle / un NISU
+ * ne doit pas geler 1000 élèves). Les erreurs sont loguées.
  * Curseur composite { t, id } pour éviter le blocage µs.
  *
  * @param {object} opts
@@ -86,13 +87,12 @@ export async function replicateDirection({
       errors += batchErrors;
 
       if (batchErrors > 0) {
+        blocked = true;
         const failed = (pushRes.data?.results || [])
           .filter((r) => r.action === 'error')
-          .slice(0, 3)
+          .slice(0, 5)
           .map((r) => `${r.uuid}: ${r.error || 'error'}`);
         errorSamples.push(...failed);
-        blocked = true;
-        break;
       }
 
       cursor = {

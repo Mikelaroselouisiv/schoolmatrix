@@ -38,6 +38,9 @@ export class SyncService implements OnModuleInit {
   private nodeId: string = 'LOCAL';
   /** Évite les boucles subscriber pendant apply tombstone distant. */
   private applyingRemoteTombstone = 0;
+  /** Cache existence FK pendant un push (salle absente ≠ bloquer l’élève). */
+  private fkExistCache = new Map<string, Set<string>>();
+  private fkMissCache = new Map<string, Set<string>>();
 
   constructor(
     private readonly configService: ConfigService,
@@ -422,6 +425,8 @@ export class SyncService implements OnModuleInit {
     }
     const repo = this.dataSource.getRepository(def.target);
     const meta = repo.metadata;
+    this.fkExistCache.clear();
+    this.fkMissCache.clear();
     const results: Array<{
       uuid: string;
       action: 'created' | 'updated' | 'skipped' | 'deleted' | 'error';
@@ -1030,7 +1035,11 @@ export class SyncService implements OnModuleInit {
       const prop = col.propertyName;
       if (prop === 'id') continue;
       if (Object.prototype.hasOwnProperty.call(incoming, prop)) {
-        payload[prop] = incoming[prop];
+        const v = incoming[prop];
+        payload[prop] =
+          typeof v === 'string' && v.trim() === '' && col.isNullable
+            ? null
+            : v;
       }
     }
 
@@ -1041,11 +1050,19 @@ export class SyncService implements OnModuleInit {
       const fk = incoming[prop];
       if (fk == null || fk === '') {
         payload[prop] = null;
-      } else {
-        const fkId =
-          typeof fk === 'string' && /^\d+$/.test(fk) ? Number(fk) : fk;
-        payload[prop] = { id: fkId };
+        continue;
       }
+      const fkId =
+        typeof fk === 'string' && /^\d+$/.test(fk) ? Number(fk) : fk;
+      const exists = await this.relationTargetExists(rel, fkId);
+      if (!exists) {
+        if (this.isOptionalRelation(rel)) {
+          payload[prop] = null;
+          continue;
+        }
+        throw new Error(`Référence ${prop}=${fkId} introuvable (sync)`);
+      }
+      payload[prop] = { id: fkId };
     }
 
     if (updatedAt && timeField === 'updated_at') {
@@ -1053,11 +1070,62 @@ export class SyncService implements OnModuleInit {
     }
 
     const entity = repo.create(payload as any);
-    await repo.save(entity);
+    try {
+      await repo.save(entity);
+    } catch (err) {
+      if (!this.isForeignKeyViolation(err)) throw err;
+      let dropped = false;
+      for (const rel of meta.relations) {
+        if (!(rel.isManyToOne || (rel.isOneToOne && rel.isOwning))) continue;
+        if (!this.isOptionalRelation(rel)) continue;
+        if (payload[rel.propertyName] != null) {
+          payload[rel.propertyName] = null;
+          dropped = true;
+        }
+      }
+      if (!dropped) throw err;
+      await repo.save(repo.create(payload as any));
+    }
 
     if (typeof primaryId === 'number') {
       await this.bumpSerialForward(meta);
     }
+  }
+
+  private isOptionalRelation(
+    rel: EntityMetadata['relations'][number],
+  ): boolean {
+    if (rel.isNullable === true) return true;
+    if (rel.isNullable === false) return false;
+    return rel.joinColumns?.some((c) => c.isNullable) ?? false;
+  }
+
+  private isForeignKeyViolation(err: unknown): boolean {
+    const e = err as { code?: string; driverError?: { code?: string } };
+    return e?.code === '23503' || e?.driverError?.code === '23503';
+  }
+
+  private async relationTargetExists(
+    rel: EntityMetadata['relations'][number],
+    fkId: string | number,
+  ): Promise<boolean> {
+    const target = rel.inverseEntityMetadata;
+    const table = (target.tableName || '').replace(/"/g, '');
+    const schema = (target.schema || 'public').replace(/"/g, '');
+    const pk = target.primaryColumns[0]?.databaseName || 'id';
+    const cacheKey = `${schema}.${table}`;
+    const idText = String(fkId);
+    if (this.fkExistCache.get(cacheKey)?.has(idText)) return true;
+    if (this.fkMissCache.get(cacheKey)?.has(idText)) return false;
+    const rows: Array<{ ok: number }> = await this.dataSource.query(
+      `SELECT 1 AS ok FROM "${schema}"."${table}" WHERE "${pk}"::text = $1 LIMIT 1`,
+      [idText],
+    );
+    const exists = rows.length > 0;
+    const bucket = exists ? this.fkExistCache : this.fkMissCache;
+    if (!bucket.has(cacheKey)) bucket.set(cacheKey, new Set());
+    bucket.get(cacheKey)!.add(idText);
+    return exists;
   }
 
   /** Avancer la séquence jusqu’au MAX(id), jamais la rembobiner après un delete. */

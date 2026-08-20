@@ -4,7 +4,9 @@ import { ENTITY_ORDER } from './entities.js';
 export function createApiClient(baseURL, syncKey) {
   return axios.create({
     baseURL: baseURL.replace(/\/$/, ''),
-    timeout: 60_000,
+    timeout: 120_000,
+    maxBodyLength: 12 * 1024 * 1024,
+    maxContentLength: 12 * 1024 * 1024,
     headers: {
       'X-Sync-Key': syncKey,
       'Content-Type': 'application/json',
@@ -57,7 +59,7 @@ export async function replicateDirection({
       const params = {
         entity,
         since: cursor.t,
-        take: 200,
+        take: 50,
       };
       if (cursor.id) params.afterId = cursor.id;
 
@@ -74,11 +76,25 @@ export async function replicateDirection({
       }
 
       pulled += records.length;
-      const pushRes = await to.post('/sync/push', {
-        entity,
-        sourceNodeId,
-        records,
-      });
+      let pushRes;
+      try {
+        pushRes = await to.post('/sync/push', {
+          entity,
+          sourceNodeId,
+          records,
+        });
+      } catch (err) {
+        const status = err?.response?.status;
+        const detail = err?.response?.data
+          ? JSON.stringify(err.response.data)
+          : err?.message || String(err);
+        if (status === 413 || /too large|entity\.too\.large/i.test(detail)) {
+          throw new Error(
+            `${entity}: lot sync trop gros (${records.length} lignes, HTTP 413). ${detail}`,
+          );
+        }
+        throw err;
+      }
       const batchApplied = pushRes.data?.applied ?? 0;
       const batchSkipped = pushRes.data?.skipped ?? 0;
       const batchErrors = pushRes.data?.errors ?? 0;
@@ -107,7 +123,7 @@ export async function replicateDirection({
       };
       cursors[entity] = cursor;
 
-      if (records.length < 200 || pages > 50) break;
+      if (records.length < 50 || pages > 80) break;
     }
 
     summary.entities[entity] = {

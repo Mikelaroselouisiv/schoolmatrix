@@ -7,7 +7,11 @@ import { AppModule } from './app.module';
 import { resolveMediaUrl } from './uploads/media-url';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+  });
+  app.useBodyParser('json', { limit: '10mb' });
+  app.useBodyParser('urlencoded', { limit: '10mb', extended: true });
   const storageRoot = process.env.STORAGE_ROOT || join(process.cwd(), 'storage');
   const uploadsDir = join(storageRoot, 'uploads');
   if (!fs.existsSync(uploadsDir)) {

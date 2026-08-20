@@ -1052,17 +1052,17 @@ export class SyncService implements OnModuleInit {
         payload[prop] = null;
         continue;
       }
-      const fkId: string | number =
-        typeof fk === 'string' && /^\d+$/.test(fk)
-          ? Number(fk)
-          : (fk as string | number);
-      const exists = await this.relationTargetExists(rel, fkId);
-      if (!exists) {
-        if (this.isOptionalRelation(rel)) {
+      const fkId = this.coerceRelationId(fk);
+      if (fkId == null) {
+        payload[prop] = null;
+        continue;
+      }
+      if (this.isOptionalRelation(rel)) {
+        const exists = await this.relationTargetExists(rel, fkId);
+        if (!exists) {
           payload[prop] = null;
           continue;
         }
-        throw new Error(`Référence ${prop}=${fkId} introuvable (sync)`);
       }
       payload[prop] = { id: fkId };
     }
@@ -1092,6 +1092,21 @@ export class SyncService implements OnModuleInit {
     if (typeof primaryId === 'number') {
       await this.bumpSerialForward(meta);
     }
+  }
+
+  private coerceRelationId(fk: unknown): string | number | null {
+    if (fk == null || fk === '') return null;
+    if (typeof fk === 'number' && Number.isFinite(fk)) return fk;
+    if (typeof fk === 'string') {
+      const t = fk.trim();
+      if (!t) return null;
+      if (/^\d+$/.test(t)) return Number(t);
+      return t;
+    }
+    if (typeof fk === 'object' && fk !== null && 'id' in (fk as { id?: unknown })) {
+      return this.coerceRelationId((fk as { id: unknown }).id);
+    }
+    return null;
   }
 
   private isOptionalRelation(

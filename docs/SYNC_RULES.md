@@ -48,6 +48,7 @@ Sync après `SchoolProfile` dans `ENTITY_ORDER`. Les images (`image_url`) suiven
 - Curseur composite `{ since, afterId }` + horodatage µs Postgres (pas de blocage sur skip).
 - Une ligne en erreur dans un lot **n’arrête plus** le curseur : le reste de l’école continue.
 - FK **optionnelles** absentes à l’arrivée (ex. `student.room_id`) : on enregistre la ligne **sans** la salle. Inscrire sans salle est valide ; le rattachement se fera au prochain write une fois la salle sync.
+- Payload JSON API : **10 Mo** (le défaut Express 100 Ko rejetait un lot d’utilisateurs ~103 Ko → `entity.too.large` et **tout le cycle** — User, élèves, liens — s’arrêtait). Lots agent : 50 lignes.
 
 ## Suppressions (tombstones)
 

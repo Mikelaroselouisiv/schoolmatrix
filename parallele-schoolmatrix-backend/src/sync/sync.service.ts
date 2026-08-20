@@ -1052,8 +1052,10 @@ export class SyncService implements OnModuleInit {
         payload[prop] = null;
         continue;
       }
-      const fkId =
-        typeof fk === 'string' && /^\d+$/.test(fk) ? Number(fk) : fk;
+      const fkId: string | number =
+        typeof fk === 'string' && /^\d+$/.test(fk)
+          ? Number(fk)
+          : (fk as string | number);
       const exists = await this.relationTargetExists(rel, fkId);
       if (!exists) {
         if (this.isOptionalRelation(rel)) {

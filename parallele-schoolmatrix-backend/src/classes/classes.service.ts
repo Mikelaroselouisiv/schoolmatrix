@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { Class } from './class.entity';
 import { ClassSubject } from './class-subject.entity';
 import { Room } from '../rooms/room.entity';
+import { isEducationLevelKey } from '../roles/education-levels';
 
 @Injectable()
 export class ClassesService {
@@ -90,10 +91,15 @@ export class ClassesService {
       throw new BadRequestException('Class name already exists');
     }
     const room = await this.resolveRoom(params.room_id);
+    if (!isEducationLevelKey(params.level)) {
+      throw new BadRequestException(
+        'Le niveau est obligatoire (Préscolaire, cycles fondamental, Secondaire ou Formation supérieure).',
+      );
+    }
     const cls = this.classRepo.create({
       name,
       description: params.description?.trim(),
-      level: params.level?.trim(),
+      level: params.level,
       section: params.section,
       room,
       active: true,
@@ -135,7 +141,14 @@ export class ClassesService {
     if (params.description !== undefined) {
       cls.description = params.description.trim() || undefined;
     }
-    if (params.level !== undefined) cls.level = params.level.trim() || undefined;
+    if (params.level !== undefined) {
+      if (!isEducationLevelKey(params.level)) {
+        throw new BadRequestException(
+          'Le niveau est obligatoire (Préscolaire, cycles fondamental, Secondaire ou Formation supérieure).',
+        );
+      }
+      cls.level = params.level;
+    }
     if (params.section !== undefined) cls.section = params.section;
     if (params.room_id !== undefined) {
       cls.room = (await this.resolveRoom(params.room_id)) ?? (null as unknown as Room);

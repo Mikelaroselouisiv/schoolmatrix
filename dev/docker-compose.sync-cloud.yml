@@ -1,0 +1,35 @@
+# Miroir « cloud » LOCAL pour tester la sync — JAMAIS la VM GCP.
+# Port hôte 5438 : à côté de schoolmatrix-db-dev (5435), et hors des ports
+# déjà pris par les autres Postgres locaux (5432-5437).
+#
+# Nom de projet distinct de `schoolmatrix-dev` : sans ça, un `compose up` ici
+# pourrait recréer le conteneur Postgres d'un autre dépôt.
+#
+#   npm run dev:db:cloud
+#   npm run dev:backend:mirror
+#   npm run dev:sync-lab
+
+name: parallele-dev-cloud
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: schoolmatrix-db-cloud-dev
+    restart: unless-stopped
+    ports:
+      - "5438:5432"
+    environment:
+      POSTGRES_USER: schooluser
+      POSTGRES_PASSWORD: schoolpass
+      POSTGRES_DB: schoolmatrix
+    volumes:
+      - schoolmatrix_pgdata_cloud_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U schooluser -d schoolmatrix"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  schoolmatrix_pgdata_cloud_dev:
+    name: schoolmatrix_pgdata_cloud_dev

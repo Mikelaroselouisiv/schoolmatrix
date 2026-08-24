@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback } from "react";
+﻿import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Link } from "react-router-dom";
 import { API_BASE, fetchWithAuth, getImageUrl } from "@/services/api";
@@ -8,6 +8,8 @@ import { ExportPdfButton } from "@/components/ExportPdfButton";
 import { ExportBadgePdfButton } from "@/components/ExportBadgePdfButton";
 import { buildBadgesPdfBlob } from "@/lib/badgeProduction";
 import { formatDateJJMMAAAA } from "@/lib/format";
+import { formatPointsOnBareme, pointsToTen } from "@/lib/gradeScale";
+import type { PdfSection } from "@/lib/pdfExport";
 
 type Student = {
   id: string;
@@ -108,6 +110,8 @@ type LinkedStudent = {
 };
 
 const DAYS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
+/** Semaine de classe : lundi d'abord, dimanche en dernier. */
+const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
 type ScheduleSlot = {
   id: string;
@@ -388,6 +392,83 @@ export function DashboardFicheElevePage() {
       }
     }
   };
+
+  const schedulePdfSections = useMemo<PdfSection[]>(() => {
+    const sections: PdfSection[] = [];
+    for (const day of DAY_ORDER) {
+      const rows = scheduleSlots
+        .filter((s) => s.day_of_week === day)
+        .sort((a, b) => a.start_time.localeCompare(b.start_time))
+        .map((s) => ({
+          horaire: `${s.start_time} - ${s.end_time}`,
+          matiere: s.subject_name,
+          professeur: s.teacher_name ?? "—",
+          salle: s.room_name ?? "—",
+        }));
+      if (rows.length === 0) continue;
+      sections.push({
+        title: DAYS[day],
+        table: {
+          columns: [
+            { header: "Horaire", key: "horaire" },
+            { header: "Matière", key: "matiere" },
+            { header: "Professeur", key: "professeur" },
+            { header: "Salle", key: "salle" },
+          ],
+          rows,
+        },
+      });
+    }
+    if (examSchedules.length > 0) {
+      sections.push({
+        title: "Horaire des examens",
+        table: {
+          columns: [
+            { header: "Date", key: "date" },
+            { header: "Horaire", key: "horaire" },
+            { header: "Matière", key: "matiere" },
+            { header: "Période", key: "periode" },
+          ],
+          rows: [...examSchedules]
+            .sort(
+              (a, b) =>
+                a.exam_date.localeCompare(b.exam_date) ||
+                a.start_time.localeCompare(b.start_time),
+            )
+            .map((e) => ({
+              date: formatDateJJMMAAAA(e.exam_date),
+              horaire: `${e.start_time} - ${e.end_time}`,
+              matiere: e.subject_name,
+              periode: e.period,
+            })),
+        },
+      });
+    }
+    if (extracurricularActivities.length > 0) {
+      sections.push({
+        title: "Activités parascolaires",
+        table: {
+          columns: [
+            { header: "Date", key: "date" },
+            { header: "Horaire", key: "horaire" },
+            { header: "Occasion", key: "occasion" },
+            { header: "Frais", key: "frais" },
+            { header: "Tenue", key: "tenue" },
+          ],
+          rows: [...extracurricularActivities]
+            .sort((a, b) => a.activity_date.localeCompare(b.activity_date))
+            .map((a) => ({
+              date: formatDateJJMMAAAA(a.activity_date),
+              horaire: `${a.start_time} - ${a.end_time}`,
+              occasion: a.occasion,
+              frais: a.participation_fee ?? "—",
+              tenue: a.dress_code ?? "—",
+            })),
+        },
+      });
+    }
+    return sections;
+  }, [scheduleSlots, examSchedules, extracurricularActivities]);
 
   if (loading) {
     return <div className="animate-pulse text-slate-500 p-8">Chargement...</div>;
@@ -687,17 +768,27 @@ export function DashboardFicheElevePage() {
           <div className="rounded-xl border border-[var(--app-border)] bg-white overflow-hidden">
             <div className="px-4 py-3 bg-slate-50 border-b border-[var(--app-border)] font-semibold text-slate-900 flex flex-wrap items-center justify-between gap-2">
               <span>Emploi du temps</span>
-              {academicYears.length > 0 && (
-                <select
-                  value={selectedYearId || academicYears[0]?.id}
-                  onChange={(e) => handleYearChange(e.target.value)}
-                  className="text-sm border border-[var(--app-border)] rounded-lg px-3 py-2"
-                >
-                  {academicYears.map((y) => (
-                    <option key={y.id} value={y.id}>{y.name}</option>
-                  ))}
-                </select>
-              )}
+              <div className="flex items-center gap-2">
+                <ExportPdfButton
+                  sections={schedulePdfSections}
+                  mainTitle={`Emploi du temps — ${student.first_name} ${student.last_name}${student.class_name ? ` (${student.class_name})` : ""}`}
+                  filename={`emploi-du-temps-${student.first_name}-${student.last_name}`}
+                  label="Exporter en PDF"
+                  className="text-sm px-2 py-1.5 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                  disabled={schedulePdfSections.length === 0}
+                />
+                {academicYears.length > 0 && (
+                  <select
+                    value={selectedYearId || academicYears[0]?.id}
+                    onChange={(e) => handleYearChange(e.target.value)}
+                    className="text-sm border border-[var(--app-border)] rounded-lg px-3 py-2"
+                  >
+                    {academicYears.map((y) => (
+                      <option key={y.id} value={y.id}>{y.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
             </div>
             <div className="p-4">
               <div className="flex gap-1 border-b border-[var(--app-border)] mb-4">
@@ -818,7 +909,7 @@ export function DashboardFicheElevePage() {
                 <ExportPdfButton
                   sections={[
                     {
-                      title: "Carnet de notes (points/coef, moy. sur 10)",
+                      title: "Carnet de notes (points / note sur, moy. sur 10)",
                       table: {
                         columns: [
                           { header: "Matière", key: "subject_name" },
@@ -839,7 +930,7 @@ export function DashboardFicheElevePage() {
                               const g = grades.find((gr) => gr.period_id === p.id);
                               const pts = g?.grade_value != null ? Number(g.grade_value) : null;
                               const coef = g?.coefficient != null ? Number(g.coefficient) : null;
-                              row[`period_${i}`] = pts != null && coef != null ? `${pts}/${coef}` : "—";
+                              row[`period_${i}`] = pts != null && coef != null ? formatPointsOnBareme(pts, coef) : "—";
                             });
                             return row;
                           }),
@@ -916,7 +1007,7 @@ export function DashboardFicheElevePage() {
             <div className="p-4 overflow-auto max-h-[70vh]">
               {examResults && examResults.subjects?.length > 0 ? (
                 <div className="space-y-4">
-                  <p className="text-xs text-slate-500 mb-2">Points avec coefficients (ex. 85/100). Moyennes sur 10.</p>
+                  <p className="text-xs text-slate-500 mb-2">Ex. 180/200 = 9,00/10 · barème 100, 200, 300, 400 ou 500.</p>
                   <table className="w-full text-sm border-collapse min-w-[600px]">
                     <thead>
                       <tr>
@@ -944,7 +1035,14 @@ export function DashboardFicheElevePage() {
                               const coef = g?.coefficient != null ? Number(g.coefficient) : null;
                               return (
                                 <td key={p.id} className="py-2 px-2 text-center">
-                                  {pts != null && coef != null ? `${pts}/${coef}` : "—"}
+                                  {pts != null && coef != null ? (
+                                    <span>
+                                      {pts}/{coef}
+                                      <span className="block text-[11px] text-slate-500">
+                                        {pointsToTen(pts, coef) != null ? `${pointsToTen(pts, coef)!.toFixed(2)}/10` : ""}
+                                      </span>
+                                    </span>
+                                  ) : "—"}
                                 </td>
                               );
                             })}

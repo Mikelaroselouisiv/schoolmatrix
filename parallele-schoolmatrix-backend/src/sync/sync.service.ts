@@ -191,8 +191,21 @@ export class SyncService implements OnModuleInit {
       .take(limit);
 
     if (after) {
+      // Départage à égalité de timestamp : comparer l'id dans son type réel.
+      // En texte '100' > '99' est faux, donc un import qui crée plus de 99
+      // lignes dans la même transaction bloquait le curseur définitivement.
+      const idColumn = meta.primaryColumns[0];
+      const numericId =
+        (idColumn?.type === Number ||
+          ['int', 'int2', 'int4', 'int8', 'integer', 'smallint', 'bigint'].includes(
+            String(idColumn?.type),
+          )) &&
+        /^\d+$/.test(after);
+      const comparison = numericId
+        ? 'e.id > CAST(:afterId AS bigint)'
+        : 'CAST(e.id AS varchar) > :afterId';
       qb.where(
-        `(e.${timeProp} > CAST(:since AS timestamptz) OR (e.${timeProp} = CAST(:since AS timestamptz) AND CAST(e.id AS varchar) > :afterId))`,
+        `(e.${timeProp} > CAST(:since AS timestamptz) OR (e.${timeProp} = CAST(:since AS timestamptz) AND ${comparison}))`,
         { since: sinceStr, afterId: after },
       );
     } else {

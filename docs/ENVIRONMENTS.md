@@ -47,12 +47,12 @@ flowchart TB
 | API | process Node local | `cd parallele-schoolmatrix-backend && npm run dev` |
 | UI | Electron + Vite | `cd apps/desktop && npm run dev` |
 | Postgres | conteneur **`schoolmatrix-db-dev`** | port hôte **5435** — voir `dev/docker-compose.postgres.yml` |
-| Sync-agent | process Node local (optionnel) | `cd apps/sync-agent && npm start` |
+| Sync-agent | process Node local (optionnel) | **lab** `npm run dev:sync-lab` (miroir `:3001`) — pas la VM GCP |
 
 **Règles :**
 
 - En DEV, le backend Nest tourne **hors Docker**.
-- Le seul Docker utile au quotidien = **Postgres DEV**.
+- Docker utile au quotidien = **Postgres DEV** (`schoolmatrix-db-dev`). Pour tester la sync : second Postgres `schoolmatrix-db-cloud-dev` (lab local, pas GCP).
 - Ne pas traiter les conteneurs `schoolmatrix_*_server` sur ce PC comme « l’école ».
 
 ### Piège fréquent sur le PC de dev
@@ -103,7 +103,7 @@ Les apps **Remote**, futures apps natives et sites web parlent à **cette** API.
 | Intention | Action |
 |-----------|--------|
 | Coder une feature UI/API | Nest + `apps/desktop` + Postgres DEV |
-| Tester sync | + `apps/sync-agent` pointant LOCAL→cloud |
+| Tester sync | `dev:backend` + `dev:backend:mirror` + `dev:sync-lab` (miroir local `:3001`) — **pas** la VM GCP |
 | Publier API pour Remote | CI / `ship-all` → Artifact Registry → VM |
 | Publier pour les écoles | `ship-all` avec build Server (attend AR puis `prepare-server-stack`) |
 | Publier Remote desktop | feed GCS `installers/remote/` |
@@ -113,7 +113,8 @@ Les apps **Remote**, futures apps natives et sites web parlent à **cette** API.
 
 | Fichier | Cible |
 |---------|--------|
-| `dev/docker-compose.postgres.yml` | Postgres **DEV** |
+| `dev/docker-compose.postgres.yml` | Postgres **DEV** (`:5435`) |
+| `dev/docker-compose.sync-cloud.yml` | Postgres **miroir lab** (`:5438`) — pas GCP |
 | `apps/desktop/server-stack/docker-compose.yml` | Stack **embarquée** installateur école |
 | `infra/docker/docker-compose.server.yml` | Référence ops (pull AR) — **pas** l’école |
 | `infra/docker/docker-compose.gcp.yml` | **Cloud uniquement** |

@@ -59,20 +59,37 @@ npm run dev:db:down     # stop
 
 > Sur cette machine, les ports 5432–5434 sont souvent pris par d’autres projets (POS). D’où **5435** pour SchoolMatrix DEV.
 
-## Sync-agent (optionnel)
+## Tester la sync (lab local — recommandé)
 
-Uniquement pour développer / tester la synchronisation. Pas nécessaire pour l’UI quotidienne.
+Le seed DEV et tes clics UI vivent dans `schoolmatrix-db-dev`. **`npm run dev:sync-agent` pointe vers la VM GCP** : ça enverrait des élèves et parents fictifs en production. Ne pas l’utiliser pour tester un jeu de données local.
+
+Lab à deux nœuds **sur ce PC** :
+
+| Nœud | API | Postgres |
+|------|-----|----------|
+| LOCAL (vérité école) | `http://127.0.0.1:3000` | `schoolmatrix-db-dev` :5435 |
+| Miroir « cloud » | `http://127.0.0.1:3001` | `schoolmatrix-db-cloud-dev` :5438 |
+
+### Deux API + deux fronts simultanés
+
+| Rôle | API | Vite | Commandes |
+|------|-----|------|-----------|
+| École (Server) | `:3000` | `:5173` | `dev:backend` + `dev:desktop` |
+| Miroir (Remote) | `:3001` | `:5174` | `dev:backend:mirror` + `dev:desktop:mirror` |
+| Agent | — | — | `dev:sync-lab` |
 
 ```powershell
-cd apps\sync-agent
-npm install
-$env:SYNC_API_KEY="..."          # même clé que LOCAL + CLOUD
-$env:LOCAL_API_URL="http://127.0.0.1:3000"
-$env:REMOTE_API_URL="http://34.95.43.132"
-npm start
+npm run dev:free-lab         # libère 3000, 3001, 5173, 5174, 3911
+npm run dev:backend          # Terminal A — école
+npm run dev:backend:mirror   # Terminal B — miroir (crée le Postgres :5438 si besoin)
+npm run dev:desktop          # Terminal C — front école
+npm run dev:desktop:mirror   # Terminal D — front miroir
+npm run dev:sync-lab         # Terminal E — agent LOCAL → miroir (refuse la VM GCP)
 ```
 
-Ou depuis la racine : `npm run dev:sync-agent` (après avoir exporté les variables d’environnement).
+Après un cycle (~5 s), les comptes du seed et les élèves apparaissent sur `:3001`. Une saisie sur Server (`:3000`) doit arriver sur le miroir.
+
+Données fictives : `npm run dev:seed` (mot de passe unique pour tous les comptes de démo, voir l’en-tête du script).
 
 Sur une **école**, l’agent tourne dans Docker via l’installateur — pas comme process Node hôte.
 
@@ -91,6 +108,7 @@ Ne pas lancer `npm run dev` dans `apps/desktop/frontend` pour le produit.
 |--------|----------|
 | Utiliser `_archive/` | Ancien AWS/ECR/Electron local-prod |
 | `docker compose -f infra/docker/docker-compose.gcp.yml …` sur le laptop | Définition **cloud** |
+| `npm run dev:sync-agent` avec le seed fictif | Pousse vers la **VM GCP** — utiliser `dev:sync-lab` |
 | Laisser `schoolmatrix_api_server` sur `:3000` + Nest en parallèle | Collision + confusion prod/dev |
 | Croire que Docker Desktop = école | L’école a son propre Docker, alimenté par l’installeur |
 | `ship-all` / upload GCS par erreur | Publie en production |

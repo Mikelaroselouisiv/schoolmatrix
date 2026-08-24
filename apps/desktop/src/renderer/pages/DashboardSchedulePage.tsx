@@ -1,10 +1,48 @@
-﻿import { useState, useEffect } from "react";
+﻿import { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { API_BASE, fetchWithAuth } from "@/services/api";
 import { formatDateJJMMAAAA } from "@/lib/format";
 import { DateInputJJMMAAAA } from "@/components/DateInputJJMMAAAA";
+import { ExportPdfButton } from "@/components/ExportPdfButton";
+import type { PdfColumn, PdfSection } from "@/lib/pdfExport";
 
 const DAYS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
+/** Semaine de classe : lundi d'abord, dimanche en dernier. */
+const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
+
+const SLOT_COLUMNS: PdfColumn[] = [
+  { header: "Horaire", key: "horaire" },
+  { header: "Classe", key: "classe" },
+  { header: "Matière", key: "matiere" },
+  { header: "Professeur", key: "professeur" },
+  { header: "Salle", key: "salle" },
+];
+
+const EXAM_COLUMNS: PdfColumn[] = [
+  { header: "Date", key: "date" },
+  { header: "Horaire", key: "horaire" },
+  { header: "Classe", key: "classe" },
+  { header: "Matière", key: "matiere" },
+  { header: "Période", key: "periode" },
+];
+
+const ACTIVITY_COLUMNS: PdfColumn[] = [
+  { header: "Date", key: "date" },
+  { header: "Horaire", key: "horaire" },
+  { header: "Classe", key: "classe" },
+  { header: "Occasion", key: "occasion" },
+  { header: "Frais", key: "frais" },
+  { header: "Tenue", key: "tenue" },
+];
+
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
 
 type ScheduleSlot = {
   id: string;
@@ -425,11 +463,125 @@ export function DashboardSchedulePage() {
     return [t.first_name, t.last_name].filter(Boolean).join(" ") || t.email;
   }
 
+  const filterLabels = useMemo(() => {
+    const year = academicYears.find((ay) => ay.id === academicYearFilter)?.name;
+    const klass = classes.find((c) => c.id === classFilter)?.name;
+    const room = rooms.find((r) => r.id === roomFilter)?.name;
+    return { year, klass, room };
+  }, [academicYearFilter, classFilter, roomFilter, academicYears, classes, rooms]);
+
+  const pdfSubtitle = useMemo(() => {
+    const parts = [`Année : ${filterLabels.year ?? "toutes"}`];
+    if (filterLabels.klass) parts.push(`Classe : ${filterLabels.klass}`);
+    if (filterLabels.room) parts.push(`Salle : ${filterLabels.room}`);
+    return parts.join("  ·  ");
+  }, [filterLabels]);
+
+  const pdfFileSuffix = useMemo(() => {
+    const slug = [filterLabels.year, filterLabels.klass, filterLabels.room]
+      .filter((v): v is string => !!v)
+      .map(slugify)
+      .join("-");
+    return slug ? `-${slug}` : "";
+  }, [filterLabels]);
+
+  const slotSectionsByDay = useMemo<PdfSection[]>(() => {
+    const sections: PdfSection[] = [];
+    for (const day of DAY_ORDER) {
+      const rows = slots
+        .filter((s) => s.day_of_week === day)
+        .sort(
+          (a, b) =>
+            a.start_time.localeCompare(b.start_time) ||
+            a.class_name.localeCompare(b.class_name),
+        )
+        .map((s) => ({
+          horaire: `${s.start_time} - ${s.end_time}`,
+          classe: s.class_name,
+          matiere: s.subject_name,
+          professeur: s.teacher_name ?? "—",
+          salle: s.room_name ?? "—",
+        }));
+      if (rows.length === 0) continue;
+      sections.push({ title: DAYS[day], table: { columns: SLOT_COLUMNS, rows } });
+    }
+    return sections;
+  }, [slots]);
+
+  const examRows = useMemo(
+    () =>
+      [...exams]
+        .sort(
+          (a, b) =>
+            a.exam_date.localeCompare(b.exam_date) ||
+            a.start_time.localeCompare(b.start_time),
+        )
+        .map((e) => ({
+          date: formatDateJJMMAAAA(e.exam_date),
+          horaire: `${e.start_time} - ${e.end_time}`,
+          classe: e.class_name,
+          matiere: e.subject_name,
+          periode: e.period,
+        })),
+    [exams],
+  );
+
+  const activityRows = useMemo(
+    () =>
+      [...activities]
+        .sort(
+          (a, b) =>
+            a.activity_date.localeCompare(b.activity_date) ||
+            a.start_time.localeCompare(b.start_time),
+        )
+        .map((a) => ({
+          date: formatDateJJMMAAAA(a.activity_date),
+          horaire: `${a.start_time} - ${a.end_time}`,
+          classe: a.class_name,
+          occasion: a.occasion,
+          frais: a.participation_fee ?? "—",
+          tenue: a.dress_code ?? "—",
+        })),
+    [activities],
+  );
+
+  const allSchedulesSections = useMemo<PdfSection[]>(() => {
+    const sections: PdfSection[] = [{ lines: [pdfSubtitle] }];
+    if (slotSectionsByDay.length > 0) {
+      sections.push({ title: "Horaire des cours" }, ...slotSectionsByDay);
+    }
+    if (examRows.length > 0) {
+      sections.push({
+        title: "Horaire des examens",
+        table: { columns: EXAM_COLUMNS, rows: examRows },
+      });
+    }
+    if (activityRows.length > 0) {
+      sections.push({
+        title: "Activités parascolaires",
+        table: { columns: ACTIVITY_COLUMNS, rows: activityRows },
+      });
+    }
+    return sections;
+  }, [pdfSubtitle, slotSectionsByDay, examRows, activityRows]);
+
+  const hasAnySchedule =
+    slotSectionsByDay.length > 0 || examRows.length > 0 || activityRows.length > 0;
+
   if (loading) return <div className="animate-pulse text-slate-500">Chargement...</div>;
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-slate-900">Horaires</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-2xl font-bold text-slate-900">Horaires</h2>
+        <ExportPdfButton
+          sections={allSchedulesSections}
+          mainTitle="Horaires de l'école"
+          filename={`horaires${pdfFileSuffix}`}
+          label="Tout exporter en PDF"
+          disabled={!hasAnySchedule}
+        />
+      </div>
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-[var(--app-border)]">
@@ -507,7 +659,15 @@ export function DashboardSchedulePage() {
         <section className="space-y-4">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold text-slate-900">Créneaux de cours</h3>
-            <button onClick={() => { setSlotForm((f) => ({ ...f, academic_year: defaultYearName })); setShowSlotForm(true); }} className="app-btn-primary text-sm py-2">Ajouter un créneau</button>
+            <div className="flex items-center gap-2">
+              <ExportPdfButton
+                sections={[{ lines: [pdfSubtitle] }, ...slotSectionsByDay]}
+                mainTitle="Horaire des cours"
+                filename={`horaire-cours${pdfFileSuffix}`}
+                disabled={slotSectionsByDay.length === 0}
+              />
+              <button onClick={() => { setSlotForm((f) => ({ ...f, academic_year: defaultYearName })); setShowSlotForm(true); }} className="app-btn-primary text-sm py-2">Ajouter un créneau</button>
+            </div>
           </div>
           {showSlotForm && (
             <form onSubmit={handleAddSlot} className="p-5 rounded-xl border border-[var(--app-border)] bg-white space-y-4 max-w-2xl">
@@ -652,7 +812,19 @@ export function DashboardSchedulePage() {
         <section className="space-y-4">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold text-slate-900">Examens</h3>
-            <button onClick={() => { setExamForm((f) => ({ ...f, academic_year_id: defaultYearId, period: defaultPeriodName })); setShowExamForm(true); }} className="app-btn-primary text-sm py-2">Ajouter un examen</button>
+            <div className="flex items-center gap-2">
+              <ExportPdfButton
+                table={{
+                  title: "Horaire des examens",
+                  subtitle: pdfSubtitle,
+                  columns: EXAM_COLUMNS,
+                  rows: examRows,
+                }}
+                filename={`horaire-examens${pdfFileSuffix}`}
+                disabled={examRows.length === 0}
+              />
+              <button onClick={() => { setExamForm((f) => ({ ...f, academic_year_id: defaultYearId, period: defaultPeriodName })); setShowExamForm(true); }} className="app-btn-primary text-sm py-2">Ajouter un examen</button>
+            </div>
           </div>
           {showExamForm && (
             <form onSubmit={handleAddExam} className="p-5 rounded-xl border border-[var(--app-border)] bg-white space-y-4 max-w-xl">
@@ -743,7 +915,19 @@ export function DashboardSchedulePage() {
         <section className="space-y-4">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold text-slate-900">Activités parascolaires</h3>
-            <button onClick={() => { setActivityForm((f) => ({ ...f, academic_year_id: defaultYearId })); setShowActivityForm(true); }} className="app-btn-primary text-sm py-2">Ajouter une activité</button>
+            <div className="flex items-center gap-2">
+              <ExportPdfButton
+                table={{
+                  title: "Activités parascolaires",
+                  subtitle: pdfSubtitle,
+                  columns: ACTIVITY_COLUMNS,
+                  rows: activityRows,
+                }}
+                filename={`activites-parascolaires${pdfFileSuffix}`}
+                disabled={activityRows.length === 0}
+              />
+              <button onClick={() => { setActivityForm((f) => ({ ...f, academic_year_id: defaultYearId })); setShowActivityForm(true); }} className="app-btn-primary text-sm py-2">Ajouter une activité</button>
+            </div>
           </div>
           {showActivityForm && (
             <form onSubmit={handleAddActivity} className="p-5 rounded-xl border border-[var(--app-border)] bg-white space-y-4 max-w-xl">

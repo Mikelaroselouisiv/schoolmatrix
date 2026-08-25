@@ -28,10 +28,59 @@ export class ParentAccountService {
     private readonly users: UsersService,
     @InjectRepository(UserLinkedStudent)
     private readonly linkedRepo: Repository<UserLinkedStudent>,
+    @InjectRepository(Student)
+    private readonly studentRepo: Repository<Student>,
     @InjectRepository(SchoolProfile)
     private readonly schoolProfileRepo: Repository<SchoolProfile>,
     private readonly syncKick: SyncKickService,
   ) {}
+
+  /**
+   * Pose le lien parent → élève et **vérifie** qu’il est bien en base.
+   * L’appelant (`attachGuardianQuietly`) avale les exceptions : sans cette
+   * vérification, un échec du lien laissait un compte parent sans enfant, muet.
+   * Le repli en SQL brut ne dépend d’aucun comportement de cascade TypeORM.
+   */
+  private async ensureLink(
+    userId: number,
+    studentId: string,
+    reason: string,
+  ): Promise<boolean> {
+    try {
+      await this.users.linkStudent(userId, studentId, false);
+    } catch (err: any) {
+      this.logger.warn(
+        `Lien parent ${userId} → élève ${studentId} (${reason}) : ${err?.message || err}`,
+      );
+    }
+    if (await this.hasLink(userId, studentId)) return true;
+
+    try {
+      await this.linkedRepo.query(
+        `INSERT INTO user_linked_student (user_id, student_id)
+         VALUES ($1, $2)
+         ON CONFLICT (user_id, student_id) DO NOTHING`,
+        [userId, studentId],
+      );
+    } catch (err: any) {
+      this.logger.error(
+        `Repli SQL du lien parent ${userId} → élève ${studentId} (${reason}) : ${err?.message || err}`,
+      );
+    }
+    if (await this.hasLink(userId, studentId)) return true;
+
+    this.logger.error(
+      `Compte parent ${userId} sans lien vers l’élève ${studentId} (${reason})`,
+    );
+    return false;
+  }
+
+  private async hasLink(userId: number, studentId: string): Promise<boolean> {
+    const n = await this.linkedRepo.count({
+      where: { user: { id: userId }, student: { id: studentId } },
+    });
+    return n > 0;
+  }
 
   /**
    * Rattache un parent existant (téléphone / nom) à l’élève.
@@ -50,7 +99,8 @@ export class ParentAccountService {
     for (const hint of hints) {
       const user = await this.users.findByPhoneDigits(this.digits(hint.phone));
       if (!user) continue;
-      await this.users.linkStudent(user.id, student.id, false);
+      await this.ensureLink(user.id, student.id, 'tuteur retrouvé par téléphone');
+      // Le compte existe : ne pas en créer un second même si le lien a échoué.
       linked = true;
     }
     if (!linked) {
@@ -58,7 +108,7 @@ export class ParentAccountService {
         if (!hint.fullName) continue;
         const user = await this.findParentByPersonName(hint.fullName);
         if (!user) continue;
-        await this.users.linkStudent(user.id, student.id, false);
+        await this.ensureLink(user.id, student.id, 'tuteur retrouvé par nom');
         linked = true;
       }
     }
@@ -88,18 +138,20 @@ export class ParentAccountService {
           last_name: names.last_name,
           first_name: names.first_name,
         });
-        await this.users.linkStudent(placeholder.id, student.id, false);
+        await this.ensureLink(placeholder.id, student.id, 'placeholder complété');
         this.syncKick.kick('parent-upgrade');
         return;
       }
-      await this.createGuardian(toCreate, student);
+      const guardian = await this.createGuardian(toCreate, student);
+      await this.ensureLink(guardian.id, student.id, 'compte tuteur créé');
       this.syncKick.kick('parent-create');
       return;
     }
 
     if (existingLinks.length > 0) return;
 
-    await this.createChildNamedPlaceholder(student);
+    const created = await this.createChildNamedPlaceholder(student);
+    await this.ensureLink(created.id, student.id, 'compte placeholder créé');
     this.syncKick.kick('parent-placeholder');
   }
 
@@ -140,6 +192,80 @@ export class ParentAccountService {
       }
     }
     return deleted;
+  }
+
+  /**
+   * Rattache les comptes PARENT restés sans enfant à l’élève dont ils portent
+   * le nom. C’est l’inverse exact de `createChildNamedPlaceholder` : le compte
+   * reprend nom + prénom de l’enfant, donc la clé de nom identifie l’élève.
+   * Idempotent — à lancer après une inscription en masse ou une reprise de base.
+   */
+  async repairOrphanParentLinks(): Promise<{
+    linked: number;
+    unmatched: number;
+    orphans: number;
+  }> {
+    const parents = await this.users.findParents();
+    const orphans: User[] = [];
+    for (const p of parents) {
+      const n = await this.linkedRepo.count({ where: { user: { id: p.id } } });
+      if (n === 0) orphans.push(p);
+    }
+    if (orphans.length === 0) {
+      return { linked: 0, unmatched: 0, orphans: 0 };
+    }
+
+    const students = await this.studentRepo.find();
+    const linkedStudentIds = new Set(
+      (
+        await this.linkedRepo
+          .createQueryBuilder('l')
+          .select('l.student_id', 'student_id')
+          .getRawMany<{ student_id: string }>()
+      ).map((r) => r.student_id),
+    );
+
+    // Élèves sans aucun parent d’abord : un compte orphelin doit servir un
+    // enfant qui n’a personne avant de doubler un enfant déjà couvert.
+    const freeByName = new Map<string, string[]>();
+    const anyByName = new Map<string, string[]>();
+    for (const s of [...students].sort((a, b) => a.id.localeCompare(b.id))) {
+      const key = this.nameKey(s.last_name, s.first_name);
+      if (!anyByName.has(key)) anyByName.set(key, []);
+      anyByName.get(key)!.push(s.id);
+      if (linkedStudentIds.has(s.id)) continue;
+      if (!freeByName.has(key)) freeByName.set(key, []);
+      freeByName.get(key)!.push(s.id);
+    }
+
+    let linked = 0;
+    let unmatched = 0;
+    for (const parent of [...orphans].sort((a, b) => a.id - b.id)) {
+      const key = this.nameKey(parent.last_name, parent.first_name);
+      const studentId = freeByName.get(key)?.shift() ?? anyByName.get(key)?.[0];
+      if (!studentId) {
+        unmatched += 1;
+        this.logger.warn(
+          `Parent orphelin ${parent.id} (${parent.last_name} ${parent.first_name}) : aucun élève homonyme`,
+        );
+        continue;
+      }
+      if (await this.ensureLink(parent.id, studentId, 'réparation par nom')) {
+        linked += 1;
+      } else {
+        unmatched += 1;
+      }
+    }
+    if (linked > 0) this.syncKick.kick('parent-link-repair');
+    this.logger.log(
+      `Réparation liens parents : ${linked} rattaché(s), ${unmatched} en échec sur ${orphans.length} orphelin(s)`,
+    );
+    return { linked, unmatched, orphans: orphans.length };
+  }
+
+  /** Clé d’appariement : même règle que l’e-mail généré à la création. */
+  private nameKey(lastName?: string | null, firstName?: string | null): string {
+    return `${slugEmailPart(lastName ?? '')}.${slugEmailPart(firstName ?? '')}`;
   }
 
   /**

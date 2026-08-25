@@ -200,6 +200,20 @@ export class UsersController {
     return { ok: true, ...result };
   }
 
+  /**
+   * Rattache les comptes PARENT restés sans enfant à l’élève dont ils portent
+   * le nom (reprise de base, inscription en masse d’une version antérieure).
+   */
+  @DenyParents()
+  @Post('parents/repair-links')
+  async repairParentLinks(
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number; role?: string } },
+  ) {
+    await this.assertUserAdmin(req);
+    const result = await this.parentAccountService.repairOrphanParentLinks();
+    return { ok: true, ...result };
+  }
+
   @DenyParents()
   @Get('admin-only')
   adminOnly() {

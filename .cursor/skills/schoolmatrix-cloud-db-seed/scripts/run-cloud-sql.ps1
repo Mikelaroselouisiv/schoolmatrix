@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
   Exécute un fichier SQL sur le Postgres cloud SchoolMatrix du dépôt courant

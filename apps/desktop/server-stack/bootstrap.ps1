@@ -18,7 +18,9 @@ $DefaultsExample = Join-Path $StackDir 'defaults.env.example'
 $ImagesDir = Join-Path $StackDir 'images'
 $StateFile = Join-Path $StackDir '.bootstrap-done'
 $TaskName = 'Eureka-SchoolMatrix-Server-Stack'
+$LegacyTaskName = 'Parallele-SchoolMatrix-Server-Stack'
 $StartScript = Join-Path $StackDir 'stack-start.ps1'
+$LegacyEnvFile = Join-Path ($env:ProgramData) 'Parallele SchoolMatrix\server-stack\.env.server'
 
 function Write-Step([string]$Message) {
   Write-Host "==> $Message" -ForegroundColor Cyan
@@ -85,11 +87,28 @@ function Assert-GcsCredentials {
   }
 }
 
+function Test-PostgresServerExists {
+  docker inspect schoolmatrix_postgres_server 2>$null | Out-Null
+  return $LASTEXITCODE -eq 0
+}
+
+function Import-LegacyEnvIfNeeded {
+  if (Test-Path -LiteralPath $EnvFile) { return }
+  if ($LegacyEnvFile -and (Test-Path -LiteralPath $LegacyEnvFile) -and ($LegacyEnvFile -ne $EnvFile)) {
+    Copy-Item -LiteralPath $LegacyEnvFile -Destination $EnvFile -Force
+    Write-Step 'Secrets repris depuis Parallele SchoolMatrix (meme base Docker)'
+  }
+}
+
 function Ensure-EnvFile {
+  Import-LegacyEnvIfNeeded
   $source = Get-BundledDefaultsPath
   $bundled = Read-EnvMap $source
 
   if (-not (Test-Path -LiteralPath $EnvFile)) {
+    if (Test-PostgresServerExists) {
+      throw 'Postgres Server existe deja (schoolmatrix_postgres_server) mais .env.server est introuvable. Restaurez C:\ProgramData\Parallele SchoolMatrix\server-stack\.env.server — ne pas recreer le mot de passe (donnees intactes).'
+    }
     $map = @{}
     foreach ($k in $bundled.Keys) { $map[$k] = $bundled[$k] }
 
@@ -267,6 +286,11 @@ if (docker compose version 2>`$null) {
 }
 
 function Register-ScheduledTask {
+  $legacy = Get-ScheduledTask -TaskName $LegacyTaskName -ErrorAction SilentlyContinue
+  if ($legacy) {
+    Write-Step "Tache existante conservee: $LegacyTaskName (pas de second compose up)"
+    return
+  }
   $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
   if ($existing) { return }
   Write-StackStartScript
@@ -307,7 +331,19 @@ function Invoke-ComposeUp {
   }
 }
 
+function Disable-DuplicateEurekaTask {
+  $legacy = Get-ScheduledTask -TaskName $LegacyTaskName -ErrorAction SilentlyContinue
+  $eureka = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+  if ($legacy -and $eureka) {
+    Disable-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+    Write-Step 'Tache Eureka en double retiree — Parallele garde la stack Docker'
+  }
+}
+
 # --- main ---
+Import-LegacyEnvIfNeeded
+Disable-DuplicateEurekaTask
 $cloudCfgChanged = $false
 if (Test-Path -LiteralPath $EnvFile) {
   $cloudCfgChanged = [bool](Align-BundledCloudConfig)

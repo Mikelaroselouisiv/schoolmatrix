@@ -54,8 +54,8 @@
 
 | Fichier | Rôle |
 |---------|------|
-| `parallele-schoolmatrix-backend/Dockerfile` | Build multi-stage : Node 20 Alpine → build NestJS → runner avec `node scripts/bootstrap-production.js`, EXPOSE 3000 |
-| `parallele-schoolmatrix-frontend/Dockerfile` | Build multi-stage : Node 20 Alpine, `NEXT_PUBLIC_API_URL` en ARG → build Next.js standalone → runner avec `node server.js`, EXPOSE 3001 |
+| `eureka-schoolmatrix-backend/Dockerfile` | Build multi-stage : Node 20 Alpine → build NestJS → runner avec `node scripts/bootstrap-production.js`, EXPOSE 3000 |
+| `eureka-schoolmatrix-frontend/Dockerfile` | Build multi-stage : Node 20 Alpine, `NEXT_PUBLIC_API_URL` en ARG → build Next.js standalone → runner avec `node server.js`, EXPOSE 3001 |
 
 Les deux utilisent un ARG `CACHEBUST` pour invalider le cache (ex. `--build-arg CACHEBUST=$(date +%s)`).
 
@@ -149,8 +149,8 @@ Les templates sont dans `scripts/env.template` et `scripts/env.prod.local.templa
 - **Automatique** : push sur `main`/`master` déclenche le workflow qui build les deux images et les pousse vers ECR (tags SHA + `latest`).
 - **Manuel** : même principe que le workflow :  
   - Login ECR (voir `scripts/login-ecr.js`).  
-  - Backend : `docker build -t <ECR_REGISTRY>/schoolmatrix-api:latest ./parallele-schoolmatrix-backend` puis `docker push ...`.  
-  - Frontend : `docker build -t <ECR_REGISTRY>/schoolmatrix-web:latest --build-arg NEXT_PUBLIC_API_URL=... ./parallele-schoolmatrix-frontend` puis `docker push ...`.
+  - Backend : `docker build -t <ECR_REGISTRY>/schoolmatrix-api:latest ./eureka-schoolmatrix-backend` puis `docker push ...`.  
+  - Frontend : `docker build -t <ECR_REGISTRY>/schoolmatrix-web:latest --build-arg NEXT_PUBLIC_API_URL=... ./eureka-schoolmatrix-frontend` puis `docker push ...`.
 
 ### Pull et lancement (côté client / EC2)
 

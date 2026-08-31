@@ -9,7 +9,7 @@ alwaysApply: true
 
 | Composant | Chemin | Commande racine |
 |-----------|--------|-----------------|
-| API Nest | `parallele-schoolmatrix-backend` | `npm run dev:backend` |
+| API Nest | `eureka-schoolmatrix-backend` | `npm run dev:backend` |
 | Desktop Electron | `apps/desktop` | `npm run dev:desktop` |
 | Postgres DEV | conteneur `schoolmatrix-db-dev` :5435 | `npm run dev:db` |
 | Sync-agent (optionnel) | `apps/sync-agent` | `npm run dev:sync-agent` |

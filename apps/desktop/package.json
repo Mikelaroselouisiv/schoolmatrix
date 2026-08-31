@@ -1,10 +1,10 @@
 {
-  "name": "parallele-schoolmatrix-desktop",
-  "productName": "Parallele SchoolMatrix",
+  "name": "eureka-schoolmatrix-desktop",
+  "productName": "Eureka SchoolMatrix",
   "description": "Application desktop SchoolMatrix (Server / Remote)",
-  "author": "Parallele SchoolMatrix",
+  "author": "Eureka SchoolMatrix",
   "private": true,
-  "version": "3.0.17",
+  "version": "3.0.18",
   "main": "src/main/main.cjs",
   "scripts": {
     "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:electron\"",
@@ -50,8 +50,8 @@
     "wait-on": "^9.0.4"
   },
   "build": {
-    "appId": "com.parallele.schoolmatrix.desktop",
-    "productName": "Parallele SchoolMatrix",
+    "appId": "com.eureka.schoolmatrix.desktop",
+    "productName": "Eureka SchoolMatrix",
     "directories": {
       "output": "release",
       "buildResources": "build"

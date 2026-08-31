@@ -6,7 +6,7 @@ Poste développeur uniquement. Pour la logique des 3 environnements : [ENVIRONME
 
 - Node.js 20+
 - Docker Desktop (pour Postgres DEV)
-- Depuis la racine du repo : `npm install` dans `parallele-schoolmatrix-backend` et `apps/desktop` (une fois)
+- Depuis la racine du repo : `npm install` dans `eureka-schoolmatrix-backend` et `apps/desktop` (une fois)
 
 ## Lancer (recommandé)
 
@@ -33,7 +33,7 @@ npm run dev:desktop:remote
 
 ```powershell
 # Terminal A
-cd parallele-schoolmatrix-backend
+cd eureka-schoolmatrix-backend
 npm run dev
 
 # Terminal B
@@ -48,7 +48,7 @@ npm run dev
 | Conteneur | `schoolmatrix-db-dev` |
 | Port hôte | **5435** → 5432 conteneur |
 | Compose | `dev/docker-compose.postgres.yml` |
-| Env Nest | `parallele-schoolmatrix-backend/.env.dev` (copie de `.env.dev.example`) |
+| Env Nest | `eureka-schoolmatrix-backend/.env.dev` (copie de `.env.dev.example`) |
 
 ```powershell
 npm run dev:db          # up -d

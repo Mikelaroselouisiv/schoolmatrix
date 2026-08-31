@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Isolation étanche — dépôt Parallele uniquement
 
-Ce workspace est **Parallele SchoolMatrix** seulement.
+Ce workspace est **Eureka SchoolMatrix** seulement.
 
 - Ne jamais écrire ici le nom, slug, project ID GCP, IP, repo GitHub, ni secrets
   d’un autre fork / école cliente.

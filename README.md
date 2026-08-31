@@ -1,4 +1,4 @@
-# Parallele SchoolMatrix
+# Eureka SchoolMatrix
 
 Logiciel scolaire : **API NestJS** + **desktop Electron** (éditions Server / Remote) + **agent de sync** + miroir cloud **GCP**.
 
@@ -30,7 +30,7 @@ npm run dev:sync-agent
 
 | Besoin | Dossier / commande |
 |--------|-------------------|
-| Backend | `parallele-schoolmatrix-backend` → `npm run dev` |
+| Backend | `eureka-schoolmatrix-backend` → `npm run dev` |
 | Frontend (Electron) | `apps/desktop` → `npm run dev` ou `npm run dev:remote` |
 | Sync-agent | `apps/sync-agent` → `npm start` |
 | Livraison prod | `infra/scripts/ship-all.ps1` (voir [docs/RELEASE.md](docs/RELEASE.md)) |
@@ -38,7 +38,7 @@ npm run dev:sync-agent
 ## Carte du dépôt (canonique)
 
 ```
-parallele-schoolmatrix-backend/   ← API Nest (dev + source de l’image Docker)
+eureka-schoolmatrix-backend/   ← API Nest (dev + source de l’image Docker)
 apps/desktop/                     ← Produit Electron (UI Vite + Server/Remote)
 apps/desktop/server-stack/        ← Bundle installateur école (pas pour le quotidien DEV)
 apps/sync-agent/                  ← Agent de synchronisation

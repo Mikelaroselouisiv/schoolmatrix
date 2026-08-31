@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
   Bootstrap machine Server SchoolMatrix - appelé automatiquement au lancement de l'app.
   Tout est embarqué dans l'installeur : images .tar, docker-compose, defaults.env
@@ -17,7 +17,7 @@ $DefaultsFile = Join-Path $StackDir 'defaults.env'
 $DefaultsExample = Join-Path $StackDir 'defaults.env.example'
 $ImagesDir = Join-Path $StackDir 'images'
 $StateFile = Join-Path $StackDir '.bootstrap-done'
-$TaskName = 'Parallele-SchoolMatrix-Server-Stack'
+$TaskName = 'Eureka-SchoolMatrix-Server-Stack'
 $StartScript = Join-Path $StackDir 'stack-start.ps1'
 
 function Write-Step([string]$Message) {

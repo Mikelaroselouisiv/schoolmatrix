@@ -9,7 +9,7 @@
 #   npm run dev:backend:mirror
 #   npm run dev:sync-lab
 
-name: parallele-dev-cloud
+name: eureka-schoolmatrix-dev-cloud
 
 services:
   postgres:

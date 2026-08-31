@@ -1,7 +1,7 @@
 /**
  * Jeu de données fictif pour Postgres DEV (schoolmatrix-db-dev :5435 uniquement).
  *
- * Usage (depuis parallele-schoolmatrix-backend) :
+ * Usage (depuis eureka-schoolmatrix-backend) :
  *   npm run seed:dev          (ou : node scripts/seed-dev-demo.js)
  *
  * Mot de passe de tous les comptes fictifs : systeme12
@@ -146,9 +146,15 @@ async function main() {
 
     await client.query(
       `INSERT INTO academic_year (name, start_date, end_date, active)
-       VALUES ($1, '2025-09-01', '2026-07-31', true)
+       VALUES ($1, '2025-09-01', '2026-07-31', false)
        ON CONFLICT (name) DO NOTHING`,
       [YEAR_PREV],
+    );
+    await client.query(
+      `INSERT INTO academic_year (name, start_date, end_date, active)
+       VALUES ($1, '2026-09-01', '2027-07-31', true)
+       ON CONFLICT (name) DO NOTHING`,
+      [YEAR],
     );
     await client.query(
       `UPDATE academic_year
@@ -970,7 +976,7 @@ async function main() {
         (SELECT COUNT(*) FROM schedule_slot) AS slots
     `);
 
-    console.log('\n=== Seed DEV Parallele terminé ===');
+    console.log('\n=== Seed DEV Eureka terminé ===');
     console.log(counts.rows[0]);
     console.log(`\nMot de passe de TOUS les comptes fictifs : ${DEMO_PASSWORD}`);
     console.log('\nComptes staff (email ou téléphone) :');

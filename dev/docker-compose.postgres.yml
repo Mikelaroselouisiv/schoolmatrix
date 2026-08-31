@@ -3,10 +3,11 @@
 #   - apps/desktop/server-stack/docker-compose.yml  (école / installateur)
 #   - infra/docker/docker-compose.gcp.yml           (cloud GCP)
 #
-# Port hôte 5435 : évite les collisions avec d'autres Postgres locaux (5432–5434).
-# Aligné avec parallele-schoolmatrix-backend/.env.dev
+# Port hôte 5435 : Eureka uniquement. Shekinah DEV = 5436. Ne pas fusionner les projets Compose.
+# Aligné avec eureka-schoolmatrix-backend/.env.dev
 
-name: schoolmatrix-dev
+# Projet Compose isolé — ne jamais réutiliser le nom d’un autre tenant (Shekinah, etc.).
+name: eureka-schoolmatrix-dev
 
 services:
   postgres:
@@ -29,6 +30,6 @@ services:
 
 volumes:
   schoolmatrix_pgdata_dev:
-    # Si un volume legacy existe déjà (parallele-schoolmatrix-backend_pgdata_dev),
+    # Si un volume legacy existe déjà (eureka-schoolmatrix-backend_pgdata_dev),
     # le conteneur schoolmatrix-db-dev existant est réutilisé via `docker start`.
     name: schoolmatrix_pgdata_dev

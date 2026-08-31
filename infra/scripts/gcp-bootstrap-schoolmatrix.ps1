@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Provisionne l'infra GCP pour Parallele SchoolMatrix uniquement.
+  Provisionne l'infra GCP pour Eureka SchoolMatrix uniquement.
   N'utilise JAMAIS les projets POS (Israel, Freres, Eau Cascade, etc.).
 
 .NOTES
@@ -84,7 +84,7 @@ if (-not $repoExists) {
   gcloud artifacts repositories create $ArtifactRepo `
     --repository-format=docker `
     --location=$Region `
-    --description='Parallele SchoolMatrix backend images' `
+    --description='Eureka SchoolMatrix backend images' `
     --project=$ProjectId
 } else {
   Write-Host 'Artifact Registry already exists'

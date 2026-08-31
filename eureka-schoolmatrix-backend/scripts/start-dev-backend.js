@@ -45,11 +45,20 @@ const composeFile = path.join(repoRoot, target.compose);
 const envPath = path.join(backendRoot, target.envFile);
 const examplePath = path.join(backendRoot, target.envExample);
 
+function quoteArg(arg) {
+  const value = String(arg);
+  if (process.platform === 'win32' && /[\s&()^|]/.test(value)) {
+    return `"${value.replace(/"/g, '\\"')}"`;
+  }
+  return value;
+}
+
 function run(cmd, args, opts = {}) {
   return new Promise((resolve, reject) => {
     const useShell = opts.shell !== undefined ? opts.shell : true;
     const { shell: _ignored, ...rest } = opts;
-    const proc = spawn(cmd, args, { stdio: 'inherit', shell: useShell, ...rest });
+    const finalArgs = useShell ? args.map(quoteArg) : args;
+    const proc = spawn(cmd, finalArgs, { stdio: 'inherit', shell: useShell, ...rest });
     proc.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`Exit ${code}`))));
     proc.on('error', reject);
   });

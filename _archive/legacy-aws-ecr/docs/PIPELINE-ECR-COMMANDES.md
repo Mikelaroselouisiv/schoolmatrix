@@ -60,7 +60,7 @@ aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --
 ### 3.3 Build et push backend (schoolmatrix-api)
 
 ```powershell
-docker build -t "${ECR_REGISTRY}/schoolmatrix-api:latest" -t "${ECR_REGISTRY}/schoolmatrix-api:${IMAGE_TAG}" ./parallele-schoolmatrix-backend
+docker build -t "${ECR_REGISTRY}/schoolmatrix-api:latest" -t "${ECR_REGISTRY}/schoolmatrix-api:${IMAGE_TAG}" ./eureka-schoolmatrix-backend
 docker push "${ECR_REGISTRY}/schoolmatrix-api:latest"
 docker push "${ECR_REGISTRY}/schoolmatrix-api:${IMAGE_TAG}"
 ```
@@ -68,7 +68,7 @@ docker push "${ECR_REGISTRY}/schoolmatrix-api:${IMAGE_TAG}"
 ### 3.4 Build et push frontend (schoolmatrix-web)
 
 ```powershell
-docker build -t "${ECR_REGISTRY}/schoolmatrix-web:latest" -t "${ECR_REGISTRY}/schoolmatrix-web:${IMAGE_TAG}" --build-arg NEXT_PUBLIC_API_URL=http://127.0.0.1:3000 ./parallele-schoolmatrix-frontend
+docker build -t "${ECR_REGISTRY}/schoolmatrix-web:latest" -t "${ECR_REGISTRY}/schoolmatrix-web:${IMAGE_TAG}" --build-arg NEXT_PUBLIC_API_URL=http://127.0.0.1:3000 ./eureka-schoolmatrix-frontend
 docker push "${ECR_REGISTRY}/schoolmatrix-web:latest"
 docker push "${ECR_REGISTRY}/schoolmatrix-web:${IMAGE_TAG}"
 ```
@@ -88,12 +88,12 @@ $IMAGE_TAG    = (git rev-parse --short HEAD).Trim()
 aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
 if ($LASTEXITCODE -ne 0) { exit 1 }
 
-docker build -t "${ECR_REGISTRY}/schoolmatrix-api:latest" -t "${ECR_REGISTRY}/schoolmatrix-api:${IMAGE_TAG}" ./parallele-schoolmatrix-backend
+docker build -t "${ECR_REGISTRY}/schoolmatrix-api:latest" -t "${ECR_REGISTRY}/schoolmatrix-api:${IMAGE_TAG}" ./eureka-schoolmatrix-backend
 if ($LASTEXITCODE -ne 0) { exit 1 }
 docker push "${ECR_REGISTRY}/schoolmatrix-api:latest"
 docker push "${ECR_REGISTRY}/schoolmatrix-api:${IMAGE_TAG}"
 
-docker build -t "${ECR_REGISTRY}/schoolmatrix-web:latest" -t "${ECR_REGISTRY}/schoolmatrix-web:${IMAGE_TAG}" --build-arg NEXT_PUBLIC_API_URL=http://127.0.0.1:3000 ./parallele-schoolmatrix-frontend
+docker build -t "${ECR_REGISTRY}/schoolmatrix-web:latest" -t "${ECR_REGISTRY}/schoolmatrix-web:${IMAGE_TAG}" --build-arg NEXT_PUBLIC_API_URL=http://127.0.0.1:3000 ./eureka-schoolmatrix-frontend
 if ($LASTEXITCODE -ne 0) { exit 1 }
 docker push "${ECR_REGISTRY}/schoolmatrix-web:latest"
 docker push "${ECR_REGISTRY}/schoolmatrix-web:${IMAGE_TAG}"

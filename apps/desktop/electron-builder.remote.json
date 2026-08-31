@@ -1,8 +1,8 @@
 {
-  "appId": "com.parallele.schoolmatrix.desktop.remote",
-  "productName": "Parallele SchoolMatrix Remote",
-  "artifactName": "Parallele-SchoolMatrix-Remote-${version}.${ext}",
-  "copyright": "Copyright Â© 2026 Parallele SchoolMatrix",
+  "appId": "com.eureka.schoolmatrix.desktop.remote",
+  "productName": "Eureka SchoolMatrix Remote",
+  "artifactName": "Eureka-SchoolMatrix-Remote-${version}.${ext}",
+  "copyright": "Copyright Â© 2026 Eureka SchoolMatrix",
   "directories": {
     "output": "release-remote",
     "buildResources": "build"

@@ -6,7 +6,7 @@
 
 [CmdletBinding()]
 param(
-  [string] $StackDir = (Join-Path $env:ProgramData 'Parallele SchoolMatrix\server-stack')
+  [string] $StackDir = (Join-Path $env:ProgramData 'Eureka SchoolMatrix\server-stack')
 )
 
 $ErrorActionPreference = 'Stop'

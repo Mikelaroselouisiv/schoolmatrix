@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Refuse toute ops GCP si le projet actif n'est pas Parallele SchoolMatrix.
+  Refuse toute ops GCP si le projet actif n'est pas Eureka SchoolMatrix.
 #>
 $ErrorActionPreference = 'Continue'
 

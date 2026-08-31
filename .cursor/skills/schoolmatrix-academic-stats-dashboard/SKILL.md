@@ -111,7 +111,7 @@ recompter toute l’école sur la vue d’un professeur.
 
 Fichiers :
 
-- Calcul pur : `parallele-schoolmatrix-backend/src/statistics/academic-stats.ts`
+- Calcul pur : `eureka-schoolmatrix-backend/src/statistics/academic-stats.ts`
 - Service : `.../src/statistics/statistics.service.ts`
 - API : `.../src/statistics/statistics.controller.ts`
 - UI : `apps/desktop/src/renderer/pages/DashboardStatsAcademiquesPage.tsx`

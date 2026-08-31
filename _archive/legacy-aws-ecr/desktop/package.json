@@ -1,9 +1,9 @@
 {
-  "name": "parallele-schoolmatrix-desktop",
+  "name": "eureka-schoolmatrix-desktop",
   "version": "1.0.9",
-  "description": "Application desktop Electron pour Parallele SchoolMatrix",
+  "description": "Application desktop Electron pour Eureka SchoolMatrix",
   "main": "main.js",
-  "author": "Parallele SchoolMatrix",
+  "author": "Eureka SchoolMatrix",
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
@@ -11,8 +11,8 @@
     "build:win": "electron-builder --win"
   },
   "build": {
-    "appId": "com.parallele.schoolmatrix",
-    "productName": "Parallele SchoolMatrix",
+    "appId": "com.eureka.schoolmatrix",
+    "productName": "Eureka SchoolMatrix",
     "directories": {
       "output": "dist"
     },

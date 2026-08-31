@@ -126,9 +126,9 @@ Sécurité API Nest :
 
 ## SchoolMatrix — fichiers de référence
 
-- `parallele-schoolmatrix-backend/src/auth/parent-scope.guard.ts`
-- `parallele-schoolmatrix-backend/src/auth/parent-scope.decorator.ts`
-- `parallele-schoolmatrix-backend/src/auth/login-throttle.service.ts`
+- `eureka-schoolmatrix-backend/src/auth/parent-scope.guard.ts`
+- `eureka-schoolmatrix-backend/src/auth/parent-scope.decorator.ts`
+- `eureka-schoolmatrix-backend/src/auth/login-throttle.service.ts`
 - Appartenance : `user_linked_student` (même source que l’écran Utilisateurs)
 
 Ne pas confondre `student_parent` (table historique, souvent vide) avec

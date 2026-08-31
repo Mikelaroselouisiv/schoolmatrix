@@ -1,7 +1,7 @@
 ---
 name: post-change-release
 description: >-
-  Post-modification release for Parallele SchoolMatrix: bump desktop semver,
+  Post-modification release for Eureka SchoolMatrix: bump desktop semver,
   run ship-all.ps1 (git push, backend GCP, Remote/Server GCS installers so
   installed apps get update notifications). Use when the user finished changes
   and asks to ship, publier, push, release, déployer, GCS, GCP, or mettre à jour partout.
@@ -55,7 +55,7 @@ Détails : [docs/RELEASE.md](../../../docs/RELEASE.md), [docs/DESKTOP.md](../../
 
 | Chemins | Effet via ship / CI |
 |---------|---------------------|
-| `parallele-schoolmatrix-backend/**`, `infra/docker/**` | Image AR + deploy VM GCP (**Remote**). Pour les **écoles** : aussi rebuild installateur Server après AR. |
+| `eureka-schoolmatrix-backend/**`, `infra/docker/**` | Image AR + deploy VM GCP (**Remote**). Pour les **écoles** : aussi rebuild installateur Server après AR. |
 | `apps/desktop/**` | Bump + installers GCS → notif MAJ |
 | `apps/sync-agent/**` | Doit être re-bundlé dans Server (`prepare-server-stack`) |
 | `docs/**`, `.github/**` | Push GitHub |

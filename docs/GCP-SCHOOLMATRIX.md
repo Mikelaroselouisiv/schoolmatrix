@@ -1,4 +1,4 @@
-# GCP — Parallele SchoolMatrix
+# GCP — Eureka SchoolMatrix
 
 **Isolation :** ce document et ce dépôt concernent **uniquement** `parallele-schoolmatrix`.  
 Ne jamais opérer sur `pos-entrprise-israel`, `pos-freres-basiles`, `eau-cascade`, etc.

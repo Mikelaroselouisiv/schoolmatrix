@@ -5,7 +5,7 @@ description: >-
   pour une nouvelle école cliente (nouveau dossier, repo GitHub, projet GCP,
   branding Electron Server/Remote) à partir du prototype Parallele. Use when the
   user asks to cloner, dupliquer, nouveau client école, nouveau SchoolMatrix,
-  isolation GCP école, or forker Parallele SchoolMatrix.
+  isolation GCP école, or forker Eureka SchoolMatrix.
 ---
 
 # Agent de duplication SchoolMatrix (modèle agence)
@@ -45,7 +45,7 @@ Positionnement : **personnalisation totale** — le logiciel doit coller à 100 
   client livré.
 - Chaque fork suit sa route sans « savoir » que les autres existent.
 
-- **Prototype / modèle source** : Parallele SchoolMatrix
+- **Prototype / modèle source** : Eureka SchoolMatrix
   (`parallele-schoolmatrix`, repo `schoolmatrix`, dossier local type
   `Parallele-Schoolmatrix`).
 - Chaque duplication = une **enveloppe complète** (code + pipeline + cloud),
@@ -117,15 +117,15 @@ scripts, règles Cursor) :
 
 | Concept | Source Parallele (ex.) | Cible |
 |---------|------------------------|--------|
-| Product / brand | Parallele SchoolMatrix | `<PRODUCT_NAME>` |
+| Product / brand | Eureka SchoolMatrix | `<PRODUCT_NAME>` |
 | Project ID GCP | `parallele-schoolmatrix` | `<PROJECT_ID>` |
 | Config gcloud | `schoolmatrix` | `schoolmatrix-<slug>` |
 | Bucket GCS | `parallele-schoolmatrix-assets` | `<PROJECT_ID>-assets` (ou fourni) |
 | Artifact Registry | `schoolmatrix-backend` | `schoolmatrix-backend` (ou `<slug>-backend`) |
 | VM name | `schoolmatrix-api` | `schoolmatrix-api` (ou `<slug>-api`) |
 | IP API cloud | `34.95.43.132` | **nouvelle IP** après bootstrap (effacer l’ancienne) |
-| appId Electron | `com.parallele.schoolmatrix…` | `com.<slug>.schoolmatrix.desktop[.remote\|.server]` |
-| artifactName | `Parallele-SchoolMatrix-…` | `<Brand>-SchoolMatrix-…` |
+| appId Electron | `com.eureka.schoolmatrix…` | `com.<slug>.schoolmatrix.desktop[.remote\|.server]` |
+| artifactName | `Eureka-SchoolMatrix-…` | `<Brand>-SchoolMatrix-…` |
 | Postgres DEV | `schoolmatrix-db-dev` :5435 | `<slug>-db-dev` + **port libre** |
 | Compose Server project | `schoolmatrix-server` | `<slug>-schoolmatrix-server` |
 | Conteneurs Server | `schoolmatrix_*_server` | préfixe `<slug>_` ou équivalent unique |
@@ -206,7 +206,7 @@ Sources possibles (prototype Parallele) :
 
 - `secrets/gemini-api-key.txt`
 - script `infra/scripts/gcp-provision-gemini-key.ps1` (lire la valeur, ne pas en créer une nouvelle par client)
-- `parallele-schoolmatrix-backend/.env.dev` (`GEMINI_API_KEY=…`)
+- `eureka-schoolmatrix-backend/.env.dev` (`GEMINI_API_KEY=…`)
 
 Actions sur le fork :
 

@@ -1,5 +1,5 @@
 /**
- * Parallele SchoolMatrix — Electron unifié (Server | Remote).
+ * Eureka SchoolMatrix — Electron unifié (Server | Remote).
  * UI = Vite/React (renderer). Server démarre aussi la stack Docker locale + sync-agent.
  */
 const { app, BrowserWindow, ipcMain, dialog, Menu, nativeImage } = require('electron');
@@ -28,7 +28,7 @@ if (userDataOverride) {
       : path.join(os.tmpdir(), userDataOverride),
   );
 } else if (isDev && /:3001\b/.test(apiBase)) {
-  app.setPath('userData', path.join(os.tmpdir(), 'parallele-sm-dev-mirror'));
+  app.setPath('userData', path.join(os.tmpdir(), 'eureka-sm-dev-mirror'));
 }
 
 let mainWindow = null;
@@ -129,14 +129,14 @@ ipcMain.handle('app:fetch-media', async (_event, url) => {
 async function boot() {
   app.setName(
     edition === 'server'
-      ? 'Parallele SchoolMatrix Server'
-      : 'Parallele SchoolMatrix Remote',
+      ? 'Eureka SchoolMatrix Server'
+      : 'Eureka SchoolMatrix Remote',
   );
   if (process.platform === 'win32') {
     app.setAppUserModelId(
       edition === 'server'
-        ? 'com.parallele.schoolmatrix.desktop.server'
-        : 'com.parallele.schoolmatrix.desktop.remote',
+        ? 'com.eureka.schoolmatrix.desktop.server'
+        : 'com.eureka.schoolmatrix.desktop.remote',
     );
   }
 

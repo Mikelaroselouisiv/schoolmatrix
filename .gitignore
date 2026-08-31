@@ -42,7 +42,7 @@ secrets/
 *.pem
 
 # Uploads runtime locaux (ne pas versionner)
-parallele-schoolmatrix-backend/storage/
+eureka-schoolmatrix-backend/storage/
 
 # Desktop build artifacts
 apps/desktop/next-runtime/

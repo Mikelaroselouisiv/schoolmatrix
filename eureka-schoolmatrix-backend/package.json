@@ -1,7 +1,7 @@
 {
-  "name": "parallele-schoolmatrix-backend",
+  "name": "eureka-schoolmatrix-backend",
   "version": "0.0.1",
-  "description": "Backend NestJS pour Parallele SchoolMatrix",
+  "description": "Backend NestJS pour Eureka SchoolMatrix",
   "author": "",
   "private": true,
   "license": "UNLICENSED",

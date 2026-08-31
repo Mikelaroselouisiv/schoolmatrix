@@ -44,7 +44,7 @@ flowchart TB
 | Composant | Où | Comment |
 |-----------|-----|---------|
 | Code source | ce dépôt | Git |
-| API | process Node local | `cd parallele-schoolmatrix-backend && npm run dev` |
+| API | process Node local | `cd eureka-schoolmatrix-backend && npm run dev` |
 | UI | Electron + Vite | `cd apps/desktop && npm run dev` |
 | Postgres | conteneur **`schoolmatrix-db-dev`** | port hôte **5435** — voir `dev/docker-compose.postgres.yml` |
 | Sync-agent | process Node local (optionnel) | **lab** `npm run dev:sync-lab` (miroir `:3001`) — pas la VM GCP |
@@ -92,7 +92,7 @@ Les apps **Remote**, futures apps natives et sites web parlent à **cette** API.
 |---------|--------|
 | Livrable | exe **SchoolMatrix Server** |
 | Bundle | `apps/desktop/server-stack/` (`images/*.tar`, `bootstrap.ps1`, `defaults.env`) |
-| Sur site | `C:\ProgramData\Parallele SchoolMatrix\server-stack` |
+| Sur site | `C:\ProgramData\Eureka SchoolMatrix\server-stack` |
 | Conteneurs | `schoolmatrix_api_server`, `schoolmatrix_postgres_server`, `schoolmatrix_sync_agent` |
 | Mise à jour | feed GCS → MAJ auto → `bootstrap.ps1` → `docker load` |
 

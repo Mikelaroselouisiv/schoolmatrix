@@ -1,7 +1,7 @@
 # Cartographie produit — SchoolMatrix (desktop + backend → mobile)
 
 > Source de vérité pour le port React Native / Expo.  
-> Dérivée de `apps/desktop/src/renderer` et `parallele-schoolmatrix-backend`.  
+> Dérivée de `apps/desktop/src/renderer` et `eureka-schoolmatrix-backend`.  
 > Schéma machine-lisible : [`../spec/productMap.ts`](../spec/productMap.ts).  
 > Plan UI/UX mobile : [`PLAN-UI-UX.md`](./PLAN-UI-UX.md).
 

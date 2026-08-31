@@ -210,7 +210,7 @@ Orthographe des `class.name` : **exactement** celle du `SELECT` inventaire
 
 Même méthode : inventaire → modèle → INSERT `gen_random_uuid()` + `now()` +
 `NOT EXISTS`. Vérifier que l’entité est dans `SYNC_ENTITY_DEFS`
-(`parallele-schoolmatrix-backend/src/sync/sync.entities.ts` ou équivalent du
+(`eureka-schoolmatrix-backend/src/sync/sync.entities.ts` ou équivalent du
 fork, dossier `*-schoolmatrix-backend`). Si elle n’y est **pas**, prévenir
 l’utilisateur : le Server école **ne** la recevra **pas**.
 

@@ -114,6 +114,8 @@ export function DashboardFormationClassePage() {
   const [studentsLoading, setStudentsLoading] = useState(false);
   const [error, setError] = useState("");
   const [savingDecisionId, setSavingDecisionId] = useState<string | null>(null);
+  const [savingRoomStudentId, setSavingRoomStudentId] = useState<string | null>(null);
+  const [savingClassStudentId, setSavingClassStudentId] = useState<string | null>(null);
   const [computingDecisions, setComputingDecisions] = useState(false);
   const [showLaunchConfirm, setShowLaunchConfirm] = useState(false);
   const [launchAck, setLaunchAck] = useState(false);
@@ -283,6 +285,73 @@ export function DashboardFormationClassePage() {
     }
   }
 
+  async function handleSetRoom(studentId: string, nextRoomId: string) {
+    const roomId = nextRoomId.trim() || null;
+    const current = classStudents.find((s) => s.id === studentId);
+    if (!current) return;
+    if ((current.room_id ?? null) === roomId) return;
+    const snapshot = classStudents;
+    const roomName = roomId
+      ? openClassRooms.find((r) => r.id === roomId)?.name ?? null
+      : null;
+    const updated = classStudents.map((s) =>
+      s.id === studentId ? { ...s, room_id: roomId, room_name: roomName } : s,
+    );
+    setSavingRoomStudentId(studentId);
+    setError("");
+    setClassStudents(updated);
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/students/${studentId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ room_id: roomId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      const stillHere =
+        openRoomId === UNASSIGNED_ROOM_ID
+          ? updated.filter((s) => !s.room_id)
+          : updated.filter((s) => s.room_id === openRoomId);
+      if (stillHere.length === 0) setOpenRoomId(null);
+    } catch (e) {
+      setClassStudents(snapshot);
+      setError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setSavingRoomStudentId(null);
+    }
+  }
+
+  async function handleSetClass(studentId: string, nextClassId: string) {
+    const classId = nextClassId.trim();
+    if (!classId || !openClass || !selectedYearId || classId === openClass.id) return;
+    const snapshot = classStudents;
+    const updated = classStudents.filter((s) => s.id !== studentId);
+    setSavingClassStudentId(studentId);
+    setError("");
+    setClassStudents(updated);
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/formation-classe/move-student`, {
+        method: "POST",
+        body: JSON.stringify({
+          student_id: studentId,
+          academic_year_id: selectedYearId,
+          class_id: classId,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      const stillHere =
+        openRoomId === UNASSIGNED_ROOM_ID
+          ? updated.filter((s) => !s.room_id)
+          : updated.filter((s) => s.room_id === openRoomId);
+      if (stillHere.length === 0) setOpenRoomId(null);
+    } catch (e) {
+      setClassStudents(snapshot);
+      setError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setSavingClassStudentId(null);
+    }
+  }
+
   async function handleLaunchNextYear() {
     if (!selectedYearId || !launchAck) return;
     setLaunching(true);
@@ -326,7 +395,7 @@ export function DashboardFormationClassePage() {
   }
 
   function studentTable(list: StudentInClass[]) {
-    const colSpan = isCurrentYearTab ? 4 : 6;
+    const colSpan = isCurrentYearTab ? 5 : 7;
     return (
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
@@ -335,6 +404,7 @@ export function DashboardFormationClassePage() {
               <th className="px-4 py-3 font-medium text-slate-900">Code école</th>
               <th className="px-4 py-3 font-medium text-slate-900">Nom</th>
               <th className="px-4 py-3 font-medium text-slate-900">Prénom</th>
+              <th className="px-4 py-3 font-medium text-slate-900">Classe</th>
               <th className="px-4 py-3 font-medium text-slate-900">Salle</th>
               {!isCurrentYearTab && (
                 <>
@@ -362,7 +432,49 @@ export function DashboardFormationClassePage() {
                   </td>
                   <td className="px-4 py-3 font-medium text-slate-900">{s.last_name}</td>
                   <td className="px-4 py-3 text-slate-600">{s.first_name}</td>
-                  <td className="px-4 py-3 text-slate-600">{s.room_name || "Sans salle"}</td>
+                  <td className="px-4 py-3">
+                    {classes.length === 0 || !openClass ? (
+                      <span className="text-slate-600">{openClass?.name ?? "—"}</span>
+                    ) : (
+                      <select
+                        value={openClass.id}
+                        disabled={savingClassStudentId === s.id}
+                        onChange={(e) => void handleSetClass(s.id, e.target.value)}
+                        className="w-full min-w-[140px] border border-[var(--app-border)] rounded px-2 py-1.5 text-sm"
+                      >
+                        {classGroups.map((g) => (
+                          <optgroup key={g.key} label={g.label}>
+                            {g.classes.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {openClassRooms.length === 0 ? (
+                      <span className="text-slate-600">{s.room_name || "Sans salle"}</span>
+                    ) : (
+                      <select
+                        value={s.room_id ?? ""}
+                        disabled={savingRoomStudentId === s.id}
+                        onChange={(e) => void handleSetRoom(s.id, e.target.value)}
+                        className="w-full min-w-[140px] border border-[var(--app-border)] rounded px-2 py-1.5 text-sm"
+                      >
+                        <option value="">
+                          {s.room_id ? "Sans salle" : "— Choisir une salle —"}
+                        </option>
+                        {openClassRooms.map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </td>
                   {!isCurrentYearTab && (
                     <>
                       <td className="px-4 py-3 text-slate-600">
@@ -689,7 +801,12 @@ export function DashboardFormationClassePage() {
                 />
               )}
             </div>
-            <div className="overflow-y-auto">{studentTable(openRoomStudents)}</div>
+            <div className="overflow-y-auto">
+              {error && (
+                <div className="m-4 p-3 rounded-lg bg-red-50 text-red-600 text-sm">{error}</div>
+              )}
+              {studentTable(openRoomStudents)}
+            </div>
           </div>
         </div>
       )}

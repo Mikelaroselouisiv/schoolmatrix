@@ -572,6 +572,59 @@ export class FormationClasseService {
     return inClass[0]?.id ?? null;
   }
 
+  async moveStudentToClass(
+    studentId: string,
+    academicYearId: string,
+    classId: string,
+  ): Promise<{ student_id: string; class_id: string }> {
+    if (!studentId?.trim() || !academicYearId?.trim() || !classId?.trim()) {
+      throw new BadRequestException('student_id, academic_year_id et class_id requis');
+    }
+    const student = await this.studentRepo.findOne({
+      where: { id: studentId },
+      relations: ['class', 'room', 'room.class'],
+    });
+    if (!student) throw new NotFoundException('Élève introuvable');
+    const targetClass = await this.classRepo.findOne({ where: { id: classId } });
+    if (!targetClass) throw new NotFoundException('Classe introuvable');
+    const year = await this.academicYearRepo.findOne({ where: { id: academicYearId } });
+    if (!year) throw new NotFoundException('Année académique introuvable');
+
+    const existing = await this.assignmentRepo.findOne({
+      where: { student: { id: studentId }, academic_year: { id: academicYearId } },
+      relations: ['class'],
+    });
+    if (existing) {
+      if (existing.class?.id !== classId) {
+        existing.class = { id: classId } as Class;
+        await this.assignmentRepo.save(existing);
+      }
+    } else {
+      const destCount = await this.assignmentRepo.count({
+        where: { academic_year: { id: academicYearId }, class: { id: classId } },
+      });
+      if (destCount > 0) {
+        await this.assignmentRepo.save(
+          this.assignmentRepo.create({
+            student: { id: studentId },
+            academic_year: { id: academicYearId },
+            class: { id: classId },
+            decision: null,
+            average: null,
+          }),
+        );
+      }
+    }
+
+    student.class = { id: classId } as Class;
+    const roomClassId = student.room?.class?.id ?? null;
+    if (!student.room || (roomClassId && roomClassId !== classId)) {
+      student.room = null;
+    }
+    await this.studentRepo.save(student);
+    return { student_id: student.id, class_id: classId };
+  }
+
   async addStudentToClass(studentId: string, academicYearId: string, classId: string): Promise<StudentClassAssignment> {
     const existing = await this.assignmentRepo.findOne({
       where: { student: { id: studentId }, academic_year: { id: academicYearId } },

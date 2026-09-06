@@ -1342,6 +1342,8 @@ export type FormationStudent = {
   first_name: string;
   last_name: string;
   order_number?: string | null;
+  room_id?: string | null;
+  room_name?: string | null;
   decision?: string | null;
   average?: number | null;
   assignment_id?: string | null;
@@ -1373,6 +1375,18 @@ export async function setFormationDecision(
 ): Promise<void> {
   await api.patch(`/formation-classe/assignments/${assignmentId}/decision`, {
     decision,
+  });
+}
+
+export async function moveFormationStudent(
+  studentId: string,
+  academicYearId: string,
+  classId: string,
+): Promise<void> {
+  await api.post('/formation-classe/move-student', {
+    student_id: studentId,
+    academic_year_id: academicYearId,
+    class_id: classId,
   });
 }
 

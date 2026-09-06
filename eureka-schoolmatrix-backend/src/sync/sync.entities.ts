@@ -28,6 +28,8 @@ import { ClassSubject } from '../classes/class-subject.entity';
 import { User } from '../users/user.entity';
 import { UserLinkedStudent } from '../users/user-linked-student.entity';
 import { StudentParent } from '../student-parents/student-parent.entity';
+import { HomeworkAssignment } from '../homework/homework-assignment.entity';
+import { HomeworkGrade } from '../homework/homework-grade.entity';
 import { SyncTombstone } from './sync-tombstone.entity';
 
 export type SyncEntityName =
@@ -60,6 +62,8 @@ export type SyncEntityName =
   | 'ClassDecisionThreshold'
   | 'Attendance'
   | 'FileMetadata'
+  | 'HomeworkAssignment'
+  | 'HomeworkGrade'
   /** Toujours en premier dans ENTITY_ORDER : deletes avant upserts. */
   | 'SyncTombstone';
 
@@ -104,6 +108,8 @@ export const SYNC_ENTITY_DEFS: SyncEntityDef[] = [
   { name: 'Expense', target: Expense, timeField: 'updated_at' },
   { name: 'FileMetadata', target: FileMetadata, timeField: 'updated_at' },
   { name: 'Attendance', target: Attendance, timeField: 'created_at' },
+  { name: 'HomeworkAssignment', target: HomeworkAssignment, timeField: 'updated_at' },
+  { name: 'HomeworkGrade', target: HomeworkGrade, timeField: 'updated_at' },
   { name: 'PaymentTransaction', target: PaymentTransaction, timeField: 'created_at' },
 ];
 

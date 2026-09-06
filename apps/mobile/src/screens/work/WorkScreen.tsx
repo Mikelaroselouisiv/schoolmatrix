@@ -98,6 +98,10 @@ export function WorkScreen({ navigation }: Props) {
       navigation.navigate('Grades');
       return;
     }
+    if (screenId === 'teacher-hub') {
+      navigation.navigate('TeacherHub');
+      return;
+    }
     if (screenId === 'photography') {
       navigation.navigate('Photography');
       return;

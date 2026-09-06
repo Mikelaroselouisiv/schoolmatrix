@@ -75,6 +75,7 @@ const DESKTOP_NAV: NavItem[] = [
     permissionKey: 'grades',
     allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...TEACHER_ROLE_NAMES],
   },
+  { permissionKey: 'teacher-hub', allowedRoles: [...TEACHER_ROLE_NAMES] },
   { permissionKey: 'discipline', allowedRoles: [...ROLES_FULL, ...ROLES_DISCIPLINE] },
   { permissionKey: 'formation-classe', allowedRoles: [...ROLES_FULL] },
   { permissionKey: 'finance', allowedRoles: [...ROLES_FULL, ...ROLES_ECONOME] },
@@ -94,6 +95,7 @@ const DESKTOP_NAV: NavItem[] = [
       ...ROLES_HORAIRES_SEUL,
       ...ROLES_ECONOME,
       'PARENT',
+      ...TEACHER_ROLE_NAMES,
     ],
   },
   { permissionKey: 'photography', allowedRoles: [...ROLES_FULL, ...ROLES_PHOTOGRAPHY] },
@@ -124,6 +126,9 @@ function canSeeByPermissions(permissionKey: string, rolePermissions: string[]): 
       rolePermissions.includes('classes')
     );
   }
+  if (permissionKey === 'teacher-hub') {
+    return rolePermissions.includes('teacher-hub') || rolePermissions.includes('grades');
+  }
   return rolePermissions.includes(permissionKey);
 }
 
@@ -133,6 +138,7 @@ export function canAccessPermission(
   rolePermissions?: string[],
 ): boolean {
   if (permissionKey === 'dashboard' || permissionKey === 'public') return true;
+  if (isTeacherRole(roleName) && permissionKey === 'teacher-hub') return true;
   if (rolePermissions && rolePermissions.length > 0) {
     return canSeeByPermissions(permissionKey, rolePermissions);
   }

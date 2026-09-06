@@ -92,7 +92,7 @@ export const MOBILE_FAMILIES: MobileFamilyDef[] = [
  */
 export const WORK_TAB_BY_ROLE: Record<string, { screenId: string; secondaryScreenIds?: string[] }> = {
   DISCIPLINE: { screenId: "discipline", secondaryScreenIds: ["discipline"] },
-  TEACHER: { screenId: "grades" },
+  TEACHER: { screenId: "teacher-hub", secondaryScreenIds: ["grades"] },
   ECONOME: { screenId: "economat", secondaryScreenIds: ["depenses"] },
   PHOTOGRAPHER: { screenId: "photography" },
   PARENT: { screenId: "fiche-eleve" },
@@ -113,6 +113,7 @@ export const FICHE_ELEVE_SECTIONS: ScreenTab[] = [
   { id: "discipline", label: "Discipline" },
   { id: "paiements", label: "Paiements" },
   { id: "emploi-du-temps", label: "Emploi du temps" },
+  { id: "travaux", label: "Devoirs et leçons" },
   { id: "carnet", label: "Carnet de notes" },
   { id: "actions", label: "Actions" },
 ];
@@ -254,6 +255,21 @@ export const PRODUCT_SCREENS: ProductScreen[] = [
     desktopBlock: "management",
     mobileFamily: "life",
     mobileTabs: ["work", "more"],
+    phase: "P1",
+  },
+  {
+    id: "teacher-hub",
+    label: "Tableau de bord professeur",
+    desktopPath: "/dashboard/tableau-professeur",
+    permissionKey: "teacher-hub",
+    desktopBlock: "management",
+    mobileFamily: "life",
+    mobileTabs: ["work"],
+    tabs: [
+      { id: "travaux", label: "Devoirs et leçons" },
+      { id: "appel", label: "Appel" },
+      { id: "materiel", label: "Matériel" },
+    ],
     phase: "P1",
   },
   {

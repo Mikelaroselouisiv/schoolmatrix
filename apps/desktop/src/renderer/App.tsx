@@ -10,6 +10,7 @@ import { DashboardEconomatPage } from './pages/DashboardEconomatPage';
 import { DashboardFicheElevePage } from './pages/DashboardFicheElevePage';
 import { DashboardPhotographyPage } from './pages/DashboardPhotographyPage';
 import { DashboardFormationClassePage } from './pages/DashboardFormationClassePage';
+import { DashboardTeacherHubPage } from './pages/DashboardTeacherHubPage';
 import { DashboardGradesPage } from './pages/DashboardGradesPage';
 import { DashboardHomePage } from './pages/DashboardHomePage';
 import { DashboardStatsAcademiquesPage } from './pages/DashboardStatsAcademiquesPage';
@@ -53,6 +54,7 @@ export default function App() {
               <Route path="academic-years" element={<DashboardAcademicYearsPage />} />
               <Route path="schedule" element={<DashboardSchedulePage />} />
               <Route path="grades" element={<DashboardGradesPage />} />
+              <Route path="tableau-professeur" element={<DashboardTeacherHubPage />} />
               <Route path="discipline" element={<DashboardDisciplinePage />} />
               <Route path="formation-classe" element={<DashboardFormationClassePage />} />
               <Route path="economat" element={<DashboardEconomatPage />} />

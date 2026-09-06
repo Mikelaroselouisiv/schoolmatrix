@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Param,
   Body,
@@ -47,6 +48,29 @@ export class TeachersController {
       classId,
     );
     return { ok: true, subjects };
+  }
+
+  @Patch('me/schedule-slots/:id/materials')
+  async mySlotMaterials(
+    @Req() req: { user?: { userId?: number; sub?: number; id?: number } },
+    @Param('id') id: string,
+    @Body() body: { materials?: string | null },
+  ) {
+    const userId = req.user?.userId ?? req.user?.sub ?? req.user?.id;
+    if (!userId) throw new ForbiddenException('Non authentifié');
+    const slot = await this.teachersService.updateMySlotMaterials(
+      userId as number,
+      id,
+      body.materials ?? null,
+    );
+    return {
+      ok: true,
+      schedule_slot: {
+        id: slot.id,
+        materials: slot.materials ?? null,
+        updated_at: slot.updated_at,
+      },
+    };
   }
 
   @Get()

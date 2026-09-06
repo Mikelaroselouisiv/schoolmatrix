@@ -312,6 +312,8 @@ export type ClassItem = {
   is_preschool?: boolean;
   description?: string | null;
   level?: string | null;
+  can_take_attendance?: boolean;
+  can_set_materials?: boolean;
 };
 
 
@@ -385,6 +387,7 @@ export type ScheduleSlot = {
   day_of_week?: number;
   start_time?: string;
   end_time?: string;
+  materials?: string | null;
 };
 
 export type ExamScheduleItem = {
@@ -801,6 +804,67 @@ export async function getPeriods(academicYearId: string): Promise<PeriodItem[]> 
 export async function getTeacherClasses(): Promise<ClassItem[]> {
   const { data } = await api.get('/teachers/me/classes');
   return unwrapList<ClassItem>(data);
+}
+
+export type HomeworkKind = 'DEVOIR' | 'LECON';
+
+export type HomeworkAssignment = {
+  id: string;
+  kind: HomeworkKind;
+  title: string;
+  instructions: string | null;
+  due_date: string | null;
+  class_id: string | null;
+  class_name: string | null;
+  subject_name: string | null;
+  score?: string | null;
+  comment?: string | null;
+  students?: {
+    student_id: string;
+    first_name: string;
+    last_name: string;
+    score: string | null;
+    comment: string | null;
+  }[];
+};
+
+export async function listHomework(classId?: string): Promise<HomeworkAssignment[]> {
+  const { data } = await api.get('/homework', { params: classId ? { class_id: classId } : undefined });
+  return data?.assignments || [];
+}
+
+export async function getHomework(id: string): Promise<HomeworkAssignment> {
+  const { data } = await api.get(`/homework/${id}`);
+  return data.assignment;
+}
+
+export async function createHomework(body: {
+  kind: HomeworkKind;
+  title: string;
+  instructions?: string | null;
+  due_date?: string | null;
+  class_id: string;
+  subject_id?: string | null;
+}): Promise<HomeworkAssignment> {
+  const { data } = await api.post('/homework', body);
+  return data.assignment;
+}
+
+export async function saveHomeworkGrade(
+  id: string,
+  body: { student_id: string; score?: string | null; comment?: string | null },
+): Promise<HomeworkAssignment> {
+  const { data } = await api.put(`/homework/${id}/grades`, body);
+  return data.assignment;
+}
+
+export async function getStudentHomework(studentId: string): Promise<HomeworkAssignment[]> {
+  const { data } = await api.get(`/homework/student/${studentId}`);
+  return data?.assignments || [];
+}
+
+export async function saveSlotMaterials(slotId: string, materials: string | null): Promise<void> {
+  await api.patch(`/teachers/me/schedule-slots/${slotId}/materials`, { materials });
 }
 
 export async function getTeacherSubjectsInClass(classId: string): Promise<SubjectItem[]> {

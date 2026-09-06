@@ -3,8 +3,15 @@ import { API_BASE, fetchWithAuth } from "@/services/api";
 import { useSchoolProfile } from "@/context/SchoolProfileContext";
 import { ExportPdfButton } from "@/components/ExportPdfButton";
 import { ExportBadgePdfButton } from "@/components/ExportBadgePdfButton";
-import { buildBadgesPdfBlob, fetchStudentsForRoomBadges } from "@/lib/badgeProduction";
+import {
+  buildBadgesPdfBlob,
+  fetchStudentsForClassBadges,
+  fetchStudentsForRoomBadges,
+} from "@/lib/badgeProduction";
+import { getPrintableClassListPdfBlob } from "@/lib/classListPdf";
 import { EDUCATION_LEVELS, educationLevelLabel } from "@/lib/educationLevels";
+
+type TabKey = "annee-actuelle" | "nouvelle-annee";
 
 type AcademicYear = {
   id: string;
@@ -55,6 +62,8 @@ type StudentInClass = {
 };
 
 const UNASSIGNED_ROOM_ID = "__sans_salle__";
+const PDF_BTN =
+  "inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-sm font-medium";
 
 function schoolCode(s: StudentInClass): string {
   return (s.management_code || s.student_code || "").trim() || "—";
@@ -91,19 +100,9 @@ function nextYearPreview(name: string): string {
   return `${name.trim()} (suivant)`;
 }
 
-function pdfRows(list: StudentInClass[]) {
-  return list.map((s) => ({
-    school_code: schoolCode(s),
-    last_name: s.last_name,
-    first_name: s.first_name,
-    room_name: s.room_name || "Sans salle",
-    average: s.average != null ? s.average.toFixed(2) : "—",
-    decision_label: decisionLabel(s.decision),
-  }));
-}
-
 export function DashboardFormationClassePage() {
   const { school, refetch: refetchSchool } = useSchoolProfile();
+  const [tab, setTab] = useState<TabKey>("annee-actuelle");
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [rooms, setRooms] = useState<RoomItem[]>([]);
@@ -123,6 +122,7 @@ export function DashboardFormationClassePage() {
 
   const selectedYear = academicYears.find((y) => y.id === selectedYearId);
   const isPreschoolClass = openClass?.is_preschool ?? false;
+  const isCurrentYearTab = tab === "annee-actuelle";
 
   const roomsByClass = useMemo(() => {
     const map = new Map<string, RoomItem[]>();
@@ -311,7 +311,22 @@ export function DashboardFormationClassePage() {
     }
   }
 
+  function printableListBlob(list: StudentInClass[], roomName?: string | null) {
+    return getPrintableClassListPdfBlob({
+      school: { name: school?.name, email: school?.email, phone: school?.phone },
+      className: openClass?.name ?? "Classe",
+      roomName: roomName ?? null,
+      yearName: selectedYear?.name,
+      students: list.map((s) => ({
+        last_name: s.last_name,
+        first_name: s.first_name,
+        room_name: s.room_name,
+      })),
+    });
+  }
+
   function studentTable(list: StudentInClass[]) {
+    const colSpan = isCurrentYearTab ? 4 : 6;
     return (
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
@@ -321,14 +336,18 @@ export function DashboardFormationClassePage() {
               <th className="px-4 py-3 font-medium text-slate-900">Nom</th>
               <th className="px-4 py-3 font-medium text-slate-900">Prénom</th>
               <th className="px-4 py-3 font-medium text-slate-900">Salle</th>
-              <th className="px-4 py-3 font-medium text-slate-900">Moyenne</th>
-              <th className="px-4 py-3 font-medium text-slate-900">Décision</th>
+              {!isCurrentYearTab && (
+                <>
+                  <th className="px-4 py-3 font-medium text-slate-900">Moyenne</th>
+                  <th className="px-4 py-3 font-medium text-slate-900">Décision</th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
             {list.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={colSpan} className="px-4 py-8 text-center text-slate-500">
                   Aucun élève dans cette liste.
                 </td>
               </tr>
@@ -344,34 +363,38 @@ export function DashboardFormationClassePage() {
                   <td className="px-4 py-3 font-medium text-slate-900">{s.last_name}</td>
                   <td className="px-4 py-3 text-slate-600">{s.first_name}</td>
                   <td className="px-4 py-3 text-slate-600">{s.room_name || "Sans salle"}</td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {s.average != null ? s.average.toFixed(2) : "—"}
-                  </td>
-                  <td className="px-4 py-3">
-                    {isPreschoolClass ? (
-                      <select
-                        value={s.decision ?? ""}
-                        onChange={(e) => handleSetDecision(s.assignment_id, e.target.value)}
-                        disabled={!s.assignment_id || savingDecisionId === s.assignment_id}
-                        className="border border-[var(--app-border)] rounded px-2 py-1.5 text-sm min-w-[160px]"
-                      >
-                        <option value="">— Choisir —</option>
-                        {DECISION_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ))}
-                      </select>
-                    ) : s.decision ? (
-                      <span
-                        className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${decisionBadgeClass(s.decision)}`}
-                      >
-                        {decisionLabel(s.decision)}
-                      </span>
-                    ) : (
-                      <span className="text-slate-400">—</span>
-                    )}
-                  </td>
+                  {!isCurrentYearTab && (
+                    <>
+                      <td className="px-4 py-3 text-slate-600">
+                        {s.average != null ? s.average.toFixed(2) : "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isPreschoolClass ? (
+                          <select
+                            value={s.decision ?? ""}
+                            onChange={(e) => handleSetDecision(s.assignment_id, e.target.value)}
+                            disabled={!s.assignment_id || savingDecisionId === s.assignment_id}
+                            className="border border-[var(--app-border)] rounded px-2 py-1.5 text-sm min-w-[160px]"
+                          >
+                            <option value="">— Choisir —</option>
+                            {DECISION_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        ) : s.decision ? (
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${decisionBadgeClass(s.decision)}`}
+                          >
+                            {decisionLabel(s.decision)}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                    </>
+                  )}
                 </tr>
               ))
             )}
@@ -385,20 +408,40 @@ export function DashboardFormationClassePage() {
     return <div className="animate-pulse text-slate-500">Chargement...</div>;
   }
 
-  const pdfColumnsBase = [
-    { header: "Code école", key: "school_code" },
-    { header: "Nom", key: "last_name" },
-    { header: "Prénom", key: "first_name" },
-  ];
-
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-slate-900">Formation de classe</h2>
 
+      <div className="flex gap-1 border-b border-[var(--app-border)]">
+        {(
+          [
+            ["annee-actuelle", "Année actuelle"],
+            ["nouvelle-annee", "Nouvelle année"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => {
+              setTab(key);
+              setOpenClass(null);
+              setOpenRoomId(null);
+            }}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+              tab === key
+                ? "bg-white border border-[var(--app-border)] border-b-0 text-slate-900"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {error && (
         <div className="p-3 rounded-lg bg-red-50 text-red-600 text-sm">{error}</div>
       )}
-      {launchResult && (
+      {launchResult && tab === "nouvelle-annee" && (
         <div className="p-3 rounded-lg bg-emerald-50 text-emerald-800 text-sm">{launchResult}</div>
       )}
 
@@ -425,17 +468,19 @@ export function DashboardFormationClassePage() {
             ))}
           </select>
         </div>
-        <button
-          type="button"
-          disabled={!selectedYearId}
-          onClick={() => {
-            setLaunchAck(false);
-            setShowLaunchConfirm(true);
-          }}
-          className="inline-flex items-center gap-2 rounded-lg border-2 border-amber-800 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-950 shadow-sm hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Lancer l’année suivante
-        </button>
+        {tab === "nouvelle-annee" && (
+          <button
+            type="button"
+            disabled={!selectedYearId}
+            onClick={() => {
+              setLaunchAck(false);
+              setShowLaunchConfirm(true);
+            }}
+            className="inline-flex items-center gap-2 rounded-lg border-2 border-amber-800 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-950 shadow-sm hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Lancer l’année suivante
+          </button>
+        )}
       </div>
 
       {!selectedYearId ? (
@@ -502,7 +547,7 @@ export function DashboardFormationClassePage() {
                 <p className="mt-0.5 text-sm text-slate-500">
                   {educationLevelLabel(openClass.level)}
                   {selectedYear ? ` · ${selectedYear.name}` : ""}
-                  {isPreschoolClass ? " — Décision manuelle (préscolaire)" : ""}
+                  {!isCurrentYearTab && isPreschoolClass ? " — Décision manuelle (préscolaire)" : ""}
                 </p>
               </div>
               <button
@@ -519,23 +564,24 @@ export function DashboardFormationClassePage() {
             <div className="flex flex-wrap gap-2 border-b border-[var(--app-border)] bg-slate-50 px-5 py-3">
               {classStudents.length > 0 && (
                 <ExportPdfButton
-                  table={{
-                    title: `Liste complète — ${openClass.name}`,
-                    subtitle: `${selectedYear?.name ?? ""} · toutes salles`,
-                    columns: [
-                      ...pdfColumnsBase,
-                      { header: "Salle", key: "room_name" },
-                      { header: "Moyenne", key: "average" },
-                      { header: "Décision", key: "decision_label" },
-                    ],
-                    rows: pdfRows(classStudents),
-                  }}
                   filename={`liste-classe-${openClass.name}-${selectedYear?.name ?? "annee"}.pdf`}
                   label="Exporter la liste complète de la classe"
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-sm font-medium"
+                  className={PDF_BTN}
+                  getBlob={async () => printableListBlob(classStudents)}
                 />
               )}
-              {!isPreschoolClass && (
+              {isCurrentYearTab && classStudents.length > 0 && (
+                <ExportBadgePdfButton
+                  label="Produire badges de la classe"
+                  filename={`badges-classe-${openClass.name}`}
+                  disabled={!school?.name}
+                  getBlob={async () => {
+                    const students = await fetchStudentsForClassBadges(openClass.id);
+                    return buildBadgesPdfBlob({ school, students });
+                  }}
+                />
+              )}
+              {!isCurrentYearTab && !isPreschoolClass && (
                 <button
                   type="button"
                   onClick={handleComputeDecisions}
@@ -625,22 +671,13 @@ export function DashboardFormationClassePage() {
             <div className="flex flex-wrap gap-2 border-b border-[var(--app-border)] bg-slate-50 px-5 py-3">
               {openRoomStudents.length > 0 && (
                 <ExportPdfButton
-                  table={{
-                    title: `Liste — ${openClass.name} · ${openRoomName}`,
-                    subtitle: selectedYear?.name ?? "",
-                    columns: [
-                      ...pdfColumnsBase,
-                      { header: "Moyenne", key: "average" },
-                      { header: "Décision", key: "decision_label" },
-                    ],
-                    rows: pdfRows(openRoomStudents),
-                  }}
                   filename={`liste-salle-${openClass.name}-${openRoomName}-${selectedYear?.name ?? "annee"}.pdf`}
                   label="Exporter en PDF"
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-sm font-medium"
+                  className={PDF_BTN}
+                  getBlob={async () => printableListBlob(openRoomStudents, openRoomName)}
                 />
               )}
-              {openRoomId !== UNASSIGNED_ROOM_ID && (
+              {isCurrentYearTab && openRoomId !== UNASSIGNED_ROOM_ID && (
                 <ExportBadgePdfButton
                   label="Produire badges de la salle"
                   filename={`badges-salle-${openClass.name}-${openRoomName}`}

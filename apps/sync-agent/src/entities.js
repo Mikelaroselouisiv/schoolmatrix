@@ -32,5 +32,7 @@ export const ENTITY_ORDER = [
   'Expense',
   'FileMetadata',
   'Attendance',
+  'HomeworkAssignment',
+  'HomeworkGrade',
   'PaymentTransaction',
 ];

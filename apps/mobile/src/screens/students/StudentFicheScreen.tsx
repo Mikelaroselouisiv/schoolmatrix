@@ -32,8 +32,10 @@ import {
   getPaymentStatus,
   getScheduleSlots,
   getStudent,
+  getStudentHomework,
   type DisciplineSummary,
   type ExamResults,
+  type HomeworkAssignment,
   type PaymentStatus,
   type ScheduleSlot,
   type StudentListItem,
@@ -48,7 +50,7 @@ import type { StudentsStackParamList } from '../../navigation/types';
 const DAYS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
 
 type Props = NativeStackScreenProps<StudentsStackParamList, 'StudentFiche'>;
-type DetailTab = 'carnet' | 'infos' | 'famille';
+type DetailTab = 'carnet' | 'travaux' | 'infos' | 'famille';
 
 export function StudentFicheScreen({ navigation, route }: Props) {
   const { studentId, studentName } = route.params;
@@ -69,6 +71,7 @@ export function StudentFicheScreen({ navigation, route }: Props) {
   const [payment, setPayment] = useState<PaymentStatus | null>(null);
   const [grades, setGrades] = useState<ExamResults | null>(null);
   const [schedule, setSchedule] = useState<ScheduleSlot[]>([]);
+  const [homework, setHomework] = useState<HomeworkAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
@@ -101,6 +104,11 @@ export function StudentFicheScreen({ navigation, route }: Props) {
         setSchedule(await getScheduleSlots(s.class_id));
       } else {
         setSchedule([]);
+      }
+      try {
+        setHomework(await getStudentHomework(studentId));
+      } catch {
+        setHomework([]);
       }
     } catch (err) {
       const cached = await readCachedStudentFiche(studentId);
@@ -283,6 +291,7 @@ export function StudentFicheScreen({ navigation, route }: Props) {
           <SegmentedControl
             options={[
               { id: 'carnet', label: 'Carnet' },
+              { id: 'travaux', label: 'Travaux' },
               { id: 'infos', label: 'Infos' },
               { id: 'famille', label: 'Famille' },
             ]}
@@ -308,6 +317,25 @@ export function StudentFicheScreen({ navigation, route }: Props) {
               ))
             ) : (
               <Text style={styles.emptyLine}>—</Text>
+            )
+          ) : null}
+
+          {detailTab === 'travaux' ? (
+            homework.length ? (
+              homework.map((h) => (
+                <View key={h.id} style={styles.detailRow}>
+                  <Text style={styles.detailTitle}>
+                    {h.kind === 'DEVOIR' ? 'Devoir' : 'Leçon'} · {h.title}
+                  </Text>
+                  <Text style={styles.detailMeta}>
+                    {[h.subject_name, h.due_date, h.score ? `Note ${h.score}` : null, h.comment]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </Text>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.emptyLine}>Aucun travail</Text>
             )
           ) : null}
 

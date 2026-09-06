@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { ClassTeacher } from './class-teacher.entity';
@@ -15,6 +15,10 @@ import {
   TEACHER_ROLE_NAMES,
   isTeacherRoleName,
 } from '../roles/roles.constants';
+import {
+  isAttendanceLevel,
+  isMaterialsLevel,
+} from '../roles/education-levels';
 
 @Injectable()
 export class TeachersService {
@@ -35,6 +39,8 @@ export class TeachersService {
     private readonly roomRepo: Repository<Room>,
     @InjectRepository(Student)
     private readonly studentRepo: Repository<Student>,
+    @InjectRepository(Class)
+    private readonly classRepo: Repository<Class>,
   ) {}
 
   /**
@@ -74,6 +80,7 @@ export class TeachersService {
         teacher_id: s.teacher_id ?? null,
         teacher_name: s.teacher_name ?? null,
         academic_year: s.academic_year,
+        materials: s.materials ?? null,
       })),
     };
   }
@@ -391,7 +398,13 @@ export class TeachersService {
       order: { created_at: 'ASC' },
     });
     const seen = new Set<string>();
-    const result: { id: string; name: string }[] = [];
+    const result: {
+      id: string;
+      name: string;
+      level: string | null;
+      can_take_attendance: boolean;
+      can_set_materials: boolean;
+    }[] = [];
     for (const a of list) {
       const cid = a.class?.id ?? (a as any).class_id;
       if (cid && !seen.has(cid)) {
@@ -399,6 +412,9 @@ export class TeachersService {
         result.push({
           id: cid,
           name: a.class?.name ?? '',
+          level: a.class?.level ?? null,
+          can_take_attendance: isAttendanceLevel(a.class?.level),
+          can_set_materials: isMaterialsLevel(a.class?.level),
         });
       }
     }
@@ -502,6 +518,7 @@ export class TeachersService {
       day_of_week: s.day_of_week,
       start_time: s.start_time,
       end_time: s.end_time,
+      materials: s.materials ?? null,
       created_at: s.created_at,
       updated_at: s.updated_at,
     }));
@@ -516,6 +533,7 @@ export class TeachersService {
     day_of_week: number;
     start_time: string;
     end_time: string;
+    materials?: string | null;
   }): Promise<ScheduleSlot> {
     const room = await this.resolveRoomForClass(params.class_id, params.room_id);
     const teacherId = await this.resolveTeacherIdForSlot(
@@ -533,6 +551,7 @@ export class TeachersService {
       day_of_week: params.day_of_week,
       start_time: params.start_time,
       end_time: params.end_time,
+      materials: params.materials?.trim() ? params.materials.trim() : null,
     });
     return this.scheduleSlotRepo.save(slot);
   }
@@ -548,6 +567,7 @@ export class TeachersService {
       day_of_week: number;
       start_time: string;
       end_time: string;
+      materials?: string | null;
     }>,
   ): Promise<ScheduleSlot> {
     const slot = await this.scheduleSlotRepo.findOne({
@@ -572,6 +592,9 @@ export class TeachersService {
     if (params.day_of_week !== undefined) slot.day_of_week = params.day_of_week;
     if (params.start_time !== undefined) slot.start_time = params.start_time;
     if (params.end_time !== undefined) slot.end_time = params.end_time;
+    if (params.materials !== undefined) {
+      slot.materials = params.materials?.trim() ? params.materials.trim() : null;
+    }
     return this.scheduleSlotRepo.save(slot);
   }
 
@@ -580,5 +603,60 @@ export class TeachersService {
     if (!slot) throw new NotFoundException('Schedule slot not found');
     await this.scheduleSlotRepo.remove(slot);
     return { deleted: true };
+  }
+
+  async teacherAssignedToClass(teacherId: number, classId: string): Promise<boolean> {
+    const viaSubject = await this.teacherClassSubjectRepo.findOne({
+      where: { teacher_id: teacherId, class_id: classId },
+    });
+    if (viaSubject) return true;
+    const viaClass = await this.classTeacherRepo.findOne({
+      where: { user_id: teacherId, class_id: classId },
+    });
+    return !!viaClass;
+  }
+
+  async assertTeacherAssignedToClass(teacherId: number, classId: string): Promise<void> {
+    const ok = await this.teacherAssignedToClass(teacherId, classId);
+    if (!ok) {
+      throw new ForbiddenException('Cette classe n’est pas dans votre périmètre.');
+    }
+  }
+
+  async assertTeacherCanTakeAttendance(teacherId: number, classId: string): Promise<void> {
+    await this.assertTeacherAssignedToClass(teacherId, classId);
+    const cls = await this.classRepo.findOne({ where: { id: classId } });
+    if (!cls) throw new NotFoundException('Classe introuvable');
+    if (!isAttendanceLevel(cls.level)) {
+      throw new ForbiddenException(
+        'L’appel sur l’application est réservé au préscolaire et aux 1er / 2e cycles fondamentaux.',
+      );
+    }
+  }
+
+  async updateMySlotMaterials(
+    teacherId: number,
+    slotId: string,
+    materials: string | null,
+  ): Promise<ScheduleSlot> {
+    const slot = await this.scheduleSlotRepo.findOne({
+      where: { id: slotId },
+      relations: ['class', 'teacher'],
+    });
+    if (!slot) throw new NotFoundException('Créneau introuvable');
+    const ownerId = slot.teacher?.id ?? (slot as { teacher_id?: number }).teacher_id;
+    if (ownerId !== teacherId) {
+      await this.assertTeacherAssignedToClass(
+        teacherId,
+        slot.class?.id ?? (slot as { class_id?: string }).class_id,
+      );
+    }
+    if (!isMaterialsLevel(slot.class?.level)) {
+      throw new ForbiddenException(
+        'La liste de matériel accompagne l’horaire du 1er et 2e cycle fondamental uniquement.',
+      );
+    }
+    slot.materials = materials?.trim() ? materials.trim() : null;
+    return this.scheduleSlotRepo.save(slot);
   }
 }

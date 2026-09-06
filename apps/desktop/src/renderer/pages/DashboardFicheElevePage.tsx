@@ -127,6 +127,7 @@ type ScheduleSlot = {
   day_of_week: number;
   start_time: string;
   end_time: string;
+  materials?: string | null;
 };
 
 type ExamScheduleItem = {
@@ -178,6 +179,19 @@ export function DashboardFicheElevePage() {
   const [scheduleSlots, setScheduleSlots] = useState<ScheduleSlot[]>([]);
   const [examSchedules, setExamSchedules] = useState<ExamScheduleItem[]>([]);
   const [extracurricularActivities, setExtracurricularActivities] = useState<ExtracurricularActivityItem[]>([]);
+  const [homework, setHomework] = useState<
+    {
+      id: string;
+      kind: string;
+      title: string;
+      instructions: string | null;
+      due_date: string | null;
+      subject_name: string | null;
+      teacher_name: string | null;
+      score: string | null;
+      comment: string | null;
+    }[]
+  >([]);
   const [error, setError] = useState("");
 
 
@@ -312,18 +326,20 @@ export function DashboardFicheElevePage() {
 
       if (sData?.class_id && selectedYearId) {
         const yearName = academicYears.find((y) => y.id === selectedYearId)?.name;
-        const [examRes, formationRes, slotsRes, examSchedRes, activitiesRes] = await Promise.all([
+        const [examRes, formationRes, slotsRes, examSchedRes, activitiesRes, hwRes] = await Promise.all([
           fetchWithAuth(`${API_BASE}/grades/student-exam-results?student_id=${studentId}&academic_year_id=${selectedYearId}`),
           fetchWithAuth(`${API_BASE}/formation-classe/students?academic_year_id=${selectedYearId}&class_id=${sData.class_id}`),
           fetchWithAuth(`${API_BASE}/schedule-slots?class_id=${sData.class_id}${yearName ? `&academic_year=${encodeURIComponent(yearName)}` : ""}`),
           fetchWithAuth(`${API_BASE}/exam-schedules?class_id=${sData.class_id}`),
           fetchWithAuth(`${API_BASE}/extracurricular-activities?class_id=${sData.class_id}&academic_year_id=${selectedYearId}`),
+          fetchWithAuth(`${API_BASE}/homework/student/${studentId}`),
         ]);
         const examData = await examRes.json();
         const formationData = await formationRes.json();
         const slotsData = await slotsRes.json();
         const examSchedData = await examSchedRes.json();
         const activitiesData = await activitiesRes.json();
+        const hwData = await hwRes.json();
         if (examRes.ok && examData.periods) setExamResults(examData);
         else setExamResults(null);
         const formationList = formationData.students ?? [];
@@ -332,21 +348,25 @@ export function DashboardFicheElevePage() {
         setScheduleSlots(slotsRes.ok ? (slotsData.schedule_slots ?? []) : []);
         setExamSchedules(examSchedRes.ok ? (examSchedData.exam_schedules ?? []) : []);
         setExtracurricularActivities(activitiesRes.ok ? (activitiesData.extracurricular_activities ?? []) : []);
+        setHomework(hwRes.ok ? (hwData.assignments ?? []) : []);
       } else {
         setExamResults(null);
         setFormationDecision(null);
         if (sData?.class_id) {
-          const [slotsRes, examSchedRes, activitiesRes] = await Promise.all([
+          const [slotsRes, examSchedRes, activitiesRes, hwRes] = await Promise.all([
             fetchWithAuth(`${API_BASE}/schedule-slots?class_id=${sData.class_id}`),
             fetchWithAuth(`${API_BASE}/exam-schedules?class_id=${sData.class_id}`),
             fetchWithAuth(`${API_BASE}/extracurricular-activities?class_id=${sData.class_id}`),
+            fetchWithAuth(`${API_BASE}/homework/student/${studentId}`),
           ]);
           const slotsData = await slotsRes.json();
           const examSchedData = await examSchedRes.json();
           const activitiesData = await activitiesRes.json();
+          const hwData = await hwRes.json();
           setScheduleSlots(slotsRes.ok ? (slotsData.schedule_slots ?? []) : []);
           setExamSchedules(examSchedRes.ok ? (examSchedData.exam_schedules ?? []) : []);
           setExtracurricularActivities(activitiesRes.ok ? (activitiesData.extracurricular_activities ?? []) : []);
+          setHomework(hwRes.ok ? (hwData.assignments ?? []) : []);
         } else {
           setScheduleSlots([]);
           setExamSchedules([]);
@@ -404,6 +424,7 @@ export function DashboardFicheElevePage() {
           matiere: s.subject_name,
           professeur: s.teacher_name ?? "—",
           salle: s.room_name ?? "—",
+          materiel: s.materials?.trim() ? s.materials.replace(/\n/g, ", ") : "—",
         }));
       if (rows.length === 0) continue;
       sections.push({
@@ -414,6 +435,7 @@ export function DashboardFicheElevePage() {
             { header: "Matière", key: "matiere" },
             { header: "Professeur", key: "professeur" },
             { header: "Salle", key: "salle" },
+            { header: "Matériel", key: "materiel" },
           ],
           rows,
         },
@@ -819,11 +841,12 @@ export function DashboardFicheElevePage() {
                         <th className="px-4 py-2 font-medium text-slate-900">Matière</th>
                         <th className="px-4 py-2 font-medium text-slate-900">Professeur</th>
                         <th className="px-4 py-2 font-medium text-slate-900">Salle</th>
+                        <th className="px-4 py-2 font-medium text-slate-900">Matériel</th>
                       </tr>
                     </thead>
                     <tbody>
                       {scheduleSlots.length === 0 ? (
-                        <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">Aucun créneau de cours pour cette classe.</td></tr>
+                        <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">Aucun créneau de cours pour cette classe.</td></tr>
                       ) : (
                         scheduleSlots.map((s) => (
                           <tr key={s.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
@@ -832,6 +855,7 @@ export function DashboardFicheElevePage() {
                             <td className="px-4 py-2 font-medium text-slate-900">{s.subject_name}</td>
                             <td className="px-4 py-2 text-slate-700">{s.teacher_name ?? "—"}</td>
                             <td className="px-4 py-2 text-slate-600">{s.room_name ?? "—"}</td>
+                            <td className="px-4 py-2 text-slate-600 whitespace-pre-wrap">{s.materials?.trim() || "—"}</td>
                           </tr>
                         ))
                       )}
@@ -896,6 +920,47 @@ export function DashboardFicheElevePage() {
                     </tbody>
                   </table>
                 </div>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-[var(--app-border)] bg-white overflow-hidden">
+            <div className="px-4 py-3 bg-slate-50 border-b border-[var(--app-border)] font-semibold text-slate-900">
+              Devoirs et leçons
+            </div>
+            <div className="p-4 overflow-x-auto">
+              {homework.length === 0 ? (
+                <p className="text-sm text-slate-500">Aucun travail publié pour cette classe.</p>
+              ) : (
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-50 border-b border-[var(--app-border)]">
+                    <tr>
+                      <th className="px-4 py-2 font-medium">Type</th>
+                      <th className="px-4 py-2 font-medium">Titre</th>
+                      <th className="px-4 py-2 font-medium">Matière</th>
+                      <th className="px-4 py-2 font-medium">Pour le</th>
+                      <th className="px-4 py-2 font-medium">Note</th>
+                      <th className="px-4 py-2 font-medium">Commentaire</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {homework.map((h) => (
+                      <tr key={h.id} className="border-b border-[var(--app-border)]">
+                        <td className="px-4 py-2">{h.kind === "DEVOIR" ? "Devoir" : "Leçon"}</td>
+                        <td className="px-4 py-2 font-medium text-slate-900">
+                          {h.title}
+                          {h.instructions ? (
+                            <div className="text-slate-500 font-normal whitespace-pre-wrap mt-1">{h.instructions}</div>
+                          ) : null}
+                        </td>
+                        <td className="px-4 py-2">{h.subject_name ?? "—"}</td>
+                        <td className="px-4 py-2">{h.due_date ?? "—"}</td>
+                        <td className="px-4 py-2">{h.score ?? "—"}</td>
+                        <td className="px-4 py-2">{h.comment ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )}
             </div>
           </div>

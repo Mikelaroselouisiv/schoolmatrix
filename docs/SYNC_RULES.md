@@ -74,6 +74,10 @@ Ne jamais écraser si uuid déjà présent :
 - `PaymentTransaction`
 - `Attendance`
 
+## HomeworkAssignment / HomeworkGrade
+
+Devoirs et leçons du professeur + notes sur la carte. Sync LWW (le professeur peut corriger la note en temps réel). Après `Attendance` dans `ENTITY_ORDER`.
+
 ## Auth
 
 Header `X-Sync-Key: <SYNC_API_KEY>` — même clé sur local, cloud et agent.

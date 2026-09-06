@@ -142,7 +142,7 @@ const DEFAULT_ROLES: {
     permissions: ['stats-financieres', 'comptabilite'],
   },
   { name: 'STAFF', description: 'Staff administratif générique (rétrocompatibilité)' },
-  { name: 'TEACHER', description: 'Enseignant / Enseignante — notes et son périmètre' },
+  { name: 'TEACHER', description: 'Enseignant — notes, appel (présco / 1er-2e AF), devoirs et leçons' },
   { name: 'PARENT', description: 'Parent — fiche de ses enfants' },
   {
     name: 'PHOTOGRAPHER',

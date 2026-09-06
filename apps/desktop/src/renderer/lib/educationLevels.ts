@@ -24,3 +24,13 @@ export function educationLevelLabel(key?: string | null): string {
 export function isHomeroomCycle(level?: string | null): boolean {
   return !!level && (HOMEROOM_LEVELS as string[]).includes(level);
 }
+
+/** Matériel à apporter (horaire 1er / 2e cycle). */
+export const MATERIALS_LEVELS: EducationLevelKey[] = [
+  "FONDAMENTAL_1",
+  "FONDAMENTAL_2",
+];
+
+export function isMaterialsCycle(level?: string | null): boolean {
+  return !!level && (MATERIALS_LEVELS as string[]).includes(level);
+}

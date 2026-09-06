@@ -45,6 +45,10 @@ export class ScheduleSlot {
   @Column({ type: 'varchar', length: 5 })
   end_time: string;
 
+  /** Matériel à apporter (une ligne par item). 1er / 2e cycle fondamental. */
+  @Column({ type: 'text', nullable: true })
+  materials: string | null;
+
   @CreateDateColumn()
   created_at: Date;
 

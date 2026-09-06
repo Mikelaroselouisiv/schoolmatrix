@@ -99,7 +99,6 @@ type Room = { id: string; name: string; class_id?: string | null; active?: boole
 type AcademicYear = { id: string; name: string };
 type Period = { id: string; name: string };
 type RoomAssignment = { teacher_id: number; teacher_name: string; subject_id: string };
-type RoomAssignment = { teacher_id: number; teacher_name: string; subject_id: string };
 
 export function DashboardSchedulePage() {
   const [tab, setTab] = useState<"cours" | "examens" | "parascolaires">("cours");

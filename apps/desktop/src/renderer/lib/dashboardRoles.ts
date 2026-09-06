@@ -126,6 +126,7 @@ export const DASHBOARD_NAV: NavItem[] = [
   // Bloc Management (vie étudiante) : Inscription, Saisie de notes, Discipline, Formation de classe
   { href: "/dashboard/students", label: "Inscription", allowedRoles: [...ROLES_FULL, ...ROLES_PEDAGOGIQUE, ...ROLES_SECRETAIRE], permissionKey: "students", block: "management" },
   { href: "/dashboard/grades", label: "Saisie des notes", allowedRoles: [...ROLES_FULL, ...ROLES_HORAIRES_ET_NOTES, ...TEACHER_ROLE_NAMES], permissionKey: "grades", block: "management" },
+  { href: "/dashboard/tableau-professeur", label: "Tableau de bord professeur", allowedRoles: [...TEACHER_ROLE_NAMES], permissionKey: "teacher-hub", block: "management" },
   { href: "/dashboard/discipline", label: "Discipline", allowedRoles: [...ROLES_FULL, ...ROLES_DISCIPLINE], permissionKey: "discipline", block: "management" },
   { href: "/dashboard/formation-classe", label: "Formation de classe", allowedRoles: [...ROLES_FULL, ...ROLES_PEDAGOGIQUE], permissionKey: "formation-classe", block: "management" },
   // Bloc Finance opérationnel : Économat + Dépenses (économe)
@@ -144,7 +145,7 @@ export const DASHBOARD_NAV: NavItem[] = [
   {
     href: "/dashboard/fiche-eleve",
     label: "Fiche élève",
-    allowedRoles: [...ROLES_FULL, ...ROLES_PEDAGOGIQUE, ...ROLES_SECRETAIRE, ...ROLES_ECONOME, "PARENT"],
+    allowedRoles: [...ROLES_FULL, ...ROLES_PEDAGOGIQUE, ...ROLES_SECRETAIRE, ...ROLES_ECONOME, ...TEACHER_ROLE_NAMES, "PARENT"],
     permissionKey: "fiche-eleve",
     block: "fiche",
   },
@@ -176,6 +177,7 @@ export function canAccessPath(roleName: string, path: string, rolePermissions?: 
     );
     if (!item) return false;
     if (item.permissionKey === "stats-academiques" && isTeacherRole(roleName)) return true;
+    if (item.permissionKey === "teacher-hub" && isTeacherRole(roleName)) return true;
     return canSeeByPermissions(item.permissionKey, rolePermissions);
   }
   if (ROLES_FULL.includes(roleName)) return true;
@@ -209,7 +211,9 @@ export function getNavItemsForRole(
       const canSee =
         item.permissionKey === "stats-academiques" && isTeacherRole(roleName)
           ? true
-          : usePermissions
+          : item.permissionKey === "teacher-hub" && isTeacherRole(roleName)
+            ? true
+            : usePermissions
             ? canSeeByPermissions(item.permissionKey, rolePermissions)
             : canSeeNavItem(roleName, item.allowedRoles);
       if (canSee) {

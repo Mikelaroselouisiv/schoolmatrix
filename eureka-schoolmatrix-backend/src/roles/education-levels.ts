@@ -24,6 +24,27 @@ export function isEducationLevelKey(value?: string | null): value is EducationLe
   return !!value && (EDUCATION_LEVEL_KEYS as string[]).includes(value);
 }
 
+/** Appel sur l’app : préscolaire + 1er / 2e cycles fondamentaux. */
+export const ATTENDANCE_LEVELS: EducationLevelKey[] = [
+  'PRESCOLAIRE',
+  'FONDAMENTAL_1',
+  'FONDAMENTAL_2',
+];
+
+/** Liste de matériel accompagnant l’horaire : 1er et 2e cycles seulement. */
+export const MATERIALS_LEVELS: EducationLevelKey[] = [
+  'FONDAMENTAL_1',
+  'FONDAMENTAL_2',
+];
+
+export function isAttendanceLevel(level?: string | null): boolean {
+  return !!level && (ATTENDANCE_LEVELS as string[]).includes(level);
+}
+
+export function isMaterialsLevel(level?: string | null): boolean {
+  return !!level && (MATERIALS_LEVELS as string[]).includes(level);
+}
+
 export function educationLevelLabel(key?: string | null): string {
   if (!key) return '—';
   return EDUCATION_LEVELS.find((l) => l.key === key)?.label ?? key;

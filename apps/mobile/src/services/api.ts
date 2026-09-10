@@ -272,10 +272,12 @@ export function getRoleName(user: SessionUser | null | undefined): string {
 export type StudentListItem = {
   id: string;
   order_number?: string | null;
+  management_code?: string | null;
   first_name: string;
   last_name: string;
   class_id?: string;
   class_name?: string;
+  class_level?: string | null;
   room_id?: string | null;
   room_name?: string | null;
   photo_identity_student?: string | null;
@@ -1288,7 +1290,7 @@ export async function getFinancialStats(params: {
 }
 
 export type StudentWriteBody = {
-  order_number: string;
+  order_number?: string | null;
   first_name: string;
   last_name: string;
   class_id: string;

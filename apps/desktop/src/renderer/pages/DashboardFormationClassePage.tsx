@@ -9,7 +9,7 @@ import {
   fetchStudentsForRoomBadges,
 } from "@/lib/badgeProduction";
 import { getPrintableClassListPdfBlob } from "@/lib/classListPdf";
-import { EDUCATION_LEVELS, educationLevelLabel } from "@/lib/educationLevels";
+import { EDUCATION_LEVELS, educationLevelLabel, learnerNoun } from "@/lib/educationLevels";
 
 type TabKey = "annee-actuelle" | "nouvelle-annee";
 
@@ -418,7 +418,7 @@ export function DashboardFormationClassePage() {
             {list.length === 0 ? (
               <tr>
                 <td colSpan={colSpan} className="px-4 py-8 text-center text-slate-500">
-                  Aucun élève dans cette liste.
+                  Aucun {learnerNoun(openClass?.level)} dans cette liste.
                 </td>
               </tr>
             ) : (
@@ -630,7 +630,7 @@ export function DashboardFormationClassePage() {
                         {clsRooms.length} salle{clsRooms.length !== 1 ? "s" : ""}
                       </span>
                       <span className="inline-flex rounded-full bg-[var(--school-accent-1)]/10 px-2 py-0.5 text-xs font-medium text-[var(--school-accent-1)]">
-                        {effectif} élève{effectif !== 1 ? "s" : ""}
+                        {effectif} {learnerNoun(cls.level, effectif !== 1)}
                       </span>
                     </div>
                   </button>
@@ -722,7 +722,7 @@ export function DashboardFormationClassePage() {
                       >
                         <div className="font-semibold text-slate-900">{r.name}</div>
                         <div className="mt-2 text-sm text-slate-600">
-                          {count} élève{count !== 1 ? "s" : ""}
+                          {count} {learnerNoun(openClass.level, count !== 1)}
                           {r.capacity != null ? ` / ${r.capacity}` : ""}
                         </div>
                       </button>
@@ -736,14 +736,13 @@ export function DashboardFormationClassePage() {
                     >
                       <div className="font-semibold text-slate-700">Sans salle</div>
                       <div className="mt-2 text-sm text-slate-600">
-                        {unassignedStudents.length} élève
-                        {unassignedStudents.length !== 1 ? "s" : ""}
+                        {unassignedStudents.length} {learnerNoun(openClass.level, unassignedStudents.length !== 1)}
                       </div>
                     </button>
                   )}
                   {openClassRooms.length === 0 && unassignedStudents.length === 0 && (
                     <p className="col-span-full py-6 text-center text-slate-500 text-sm">
-                      Aucune salle ni élève pour cette classe.
+                      Aucune salle ni {learnerNoun(openClass.level)} pour cette classe.
                     </p>
                   )}
                 </div>
@@ -768,7 +767,7 @@ export function DashboardFormationClassePage() {
                   {openClass.name} · {openRoomName}
                 </h3>
                 <p className="mt-0.5 text-sm text-slate-500">
-                  {openRoomStudents.length} élève{openRoomStudents.length !== 1 ? "s" : ""}
+                  {openRoomStudents.length} {learnerNoun(openClass.level, openRoomStudents.length !== 1)}
                   {selectedYear ? ` · ${selectedYear.name}` : ""}
                 </p>
               </div>

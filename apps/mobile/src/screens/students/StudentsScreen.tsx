@@ -23,6 +23,7 @@ import { useSchool } from '../../context/SchoolContext';
 import { canEditStudent } from '../../lib/permissions';
 import { AccessDenied, useCanBrowseStudents } from '../../lib/access';
 import { studentDisplayName } from '../../lib/format';
+import { isHigherEducationLevel, learnerNoun } from '../../lib/educationLevels';
 import {
   getAcademicYears,
   getClasses,
@@ -72,6 +73,9 @@ export function StudentsScreen({ navigation }: Props) {
     || context?.academic_year?.name
     || 'Année académique';
   const classLabel = classes.find((c) => c.id === classId)?.name || 'Classe';
+  const classLevel = classes.find((c) => c.id === classId)?.level;
+  const listHigherEd = isHigherEducationLevel(classLevel);
+  const listLearner = learnerNoun(classLevel);
   const filtersReady = !!yearId && !!classId;
 
   const loadLinked = useCallback(async () => {
@@ -212,7 +216,7 @@ export function StudentsScreen({ navigation }: Props) {
           <SearchBar
             value={query}
             onChangeText={setQuery}
-            placeholder={linkedOnly ? 'Nom ou NISU…' : 'Nom ou NISU…'}
+            placeholder={listHigherEd ? 'Nom…' : 'Nom ou NISU…'}
           />
         ) : null}
 
@@ -227,10 +231,10 @@ export function StudentsScreen({ navigation }: Props) {
 
       {!linkedOnly && !filtersReady ? (
         <View style={styles.emptyWrap}>
-          <EmptyState title="Aucun élève" />
+          <EmptyState title={`Aucun ${listLearner}`} />
         </View>
       ) : loadingList ? (
-        <LoadingBlock label="Chargement des élèves…" />
+        <LoadingBlock label={`Chargement des ${learnerNoun(classLevel, true)}…`} />
       ) : (
         <FlatList
           data={filtered}
@@ -250,11 +254,14 @@ export function StudentsScreen({ navigation }: Props) {
               }}
             />
           }
-          ListEmptyComponent={<EmptyState title="Aucun élève" />}
+          ListEmptyComponent={<EmptyState title={`Aucun ${listLearner}`} />}
           renderItem={({ item }) => (
             <ListRow
               title={studentDisplayName(item)}
-              subtitle={[item.order_number, 'class_name' in item ? item.class_name : null]
+              subtitle={[
+                listHigherEd ? null : item.order_number,
+                'class_name' in item ? item.class_name : null,
+              ]
                 .filter(Boolean)
                 .join(' · ')}
               onPress={() =>

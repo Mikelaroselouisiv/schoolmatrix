@@ -12,6 +12,7 @@ import { isPostgresUniqueViolation, normalizeNisu } from './student-nisu';
 import { SyncService } from '../sync/sync.service';
 import { SyncKickService } from '../sync/sync-kick.service';
 import { ParentAccountService } from '../users/parent-account.service';
+import { isHigherEducationLevel } from '../roles/education-levels';
 
 export type ImportResult = {
   created: number;
@@ -91,7 +92,7 @@ export class StudentsService {
     last_name: string;
     class_id: string;
     room_id?: string | null;
-    order_number: string;
+    order_number?: string | null;
     academic_year_id?: string;
     email?: string;
     phone?: string;
@@ -110,15 +111,11 @@ export class StudentsService {
     responsible_name?: string;
     responsible_phone?: string;
   }): Promise<Student> {
-    const nisu = normalizeNisu(params.order_number);
-    if (!nisu) {
-      throw new BadRequestException('Le NISU (identifiant unique élève) est obligatoire.');
-    }
     if (!params.class_id?.trim()) {
       throw new BadRequestException('La classe est obligatoire.');
     }
+    const nisu = await this.nisuForClass(params.class_id, params.order_number);
     // Salle optionnelle à la création (import PDF / inscription progressive → Fiche élève).
-    await this.assertNisuAvailable(nisu);
     const room = params.room_id?.trim()
       ? await this.resolveRoomForClass(params.class_id, params.room_id)
       : null;
@@ -186,6 +183,28 @@ export class StudentsService {
     }
   }
 
+  /**
+   * NISU obligatoire hors formation supérieure.
+   * Au supérieur : pas de NISU — on stocke null (plusieurs NULL OK pour l’unicité PG).
+   */
+  private async nisuForClass(
+    classId: string,
+    raw: string | null | undefined,
+    excludeStudentId?: string,
+  ): Promise<string | null> {
+    const cls = await this.classesService.findOne(classId);
+    const nisu = normalizeNisu(raw);
+    if (isHigherEducationLevel(cls.level)) {
+      if (nisu) await this.assertNisuAvailable(nisu, excludeStudentId);
+      return nisu || null;
+    }
+    if (!nisu) {
+      throw new BadRequestException('Le NISU (identifiant unique élève) est obligatoire.');
+    }
+    await this.assertNisuAvailable(nisu, excludeStudentId);
+    return nisu;
+  }
+
   /** NISU unique global (Haïti) — refuse tout doublon. Usage interne / sensible. */
   private async assertNisuAvailable(nisu: string, excludeStudentId?: string): Promise<void> {
     const existing = await this.studentRepo.findOne({ where: { order_number: nisu } });
@@ -215,7 +234,7 @@ export class StudentsService {
       last_name: string;
       class_id: string;
       room_id: string | null;
-      order_number: string;
+      order_number: string | null;
       email: string;
       phone: string;
       address: string;
@@ -245,19 +264,19 @@ export class StudentsService {
     if (!student.management_code?.trim()) {
       student.management_code = await this.allocateManagementCode();
     }
-    if (params.order_number !== undefined) {
-      const nisu = normalizeNisu(params.order_number);
-      if (!nisu) {
-        throw new BadRequestException('Le NISU (identifiant unique élève) est obligatoire.');
-      }
-      await this.assertNisuAvailable(nisu, id);
-      student.order_number = nisu;
-    }
     if (params.first_name !== undefined) student.first_name = params.first_name.trim();
     if (params.last_name !== undefined) student.last_name = params.last_name.trim();
     if (params.class_id !== undefined) student.class = { id: params.class_id } as Class;
 
     const classId = params.class_id ?? student.class?.id;
+    if (!classId) {
+      throw new BadRequestException('La classe est obligatoire.');
+    }
+    if (params.order_number !== undefined || params.class_id !== undefined) {
+      const raw =
+        params.order_number !== undefined ? params.order_number : student.order_number;
+      student.order_number = await this.nisuForClass(classId, raw, id);
+    }
     if (params.room_id !== undefined) {
       if (!params.room_id?.trim()) {
         student.room = null;

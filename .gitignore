@@ -62,6 +62,7 @@ apps/mobile/dist/
 apps/mobile/web-build/
 
 # Installateurs locaux (binaires)
+/Eureka-SchoolMatrix-Remote*.exe
 /release/
 _archive/**/release/
 

@@ -5,6 +5,7 @@ import { API_BASE, fetchWithAuth } from "@/services/api";
 import { ImageUpload } from "@/components/ImageUpload";
 import { useSchoolProfile } from "@/context/SchoolProfileContext";
 import { DateInputJJMMAAAA } from "@/components/DateInputJJMMAAAA";
+import { isHigherEducationLevel, learnerNoun, learnerNounCap } from "@/lib/educationLevels";
 
 type Student = {
   id: string;
@@ -30,12 +31,13 @@ type Student = {
   responsible_phone: string | null;
   class_id: string;
   class_name: string;
+  class_level?: string | null;
   room_id: string | null;
   room_name: string | null;
   active: boolean;
 };
 
-type ClassItem = { id: string; name: string };
+type ClassItem = { id: string; name: string; level?: string | null };
 type RoomItem = {
   id: string;
   name: string;
@@ -62,6 +64,7 @@ export function DashboardStudentsPage() {
   const [editing, setEditing] = useState<Student | null>(null);
   const [createdOrderNumber, setCreatedOrderNumber] = useState<string | null>(null);
   const [createdManagementCode, setCreatedManagementCode] = useState<string | null>(null);
+  const [createdLearnerCap, setCreatedLearnerCap] = useState("Élève");
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     order_number: "",
@@ -94,6 +97,13 @@ export function DashboardStudentsPage() {
   const roomsForForm = form.class_id
     ? rooms.filter((r) => r.class_id === form.class_id)
     : [];
+  const selectedClass = classes.find((c) => c.id === form.class_id);
+  const formHigherEd = isHigherEducationLevel(selectedClass?.level);
+  const filterClass = classes.find((c) => c.id === classFilter);
+  const listHigherEd = isHigherEducationLevel(filterClass?.level);
+  const formLearner = learnerNoun(selectedClass?.level);
+  const listLearner = learnerNoun(filterClass?.level);
+  const listLearnerPlural = learnerNoun(filterClass?.level, true);
 
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
@@ -160,8 +170,10 @@ export function DashboardStudentsPage() {
     e.preventDefault();
     if (!form.first_name.trim() || !form.last_name.trim() || !form.class_id) return;
     if (!editing && !form.academic_year_id) return;
-    const nisu = form.order_number.trim().replace(/[\s\u00A0]+/g, "").toUpperCase();
-    if (!nisu) {
+    const nisu = formHigherEd
+      ? ""
+      : form.order_number.trim().replace(/[\s\u00A0]+/g, "").toUpperCase();
+    if (!formHigherEd && !nisu) {
       setError("Le NISU (identifiant unique élève) est obligatoire.");
       return;
     }
@@ -171,7 +183,7 @@ export function DashboardStudentsPage() {
     setCreatedManagementCode(null);
     try {
       const body = {
-        order_number: nisu,
+        order_number: nisu || null,
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
         class_id: form.class_id,
@@ -211,8 +223,9 @@ export function DashboardStudentsPage() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || "Erreur");
-        setCreatedOrderNumber(data.student?.order_number ?? (form.order_number.trim() || null));
+        setCreatedOrderNumber(data.student?.order_number ?? null);
         setCreatedManagementCode(data.student?.management_code ?? null);
+        setCreatedLearnerCap(learnerNounCap(selectedClass?.level));
         setForm({ order_number: "", first_name: "", last_name: "", class_id: "", room_id: "", academic_year_id: academicYears[0]?.id ?? "", email: "", phone: "", address: "", birth_date: "", birth_place: "", gender: "", photo_identity_student: "", photo_identity_mother: "", photo_identity_father: "", photo_identity_responsible: "", mother_name: "", mother_phone: "", father_name: "", father_phone: "", responsible_name: "", responsible_phone: "" });
         load();
       }
@@ -224,7 +237,8 @@ export function DashboardStudentsPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Supprimer cet élève ?")) return;
+    const target = students.find((s) => s.id === id);
+    if (!confirm(`Supprimer cet ${learnerNoun(target?.class_level)} ?`)) return;
     setError("");
     try {
       const res = await fetchWithAuth(`${API_BASE}/students/${id}`, { method: "DELETE" });
@@ -283,25 +297,27 @@ export function DashboardStudentsPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <h2 className="text-2xl font-bold text-slate-900">Inscription des élèves</h2>
+        <h2 className="text-2xl font-bold text-slate-900">Inscription des {listLearnerPlural}</h2>
         <div className="flex gap-2">
           <Link to="/dashboard/students/import" className="app-btn-secondary">
-            Inscription d&apos;anciens élèves
+            Inscription d&apos;anciens {listLearnerPlural}
           </Link>
-          <button onClick={openCreate} className="app-btn-primary">Inscrire un élève</button>
+          <button onClick={openCreate} className="app-btn-primary">Inscrire un {listLearner}</button>
         </div>
       </div>
 
-      {createdOrderNumber && (
+      {(createdManagementCode || createdOrderNumber) && (
         <div className="p-4 rounded-xl bg-green-50 border border-green-200">
-          <p className="font-semibold text-green-800">Élève inscrit</p>
+          <p className="font-semibold text-green-800">{createdLearnerCap} inscrit</p>
           <p className="text-green-700 mt-1">
             Code de gestion :{" "}
             <span className="font-mono font-bold">{createdManagementCode ?? "—"}</span>
           </p>
-          <p className="text-green-700/80 text-sm mt-1">
-            NISU (interne) : <span className="font-mono">{createdOrderNumber}</span>
-          </p>
+          {createdOrderNumber ? (
+            <p className="text-green-700/80 text-sm mt-1">
+              NISU (interne) : <span className="font-mono">{createdOrderNumber}</span>
+            </p>
+          ) : null}
         </div>
       )}
 
@@ -347,7 +363,7 @@ export function DashboardStudentsPage() {
       {/* Formulaire */}
       {showForm && (
         <form onSubmit={handleSubmit} className="p-6 rounded-xl border border-[var(--app-border)] bg-white space-y-6 max-w-2xl">
-          <h3 className="font-semibold text-slate-900">{editing ? "Modifier l'élève" : "Nouvel élève"}</h3>
+          <h3 className="font-semibold text-slate-900">{editing ? `Modifier l'${formLearner}` : `Nouvel ${formLearner}`}</h3>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -358,34 +374,6 @@ export function DashboardStudentsPage() {
               <label className="block text-sm font-medium text-slate-700 mb-1">Nom *</label>
               <input type="text" value={form.last_name} onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))} className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2" required />
             </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              NISU (interne) *
-            </label>
-            <input
-              type="text"
-              value={form.order_number}
-              onChange={(e) => setForm((f) => ({ ...f, order_number: e.target.value }))}
-              onBlur={() =>
-                setForm((f) => ({
-                  ...f,
-                  order_number: f.order_number.trim().replace(/[\s\u00A0]+/g, "").toUpperCase(),
-                }))
-              }
-              placeholder="Code NISU — usage interne uniquement"
-              className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 font-mono"
-              required
-            />
-            <p className="text-xs text-slate-500 mt-1">
-              Le NISU n’apparaît pas sur la fiche ni sur le badge. Un code de gestion public est créé automatiquement.
-            </p>
-            {editing?.management_code && (
-              <p className="text-xs text-slate-600 mt-1">
-                Code de gestion : <span className="font-mono font-semibold">{editing.management_code}</span>
-              </p>
-            )}
           </div>
 
           {!editing && (
@@ -402,9 +390,16 @@ export function DashboardStudentsPage() {
               <label className="block text-sm font-medium text-slate-700 mb-1">Classe *</label>
               <select
                 value={form.class_id}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, class_id: e.target.value, room_id: "" }))
-                }
+                onChange={(e) => {
+                  const class_id = e.target.value;
+                  const higher = isHigherEducationLevel(classes.find((c) => c.id === class_id)?.level);
+                  setForm((f) => ({
+                    ...f,
+                    class_id,
+                    room_id: "",
+                    order_number: higher ? "" : f.order_number,
+                  }));
+                }}
                 className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
                 required
               >
@@ -433,7 +428,7 @@ export function DashboardStudentsPage() {
                       {r.name}
                       {r.capacity != null
                         ? ` — ${r.student_count}/${r.capacity}${full && !isCurrent ? " (plein)" : ""}`
-                        : ` — ${r.student_count} élève(s)`}
+                        : ` — ${r.student_count} ${learnerNoun(selectedClass?.level, r.student_count !== 1)}`}
                     </option>
                   );
                 })}
@@ -448,6 +443,41 @@ export function DashboardStudentsPage() {
               )}
             </div>
           </div>
+
+          {form.class_id && !formHigherEd && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                NISU (interne) *
+              </label>
+              <input
+                type="text"
+                value={form.order_number}
+                onChange={(e) => setForm((f) => ({ ...f, order_number: e.target.value }))}
+                onBlur={() =>
+                  setForm((f) => ({
+                    ...f,
+                    order_number: f.order_number.trim().replace(/[\s\u00A0]+/g, "").toUpperCase(),
+                  }))
+                }
+                placeholder="Code NISU — usage interne uniquement"
+                className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2 font-mono"
+                required={!formHigherEd}
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                Le NISU n’apparaît pas sur la fiche ni sur le badge. Un code de gestion public est créé automatiquement.
+              </p>
+              {editing?.management_code && (
+                <p className="text-xs text-slate-600 mt-1">
+                  Code de gestion : <span className="font-mono font-semibold">{editing.management_code}</span>
+                </p>
+              )}
+            </div>
+          )}
+          {formHigherEd && editing?.management_code && (
+            <p className="text-xs text-slate-600">
+              Code de gestion : <span className="font-mono font-semibold">{editing.management_code}</span>
+            </p>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -487,7 +517,7 @@ export function DashboardStudentsPage() {
           <div className="border-t border-[var(--app-border)] pt-4">
             <h4 className="font-medium text-slate-900 mb-3">Photos d&apos;identité</h4>
             <div className="grid grid-cols-2 gap-6">
-              <ImageUpload value={form.photo_identity_student || null} onChange={(url) => setForm((f) => ({ ...f, photo_identity_student: url }))} label="Photo de l&apos;enfant" token={token} previewClassName="w-20 h-20 rounded-lg object-cover border border-slate-200" />
+              <ImageUpload value={form.photo_identity_student || null} onChange={(url) => setForm((f) => ({ ...f, photo_identity_student: url }))} label={formHigherEd ? "Photo de l'étudiant" : "Photo de l'enfant"} token={token} previewClassName="w-20 h-20 rounded-lg object-cover border border-slate-200" />
               <ImageUpload value={form.photo_identity_mother || null} onChange={(url) => setForm((f) => ({ ...f, photo_identity_mother: url }))} label="Photo de la mère" token={token} previewClassName="w-20 h-20 rounded-lg object-cover border border-slate-200" />
               <ImageUpload value={form.photo_identity_father || null} onChange={(url) => setForm((f) => ({ ...f, photo_identity_father: url }))} label="Photo du père" token={token} previewClassName="w-20 h-20 rounded-lg object-cover border border-slate-200" />
               <ImageUpload value={form.photo_identity_responsible || null} onChange={(url) => setForm((f) => ({ ...f, photo_identity_responsible: url }))} label="Photo du responsable" token={token} previewClassName="w-20 h-20 rounded-lg object-cover border border-slate-200" />
@@ -530,7 +560,9 @@ export function DashboardStudentsPage() {
           <thead className="bg-slate-50 border-b border-[var(--app-border)]">
             <tr>
               <th className="px-4 py-3 font-medium text-slate-900">Code gestion</th>
-              <th className="px-4 py-3 font-medium text-slate-900">NISU (interne)</th>
+              {!listHigherEd && (
+                <th className="px-4 py-3 font-medium text-slate-900">NISU (interne)</th>
+              )}
               <th className="px-4 py-3 font-medium text-slate-900">Nom</th>
               <th className="px-4 py-3 font-medium text-slate-900">Classe</th>
               <th className="px-4 py-3 font-medium text-slate-900">Salle</th>
@@ -541,12 +573,14 @@ export function DashboardStudentsPage() {
           </thead>
           <tbody>
             {students.length === 0 ? (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-500">Aucun élève</td></tr>
+              <tr><td colSpan={listHigherEd ? 7 : 8} className="px-4 py-8 text-center text-slate-500">Aucun {listLearner}</td></tr>
             ) : (
               students.map((s) => (
                 <tr key={s.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
                   <td className="px-4 py-3 font-mono font-semibold text-slate-900">{s.management_code ?? "—"}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-500">{s.order_number ?? "—"}</td>
+                  {!listHigherEd && (
+                    <td className="px-4 py-3 font-mono text-xs text-slate-500">{s.order_number ?? "—"}</td>
+                  )}
                   <td className="px-4 py-3 font-medium text-slate-900">{s.first_name} {s.last_name}</td>
                   <td className="px-4 py-3 text-slate-600">{s.class_name}</td>
                   <td className="px-4 py-3 text-slate-600">{s.room_name ?? "—"}</td>

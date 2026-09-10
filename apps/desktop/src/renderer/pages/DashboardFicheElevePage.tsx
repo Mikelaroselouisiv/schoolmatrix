@@ -10,6 +10,7 @@ import { buildBadgesPdfBlob } from "@/lib/badgeProduction";
 import { formatDateJJMMAAAA } from "@/lib/format";
 import { formatPointsOnBareme, pointsToTen } from "@/lib/gradeScale";
 import type { PdfSection } from "@/lib/pdfExport";
+import { learnerNoun, learnerNounCap } from "@/lib/educationLevels";
 
 type Student = {
   id: string;
@@ -31,12 +32,13 @@ type Student = {
   responsible_phone: string | null;
   class_id: string;
   class_name: string;
+  class_level?: string | null;
   room_id?: string | null;
   room_name?: string | null;
   is_preschool?: boolean;
 };
 
-type ClassItem = { id: string; name: string };
+type ClassItem = { id: string; name: string; level?: string | null };
 
 type AcademicYear = { id: string; name: string };
 
@@ -492,13 +494,17 @@ export function DashboardFicheElevePage() {
     return sections;
   }, [scheduleSlots, examSchedules, extracurricularActivities]);
 
+  const ficheLevel =
+    student?.class_level || classes.find((c) => c.id === selectedClassId)?.level;
+  const ficheLearner = learnerNoun(ficheLevel);
+
   if (loading) {
     return <div className="animate-pulse text-slate-500 p-8">Chargement...</div>;
   }
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-slate-900">Fiche élève</h2>
+      <h2 className="text-2xl font-bold text-slate-900">Fiche {ficheLearner}</h2>
 
       {/* Sélecteur élève */}
       <div className="flex flex-wrap gap-4 items-end p-4 rounded-xl border border-[var(--app-border)] bg-white">
@@ -521,7 +527,7 @@ export function DashboardFicheElevePage() {
           </div>
         )}
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Élève</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">{learnerNounCap(ficheLevel)}</label>
           <select
             value={selectedStudentId}
             onChange={(e) => {
@@ -549,7 +555,7 @@ export function DashboardFicheElevePage() {
 
       {!student ? (
         <div className="p-12 rounded-xl border border-[var(--app-border)] bg-slate-50/50 text-center text-slate-500">
-          Sélectionnez une classe puis un élève pour afficher sa fiche.
+          Sélectionnez une classe puis un {ficheLearner} pour afficher sa fiche.
         </div>
       ) : (
         <>
@@ -604,7 +610,7 @@ export function DashboardFicheElevePage() {
                   to={`/dashboard/students?edit_id=${student.id}`}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--school-accent-1)] text-[var(--school-accent-1)] hover:bg-[var(--school-accent-1)]/10 font-medium text-sm transition-colors"
                 >
-                  Modifier l&apos;élève
+                  Modifier l&apos;{ficheLearner}
                 </Link>
               )}
             </div>

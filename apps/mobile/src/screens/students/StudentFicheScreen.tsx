@@ -45,6 +45,7 @@ import {
   readCachedStudentFiche,
 } from '../../lib/offlineCache';
 import { colors } from '../../theme/tokens';
+import { isHigherEducationLevel, learnerNoun } from '../../lib/educationLevels';
 import type { StudentsStackParamList } from '../../navigation/types';
 
 const DAYS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
@@ -79,9 +80,9 @@ export function StudentFicheScreen({ navigation, route }: Props) {
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      title: studentName || 'Fiche élève',
+      title: studentName || `Fiche ${learnerNoun(student?.class_level)}`,
     });
-  }, [navigation, studentName]);
+  }, [navigation, studentName, student?.class_level]);
 
   const load = useCallback(async () => {
     setError('');
@@ -203,7 +204,11 @@ export function StudentFicheScreen({ navigation, route }: Props) {
           )}
           <Text style={styles.name}>{studentDisplayName(student)}</Text>
           <Text style={styles.meta}>
-            {[student.order_number, student.class_name, student.room_name]
+            {[
+              isHigherEducationLevel(student.class_level) ? null : student.order_number,
+              student.class_name,
+              student.room_name,
+            ]
               .filter(Boolean)
               .join(' · ')}
           </Text>

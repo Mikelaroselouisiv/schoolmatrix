@@ -249,6 +249,35 @@ export function canSeeSensitiveDashboardStats(
 }
 
 /**
+ * Dossier scolaire complet (parcours multi-années, PDF unique) :
+ * direction, pédagogie, secrétariat — pas les enseignants, parents, économes.
+ */
+export function canSeeStudentDossierComplet(
+  roleName: string,
+  rolePermissions?: string[],
+): boolean {
+  if (rolePermissions?.includes("full_access")) return true;
+  const role = (roleName ?? "").toUpperCase().trim();
+  if (
+    isTeacherRole(role) ||
+    role === "PARENT" ||
+    role === "ECONOME" ||
+    role === "COMPTABLE" ||
+    role === "DISCIPLINE" ||
+    role === "SURVEILLANT_GENERAL" ||
+    role === "PHOTOGRAPHER"
+  ) {
+    return false;
+  }
+  if (ROLES_FULL.includes(role)) return true;
+  if (ROLES_PEDAGOGIQUE.includes(role) || ROLES_SECRETAIRE.includes(role)) return true;
+  return (
+    !!rolePermissions?.includes("students") ||
+    !!rolePermissions?.includes("formation-classe")
+  );
+}
+
+/**
  * Rôles "moniteur" : uniquement le tableau de bord avec bloc Profil / Moniteur
  * (pas d’accès aux menus de gestion : classes, élèves, professeurs, etc.).
  * Enseignant et Parent voient seulement cette vue.

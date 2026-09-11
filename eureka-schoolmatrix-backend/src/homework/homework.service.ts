@@ -98,7 +98,7 @@ export class HomeworkService {
     }
     const students = classId
       ? await this.studentRepo.find({
-          where: { class: { id: classId } },
+          where: { class: { id: classId }, active: true },
           order: { last_name: 'ASC', first_name: 'ASC' },
         })
       : [];

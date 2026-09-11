@@ -6,6 +6,7 @@ import { Grade } from './grade.entity';
 import { Student } from '../students/student.entity';
 import { ScheduleSlot } from '../teachers/schedule-slot.entity';
 import { Period } from '../period/period.entity';
+import { StudentClassAssignment } from '../formation-classe/student-class-assignment.entity';
 import { DEFAULT_BAREME, resolveBareme } from './grade-scale';
 
 @Injectable()
@@ -21,6 +22,8 @@ export class GradesService {
     private readonly scheduleSlotRepo: Repository<ScheduleSlot>,
     @InjectRepository(Period)
     private readonly periodRepo: Repository<Period>,
+    @InjectRepository(StudentClassAssignment)
+    private readonly assignmentRepo: Repository<StudentClassAssignment>,
   ) {}
 
   async getTeacherForClassSubject(classId: string, subjectId: string): Promise<{ id: number; name: string } | null> {
@@ -106,7 +109,7 @@ export class GradesService {
     period_id: string;
   }): Promise<any> {
     const students = await this.studentRepo.find({
-      where: { class: { id: params.class_id } },
+      where: { class: { id: params.class_id }, active: true },
       relations: ['class'],
       order: { last_name: 'ASC', first_name: 'ASC' },
     });
@@ -268,13 +271,24 @@ export class GradesService {
     }));
   }
 
-  async getStudentExamResults(studentId: string, academicYearId: string): Promise<any> {
+  async getStudentExamResults(
+    studentId: string,
+    academicYearId: string,
+    classIdOverride?: string | null,
+  ): Promise<any> {
     const student = await this.studentRepo.findOne({
       where: { id: studentId },
       relations: ['class'],
     });
     if (!student) throw new NotFoundException('Student not found');
-    const classId = student.class?.id;
+    let classId = classIdOverride || undefined;
+    if (!classId) {
+      const assignment = await this.assignmentRepo.findOne({
+        where: { student: { id: studentId }, academic_year: { id: academicYearId } },
+        relations: ['class'],
+      });
+      classId = assignment?.class?.id ?? student.class?.id;
+    }
     if (!classId) return { periods: [], subjects: [], academic_year_name: null };
 
     const [periods, coefficients, grades] = await Promise.all([

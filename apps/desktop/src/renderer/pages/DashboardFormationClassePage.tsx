@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { Link } from "react-router-dom";
 import { API_BASE, fetchWithAuth } from "@/services/api";
 import { useSchoolProfile } from "@/context/SchoolProfileContext";
 import { ExportPdfButton } from "@/components/ExportPdfButton";
@@ -116,6 +117,8 @@ export function DashboardFormationClassePage() {
   const [savingDecisionId, setSavingDecisionId] = useState<string | null>(null);
   const [savingRoomStudentId, setSavingRoomStudentId] = useState<string | null>(null);
   const [savingClassStudentId, setSavingClassStudentId] = useState<string | null>(null);
+  const [savingNameId, setSavingNameId] = useState<string | null>(null);
+  const [archivingId, setArchivingId] = useState<string | null>(null);
   const [computingDecisions, setComputingDecisions] = useState(false);
   const [showLaunchConfirm, setShowLaunchConfirm] = useState(false);
   const [launchAck, setLaunchAck] = useState(false);
@@ -139,11 +142,13 @@ export function DashboardFormationClassePage() {
 
   const classGroups = useMemo(() => {
     const known = new Set(EDUCATION_LEVELS.map((l) => l.key as string));
-    const groups = EDUCATION_LEVELS.map((level) => ({
-      key: level.key,
-      label: level.label,
-      classes: classes.filter((c) => c.level === level.key),
-    })).filter((g) => g.classes.length > 0);
+    const groups: { key: string; label: string; classes: ClassItem[] }[] = EDUCATION_LEVELS.map(
+      (level) => ({
+        key: level.key,
+        label: level.label,
+        classes: classes.filter((c) => c.level === level.key),
+      }),
+    ).filter((g) => g.classes.length > 0);
     const other = classes.filter((c) => !c.level || !known.has(c.level));
     if (other.length) {
       groups.push({ key: "AUTRE", label: "Autres classes", classes: other });
@@ -352,6 +357,58 @@ export function DashboardFormationClassePage() {
     }
   }
 
+  async function handleSaveName(
+    student: StudentInClass,
+    patch: { first_name?: string; last_name?: string },
+  ) {
+    const first_name = (patch.first_name ?? student.first_name).trim();
+    const last_name = (patch.last_name ?? student.last_name).trim();
+    if (!first_name || !last_name) return;
+    if (first_name === student.first_name && last_name === student.last_name) return;
+    setSavingNameId(student.id);
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/students/${student.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ first_name, last_name }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      setClassStudents((list) =>
+        list.map((s) => (s.id === student.id ? { ...s, first_name, last_name } : s)),
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setSavingNameId(null);
+    }
+  }
+
+  async function handleArchiveStudent(student: StudentInClass) {
+    const ok = window.confirm(
+      `Retirer ${student.first_name} ${student.last_name} de la classe ?\n\nL’élève ne sera plus inscrit cette année. Son dossier restera consultable dans Fiche élève → Anciens élèves.`,
+    );
+    if (!ok) return;
+    setArchivingId(student.id);
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/students/${student.id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data as { message?: string }).message || "Erreur");
+      const remaining = classStudents.filter((s) => s.id !== student.id);
+      setClassStudents(remaining);
+      const stillHere =
+        openRoomId === UNASSIGNED_ROOM_ID
+          ? remaining.filter((s) => !s.room_id)
+          : remaining.filter((s) => s.room_id === openRoomId);
+      if (openRoomId && stillHere.length === 0) setOpenRoomId(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setArchivingId(null);
+    }
+  }
+
   async function handleLaunchNextYear() {
     if (!selectedYearId || !launchAck) return;
     setLaunching(true);
@@ -365,7 +422,7 @@ export function DashboardFormationClassePage() {
       if (!res.ok) throw new Error(data.message || "Erreur");
       const next = data.next_year as { id: string; name: string } | undefined;
       setLaunchResult(
-        `Année ${next?.name ?? "suivante"} lancée : ${data.created ?? 0} inscriptions, ${data.promoted ?? 0} promotions, ${data.skipped ?? 0} exclus non inscrits, ${data.periods_copied ?? 0} périodes et ${data.slots_copied ?? 0} créneaux copiés.`,
+        `Année ${next?.name ?? "suivante"} lancée : ${data.created ?? 0} inscriptions, ${data.promoted ?? 0} promotions, ${data.graduated ?? 0} anciens élèves (fin de cycle), ${data.skipped ?? 0} exclus archivés, ${data.periods_copied ?? 0} périodes et ${data.slots_copied ?? 0} créneaux copiés.`,
       );
       setShowLaunchConfirm(false);
       setLaunchAck(false);
@@ -395,7 +452,7 @@ export function DashboardFormationClassePage() {
   }
 
   function studentTable(list: StudentInClass[]) {
-    const colSpan = isCurrentYearTab ? 5 : 7;
+    const colSpan = (isCurrentYearTab ? 5 : 7) + 1;
     return (
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
@@ -412,6 +469,7 @@ export function DashboardFormationClassePage() {
                   <th className="px-4 py-3 font-medium text-slate-900">Décision</th>
                 </>
               )}
+              <th className="px-4 py-3 font-medium text-slate-900">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -430,8 +488,26 @@ export function DashboardFormationClassePage() {
                   <td className="px-4 py-3 font-mono font-semibold text-slate-900">
                     {schoolCode(s)}
                   </td>
-                  <td className="px-4 py-3 font-medium text-slate-900">{s.last_name}</td>
-                  <td className="px-4 py-3 text-slate-600">{s.first_name}</td>
+                  <td className="px-4 py-3 font-medium text-slate-900">
+                    <input
+                      defaultValue={s.last_name}
+                      key={`ln-${s.id}-${s.last_name}`}
+                      disabled={savingNameId === s.id}
+                      onBlur={(e) => void handleSaveName(s, { last_name: e.target.value })}
+                      className="w-full min-w-[100px] border border-[var(--app-border)] rounded px-2 py-1.5 text-sm"
+                      aria-label="Nom"
+                    />
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    <input
+                      defaultValue={s.first_name}
+                      key={`fn-${s.id}-${s.first_name}`}
+                      disabled={savingNameId === s.id}
+                      onBlur={(e) => void handleSaveName(s, { first_name: e.target.value })}
+                      className="w-full min-w-[100px] border border-[var(--app-border)] rounded px-2 py-1.5 text-sm"
+                      aria-label="Prénom"
+                    />
+                  </td>
                   <td className="px-4 py-3">
                     {classes.length === 0 || !openClass ? (
                       <span className="text-slate-600">{openClass?.name ?? "—"}</span>
@@ -507,6 +583,24 @@ export function DashboardFormationClassePage() {
                       </td>
                     </>
                   )}
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Link
+                        to={`/dashboard/fiche-eleve?student_id=${s.id}`}
+                        className="text-sm font-medium text-[var(--school-accent-1)] hover:underline"
+                      >
+                        Dossier
+                      </Link>
+                      <button
+                        type="button"
+                        disabled={archivingId === s.id}
+                        onClick={() => void handleArchiveStudent(s)}
+                        className="text-sm font-medium text-red-700 hover:underline disabled:opacity-50"
+                      >
+                        {archivingId === s.id ? "Retrait..." : "Supprimer"}
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))
             )}
@@ -828,7 +922,8 @@ export function DashboardFormationClassePage() {
               <li>Les décisions sont recalculées selon les moyennes (sauf préscolaire).</li>
               <li>L’année, les périodes et les horaires (mêmes professeurs) sont recopiés.</li>
               <li>Les élèves admis passent à la classe suivante ; les autres redoublent.</li>
-              <li>Les élèves renvoyés ne sont pas inscrits.</li>
+              <li>Les élèves en dernière classe de secondaire (ou supérieur) admis deviennent anciens élèves — leur dossier reste consultable.</li>
+              <li>Les élèves renvoyés sont archivés (dossier conservé), pas inscrits l’année suivante.</li>
               <li>Vous pourrez ensuite faire de petites corrections à la main.</li>
             </ul>
             <label className="mt-4 flex items-start gap-2 text-sm text-slate-800">

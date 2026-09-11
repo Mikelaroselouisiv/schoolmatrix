@@ -33,6 +33,8 @@ import {
   getScheduleSlots,
   getStudent,
   getStudentHomework,
+  listScheduleMoments,
+  listSchoolWeekDuties,
   type DisciplineSummary,
   type ExamResults,
   type HomeworkAssignment,
@@ -102,7 +104,44 @@ export function StudentFicheScreen({ navigation, route }: Props) {
       setPayment(p);
       setGrades(g);
       if (s?.class_id) {
-        setSchedule(await getScheduleSlots(s.class_id));
+        const [slots, moments, duties] = await Promise.all([
+          getScheduleSlots(s.class_id),
+          listScheduleMoments({
+            class_id: s.class_id,
+            academic_year: yearName || undefined,
+          }),
+          listSchoolWeekDuties({
+            academic_year: yearName || undefined,
+            kind: 'DEVOTION',
+          }),
+        ]);
+        const extra: ScheduleSlot[] = [
+          ...duties.map((d) => ({
+            id: `duty:${d.id}`,
+            subject_name: d.title,
+            teacher_name: d.responsible_name,
+            day_of_week: d.day_of_week,
+            start_time: d.start_time,
+            end_time: d.end_time,
+            kind: d.kind,
+          })),
+          ...moments.map((m) => ({
+            id: `moment:${m.id}`,
+            subject_name: m.title,
+            day_of_week: m.day_of_week,
+            start_time: m.start_time,
+            end_time: m.end_time,
+            class_name: m.class_name ?? undefined,
+            kind: m.kind,
+          })),
+          ...slots,
+        ];
+        extra.sort(
+          (a, b) =>
+            (a.day_of_week ?? 0) - (b.day_of_week ?? 0) ||
+            String(a.start_time).localeCompare(String(b.start_time)),
+        );
+        setSchedule(extra);
       } else {
         setSchedule([]);
       }

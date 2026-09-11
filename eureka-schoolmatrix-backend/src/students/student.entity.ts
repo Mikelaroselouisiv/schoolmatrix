@@ -95,6 +95,14 @@ export class Student {
   @Column({ default: true })
   active: boolean;
 
+  /** Date d’archivage : l’élève n’est plus affecté à l’année en cours, le dossier reste. */
+  @Column({ type: 'timestamp', nullable: true })
+  archived_at: Date | null;
+
+  /** REMOVED = retiré d’une classe ; GRADUATED = fin de cycle (secondaire / supérieur). */
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  archive_reason: 'REMOVED' | 'GRADUATED' | null;
+
   @CreateDateColumn()
   created_at: Date;
 

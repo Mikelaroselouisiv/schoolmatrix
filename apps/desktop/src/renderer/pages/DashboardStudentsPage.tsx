@@ -238,7 +238,7 @@ export function DashboardStudentsPage() {
 
   async function handleDelete(id: string) {
     const target = students.find((s) => s.id === id);
-    if (!confirm(`Supprimer cet ${learnerNoun(target?.class_level)} ?`)) return;
+    if (!confirm(`Retirer cet ${learnerNoun(target?.class_level)} de l’année en cours ? Son dossier restera consultable dans Fiche élève → Anciens élèves.`)) return;
     setError("");
     try {
       const res = await fetchWithAuth(`${API_BASE}/students/${id}`, { method: "DELETE" });

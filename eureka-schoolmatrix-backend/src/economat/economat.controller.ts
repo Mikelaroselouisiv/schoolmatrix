@@ -170,8 +170,13 @@ export class EconomatController {
   async getStudentPaymentStatus(
     @Param('studentId') studentId: string,
     @Query('academic_year') academicYear?: string,
+    @Query('class_id') classId?: string,
   ) {
-    const status = await this.economatService.getStudentPaymentStatus(studentId, academicYear);
+    const status = await this.economatService.getStudentPaymentStatus(
+      studentId,
+      academicYear,
+      classId,
+    );
     return { ok: true, ...status };
   }
 

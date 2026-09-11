@@ -12,6 +12,8 @@ import { resolveBareme } from '../grades/grade-scale';
 import { DisciplinaryMeasure } from '../discipline/disciplinary-measure.entity';
 import { Period } from '../period/period.entity';
 import { ScheduleSlot } from '../teachers/schedule-slot.entity';
+import { ClassDayMoment } from '../teachers/class-day-moment.entity';
+import { SchoolWeekDuty } from '../teachers/school-week-duty.entity';
 import { Room } from '../rooms/room.entity';
 import { SchoolProfile } from '../school-profile/school-profile.entity';
 import { isPreschoolClass } from '../utils/preschool';
@@ -47,6 +49,10 @@ export class FormationClasseService {
     private readonly periodRepo: Repository<Period>,
     @InjectRepository(ScheduleSlot)
     private readonly scheduleSlotRepo: Repository<ScheduleSlot>,
+    @InjectRepository(ClassDayMoment)
+    private readonly classDayMomentRepo: Repository<ClassDayMoment>,
+    @InjectRepository(SchoolWeekDuty)
+    private readonly schoolWeekDutyRepo: Repository<SchoolWeekDuty>,
     @InjectRepository(Room)
     private readonly roomRepo: Repository<Room>,
     @InjectRepository(SchoolProfile)
@@ -62,7 +68,9 @@ export class FormationClasseService {
       relations: ['student', 'class', 'academic_year'],
       order: { student: { last_name: 'ASC', first_name: 'ASC' } as any },
     });
-    return assignments.map((a) => ({
+    return assignments
+      .filter((a) => a.student && a.student.active !== false && !(a.student as Student).archived_at)
+      .map((a) => ({
       id: a.student?.id,
       first_name: a.student?.first_name,
       last_name: a.student?.last_name,
@@ -85,7 +93,9 @@ export class FormationClasseService {
       order: { student: { last_name: 'ASC', first_name: 'ASC' } as any },
     });
     if (assignments.length > 0) {
-      return assignments.map((a) => ({
+      return assignments
+        .filter((a) => a.student && a.student.active !== false && !a.student.archived_at)
+        .map((a) => ({
         id: a.student?.id,
         first_name: a.student?.first_name,
         last_name: a.student?.last_name,
@@ -100,7 +110,7 @@ export class FormationClasseService {
     }
     // Fallback: étudiants avec class_id actuel (pour première année ou compatibilité)
     const students = await this.studentRepo.find({
-      where: { class: { id: classId } },
+      where: { class: { id: classId }, active: true },
       relations: ['class', 'room'],
       order: { last_name: 'ASC', first_name: 'ASC' },
     });
@@ -332,7 +342,7 @@ export class FormationClasseService {
   async runFormationForNextYear(
     currentYearId: string,
     nextYearId: string,
-  ): Promise<{ created: number; promoted: number; skipped: number }> {
+  ): Promise<{ created: number; promoted: number; skipped: number; graduated: number }> {
     const currentYear = await this.academicYearRepo.findOne({ where: { id: currentYearId } });
     const nextYear = await this.academicYearRepo.findOne({ where: { id: nextYearId } });
     if (!currentYear || !nextYear) throw new BadRequestException('Année académique introuvable');
@@ -343,6 +353,7 @@ export class FormationClasseService {
     let created = 0;
     let promoted = 0;
     let skipped = 0;
+    let graduated = 0;
 
     const expelled = new Set([
       DECISION_RENVOYE_DEFINITIVEMENT,
@@ -359,8 +370,10 @@ export class FormationClasseService {
       const student = a.student;
       const sid = student?.id;
       if (!sid) continue;
+      if (student.active === false || student.archived_at) continue;
 
       if (a.decision && expelled.has(a.decision)) {
+        await this.markStudentAlumni(sid, 'REMOVED');
         skipped++;
         continue;
       }
@@ -373,7 +386,13 @@ export class FormationClasseService {
       const promotes = [DECISION_ADMIS, DECISION_ADMIS_AILLEURS];
       let nextClass = a.class;
       if (a.decision && promotes.includes(a.decision)) {
-        nextClass = this.findNextLevelClass(a.class, classes) ?? a.class;
+        const found = this.findNextLevelClass(a.class, classes);
+        if (!found && this.isGraduationClass(a.class, classes)) {
+          await this.markStudentAlumni(sid, 'GRADUATED');
+          graduated++;
+          continue;
+        }
+        nextClass = found ?? a.class;
         promoted++;
       }
       const nextClassId = nextClass?.id;
@@ -402,7 +421,7 @@ export class FormationClasseService {
       }
     }
 
-    return { created, promoted, skipped };
+    return { created, promoted, skipped, graduated };
   }
 
   /**
@@ -414,9 +433,12 @@ export class FormationClasseService {
     decisions_updated: number;
     periods_copied: number;
     slots_copied: number;
+    moments_copied: number;
+    duties_copied: number;
     created: number;
     promoted: number;
     skipped: number;
+    graduated: number;
   }> {
     const currentYear = await this.academicYearRepo.findOne({
       where: { id: currentYearId },
@@ -496,6 +518,57 @@ export class FormationClasseService {
       }
     }
 
+    const currentMoments = await this.classDayMomentRepo.find({
+      where: { academic_year: currentYear.name },
+      relations: ['class'],
+    });
+    const existingMoments = await this.classDayMomentRepo.find({
+      where: { academic_year: nextYear.name },
+    });
+    let momentsCopied = 0;
+    if (existingMoments.length === 0) {
+      for (const m of currentMoments) {
+        const classId = m.class?.id ?? m.class_id;
+        if (!classId) continue;
+        await this.classDayMomentRepo.save(
+          this.classDayMomentRepo.create({
+            academic_year: nextYear.name,
+            class: { id: classId },
+            class_id: classId,
+            kind: m.kind,
+            day_of_week: m.day_of_week,
+            start_time: m.start_time,
+            end_time: m.end_time,
+            label: m.label,
+          }),
+        );
+        momentsCopied++;
+      }
+    }
+
+    const currentDuties = await this.schoolWeekDutyRepo.find({
+      where: { academic_year: currentYear.name },
+    });
+    const existingDuties = await this.schoolWeekDutyRepo.find({
+      where: { academic_year: nextYear.name },
+    });
+    let dutiesCopied = 0;
+    if (existingDuties.length === 0) {
+      for (const d of currentDuties) {
+        await this.schoolWeekDutyRepo.save(
+          this.schoolWeekDutyRepo.create({
+            academic_year: nextYear.name,
+            kind: d.kind,
+            day_of_week: d.day_of_week,
+            start_time: d.start_time,
+            end_time: d.end_time,
+            responsible_user_id: d.responsible_user_id,
+          }),
+        );
+        dutiesCopied++;
+      }
+    }
+
     const currentThresholds = await this.thresholdRepo.find({
       where: { academic_year: { id: currentYearId } },
       relations: ['class'],
@@ -537,10 +610,52 @@ export class FormationClasseService {
       decisions_updated: decisionsUpdated,
       periods_copied: periodsCopied,
       slots_copied: slotsCopied,
+      moments_copied: momentsCopied,
+      duties_copied: dutiesCopied,
       created: formation.created,
       promoted: formation.promoted,
       skipped: formation.skipped,
+      graduated: formation.graduated,
     };
+  }
+
+  /**
+   * Dernière classe du secondaire / supérieur : Philo, Terminale, NS4,
+   * ou plus haut numéro du cycle s’il n’existe pas de classe suivante.
+   */
+  private isGraduationClass(current: Class | undefined, classes: Class[]): boolean {
+    if (!current) return false;
+    const level = (current.level ?? '').toUpperCase();
+    if (level !== 'SECONDAIRE' && level !== 'FORMATION_SUPERIEURE') return false;
+    const same = classes.filter((c) => (c.level ?? '').toUpperCase() === level);
+    if (this.findNextLevelClass(current, same)) return false;
+    const name = current.name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '');
+    if (/(^|[^a-z])philo|terminale|ns[\s-]*4/.test(name)) return true;
+    const compact = current.name.replace(/\s+/g, '');
+    const match = compact.match(/^(\d+)/);
+    if (!match) return false;
+    const n = parseInt(match[1], 10);
+    const hasHigher = same.some((c) => {
+      const m = c.name.replace(/\s+/g, '').match(/^(\d+)/);
+      return !!m && parseInt(m[1], 10) > n;
+    });
+    return !hasHigher;
+  }
+
+  private async markStudentAlumni(
+    studentId: string,
+    reason: 'REMOVED' | 'GRADUATED',
+  ): Promise<void> {
+    const st = await this.studentRepo.findOne({ where: { id: studentId } });
+    if (!st || st.archived_at) return;
+    st.active = false;
+    st.archived_at = new Date();
+    st.archive_reason = reason;
+    st.room = null;
+    await this.studentRepo.save(st);
   }
 
   private findNextLevelClass(current: Class, classes: Class[]): Class | null {

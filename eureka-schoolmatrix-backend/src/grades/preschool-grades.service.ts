@@ -33,7 +33,7 @@ export class PreschoolGradesService {
     period_id: string;
   }): Promise<any> {
     const students = await this.studentRepo.find({
-      where: { class: { id: params.class_id } },
+      where: { class: { id: params.class_id }, active: true },
       relations: ['class'],
       order: { last_name: 'ASC', first_name: 'ASC' },
     });

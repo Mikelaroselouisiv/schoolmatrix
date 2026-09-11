@@ -5,14 +5,16 @@ import { Student } from './student.entity';
 import { Class } from '../classes/class.entity';
 import { Room } from '../rooms/room.entity';
 import { FormationClasseService } from '../formation-classe/formation-classe.service';
+import { StudentClassAssignment } from '../formation-classe/student-class-assignment.entity';
+import { SchoolProfile } from '../school-profile/school-profile.entity';
 import { ClassesService } from '../classes/classes.service';
 import { RoomsService } from '../rooms/rooms.service';
 import { StudentAiImportService } from './student-ai-import.service';
 import { isPostgresUniqueViolation, normalizeNisu } from './student-nisu';
-import { SyncService } from '../sync/sync.service';
 import { SyncKickService } from '../sync/sync-kick.service';
 import { ParentAccountService } from '../users/parent-account.service';
 import { isHigherEducationLevel } from '../roles/education-levels';
+import type { ArchiveReason } from './student.serialize';
 
 export type ImportResult = {
   created: number;
@@ -32,14 +34,18 @@ export class StudentsService {
     private readonly classesService: ClassesService,
     private readonly roomsService: RoomsService,
     private readonly studentAiImport: StudentAiImportService,
-    private readonly syncService: SyncService,
     private readonly syncKick: SyncKickService,
     private readonly parentAccounts: ParentAccountService,
+    @InjectRepository(StudentClassAssignment)
+    private readonly assignmentRepo: Repository<StudentClassAssignment>,
+    @InjectRepository(SchoolProfile)
+    private readonly schoolProfileRepo: Repository<SchoolProfile>,
   ) {}
 
   async findAll(filters?: {
     classId?: string;
     roomId?: string;
+    status?: 'active' | 'alumni' | 'all';
   }): Promise<Student[]> {
     const qb = this.studentRepo
       .createQueryBuilder('s')
@@ -49,12 +55,57 @@ export class StudentsService {
       .addOrderBy('r.name', 'ASC')
       .addOrderBy('s.last_name', 'ASC')
       .addOrderBy('s.first_name', 'ASC');
+    const status = filters?.status ?? 'active';
+    if (status === 'active') {
+      qb.andWhere('s.active = true').andWhere('s.archived_at IS NULL');
+    } else if (status === 'alumni') {
+      qb.andWhere('(s.active = false OR s.archived_at IS NOT NULL)');
+    }
     if (filters?.classId) {
       qb.andWhere('s.class_id = :classId', { classId: filters.classId });
     }
     if (filters?.roomId) {
       qb.andWhere('s.room_id = :roomId', { roomId: filters.roomId });
     }
+    return qb.getMany();
+  }
+
+  /**
+   * Recherche progressive (limite basse). Sans requête, rien n’est renvoyé.
+   */
+  async search(params: {
+    q?: string;
+    status?: 'active' | 'alumni' | 'all';
+    limit?: number;
+  }): Promise<Student[]> {
+    const q = (params.q ?? '').trim();
+    if (q.length < 2) return [];
+    const status = params.status ?? 'active';
+    const limit = Math.min(Math.max(Number(params.limit) || 20, 1), 50);
+    const qb = this.studentRepo
+      .createQueryBuilder('s')
+      .leftJoinAndSelect('s.class', 'c')
+      .leftJoinAndSelect('s.room', 'r')
+      .orderBy('s.last_name', 'ASC')
+      .addOrderBy('s.first_name', 'ASC')
+      .take(limit);
+
+    if (status === 'active') {
+      qb.andWhere('s.active = true').andWhere('s.archived_at IS NULL');
+    } else if (status === 'alumni') {
+      qb.andWhere('(s.active = false OR s.archived_at IS NOT NULL)');
+    }
+
+    qb.andWhere(
+      `(LOWER(s.first_name) LIKE LOWER(:q)
+        OR LOWER(s.last_name) LIKE LOWER(:q)
+        OR LOWER(COALESCE(s.management_code, '')) LIKE LOWER(:q)
+        OR LOWER(COALESCE(s.order_number, '')) LIKE LOWER(:q)
+        OR LOWER(s.last_name || ' ' || s.first_name) LIKE LOWER(:q)
+        OR LOWER(s.first_name || ' ' || s.last_name) LIKE LOWER(:q))`,
+      { q: `%${q}%` },
+    );
+
     return qb.getMany();
   }
 
@@ -364,17 +415,34 @@ export class StudentsService {
     });
   }
 
-  async delete(id: string): Promise<void> {
-    const student = await this.studentRepo.findOne({ where: { id } });
-    if (!student) {
-      throw new NotFoundException('Student not found');
+  /**
+   * Retire l’élève de l’année en cours. Le dossier (notes, paiements, parcours) reste.
+   * Ne jamais hard-delete : un élève « supprimé » devient un ancien élève.
+   */
+  async archive(id: string, reason: ArchiveReason = 'REMOVED'): Promise<Student> {
+    const student = await this.findOne(id);
+    if (student.archived_at) return student;
+    student.active = false;
+    student.archived_at = new Date();
+    student.archive_reason = reason;
+    student.room = null;
+    await this.studentRepo.save(student);
+
+    const profiles = await this.schoolProfileRepo.find({ take: 1 });
+    const yearId = profiles[0]?.current_academic_year_id;
+    if (yearId) {
+      await this.assignmentRepo.delete({
+        student: { id },
+        academic_year: { id: yearId },
+      });
     }
-    // Parents sans autre enfant → supprimer avant le CASCADE des liens.
-    await this.parentAccounts.deleteOrphanParentsForStudent(id);
-    // Tombstone explicite avant hard delete (subscriber ORM en filet de sécurité).
-    await this.syncService.markDeleted('Student', id, undefined, { kick: false });
-    await this.studentRepo.remove(student);
-    this.syncKick.kick('student-delete');
+    this.syncKick.kick('student-archive');
+    return this.findOne(id);
+  }
+
+  /** Conservé pour l’API DELETE : archive, ne détruit pas le dossier. */
+  async delete(id: string): Promise<Student> {
+    return this.archive(id, 'REMOVED');
   }
 
   /** Import en masse depuis un CSV (UTF-8, séparateur ;). Première ligne = en-têtes. */

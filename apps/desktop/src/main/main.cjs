@@ -10,6 +10,7 @@ const { getAppEdition } = require('./edition.cjs');
 const { PUBLIC_API_BASE_URL, LOCAL_API_BASE_URL } = require('./update-feed.cjs');
 const { ensureServerStack } = require('./server-bootstrap.cjs');
 const { initUpdater } = require('./updater.cjs');
+const { restoreKeyboardFocus, registerKeyboardFocusIpc } = require('./keyboard-focus.cjs');
 
 const edition = getAppEdition();
 const apiBase =
@@ -67,6 +68,15 @@ function createWindow() {
   });
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.on('focus', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      try {
+        mainWindow.webContents.focus();
+      } catch {
+        /* ignore */
+      }
+    }
+  });
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -108,6 +118,7 @@ ipcMain.on('app:get-edition-sync', (event) => {
 ipcMain.on('app:get-api-base-sync', (event) => {
   event.returnValue = apiBase;
 });
+registerKeyboardFocusIpc(ipcMain, BrowserWindow, dialog);
 
 /** Fetch binaire hors renderer (pas de CORS) — logos / photos badges PDF. */
 ipcMain.handle('app:fetch-media', async (_event, url) => {
@@ -147,11 +158,12 @@ async function boot() {
   if (edition === 'server' && !isDev) {
     const stack = await ensureServerStack();
     if (!stack.ok && mainWindow) {
-      dialog.showMessageBox(mainWindow, {
+      await dialog.showMessageBox(mainWindow, {
         type: 'warning',
         title: 'API locale',
         message: stack.message || 'Impossible de démarrer la stack Server.',
       });
+      restoreKeyboardFocus(mainWindow);
     }
   }
 

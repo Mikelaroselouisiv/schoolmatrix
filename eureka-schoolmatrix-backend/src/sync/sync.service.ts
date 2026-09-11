@@ -871,27 +871,31 @@ export class SyncService implements OnModuleInit {
 
     if (APPEND_ONLY_ENTITIES.has(entityName)) {
       if (existing) return 'skipped';
-      await this.persist(
+      const wrote = await this.persistSyncedRow(
+        entityName,
         repo,
         meta,
         primaryId,
         record.data,
         record.updatedAt,
         timeField,
+        sourceNodeId,
       );
-      return 'created';
+      return wrote === 'skipped' ? 'skipped' : 'created';
     }
 
     if (!existing) {
-      await this.persist(
+      const wrote = await this.persistSyncedRow(
+        entityName,
         repo,
         meta,
         primaryId,
         record.data,
         record.updatedAt,
         timeField,
+        sourceNodeId,
       );
-      return 'created';
+      return wrote === 'skipped' ? 'skipped' : 'created';
     }
 
     const existingAt = this.parseTime(existing[timeField]);
@@ -908,15 +912,17 @@ export class SyncService implements OnModuleInit {
       );
     }
 
-    await this.persist(
+    const wrote = await this.persistSyncedRow(
+      entityName,
       repo,
       meta,
       primaryId,
       data,
       record.updatedAt,
       timeField,
+      sourceNodeId,
     );
-    return 'updated';
+    return wrote === 'skipped' ? 'skipped' : 'updated';
   }
 
   private coercePrimaryId(meta: EntityMetadata, uuid: string): string | number {
@@ -1043,6 +1049,22 @@ export class SyncService implements OnModuleInit {
     const payload: Record<string, unknown> = { id: primaryId };
     normalizeMediaFieldsInPlace(incoming);
 
+    for (const rel of meta.relations) {
+      if (!(rel.isManyToOne || (rel.isOneToOne && rel.isOwning))) continue;
+      const prop = rel.propertyName;
+      if (Object.prototype.hasOwnProperty.call(incoming, prop)) continue;
+      const joinProp = rel.joinColumns?.[0]?.propertyName;
+      const joinDb = rel.joinColumns?.[0]?.databaseName;
+      if (joinProp && Object.prototype.hasOwnProperty.call(incoming, joinProp)) {
+        incoming = { ...incoming, [prop]: incoming[joinProp] };
+      } else if (
+        joinDb &&
+        Object.prototype.hasOwnProperty.call(incoming, joinDb)
+      ) {
+        incoming = { ...incoming, [prop]: incoming[joinDb] };
+      }
+    }
+
     for (const col of meta.columns) {
       if (col.relationMetadata) continue;
       const prop = col.propertyName;
@@ -1128,6 +1150,90 @@ export class SyncService implements OnModuleInit {
     if (rel.isNullable === true) return true;
     if (rel.isNullable === false) return false;
     return rel.joinColumns?.some((c) => c.isNullable) ?? false;
+  }
+
+  /**
+   * persist + fusion de la clé naturelle school_week_duty
+   * (une dévotion par année / jour : éviter 23505 et un curseur qui saute).
+   */
+  private async persistSyncedRow(
+    entityName: SyncEntityName,
+    repo: Repository<any>,
+    meta: EntityMetadata,
+    primaryId: string | number,
+    data: Record<string, unknown>,
+    updatedAt: string | undefined,
+    timeField: 'updated_at' | 'created_at',
+    sourceNodeId?: string,
+  ): Promise<'ok' | 'skipped'> {
+    try {
+      await this.persist(repo, meta, primaryId, data, updatedAt, timeField);
+      return 'ok';
+    } catch (err) {
+      if (entityName === 'SchoolWeekDuty' && this.isUniqueViolation(err)) {
+        return this.reconcileSchoolWeekDutyUnique(
+          repo,
+          meta,
+          primaryId,
+          data,
+          updatedAt,
+          timeField,
+          sourceNodeId,
+        );
+      }
+      throw err;
+    }
+  }
+
+  private isUniqueViolation(err: unknown): boolean {
+    const e = err as { code?: string; driverError?: { code?: string } };
+    return e?.code === '23505' || e?.driverError?.code === '23505';
+  }
+
+  /**
+   * Même (année, type, jour) déjà présent sous un autre UUID.
+   * LWW : le gagnant garde son id, le perdant est tombstoné.
+   */
+  private async reconcileSchoolWeekDutyUnique(
+    repo: Repository<any>,
+    meta: EntityMetadata,
+    primaryId: string | number,
+    data: Record<string, unknown>,
+    updatedAt: string | undefined,
+    timeField: 'updated_at' | 'created_at',
+    sourceNodeId?: string,
+  ): Promise<'ok' | 'skipped'> {
+    const academic_year = String(data.academic_year ?? '').trim();
+    const kind = String(data.kind ?? 'DEVOTION').trim();
+    const day_of_week = Number(data.day_of_week);
+    if (!academic_year || !Number.isInteger(day_of_week)) {
+      throw new BadRequestException(
+        'school_week_duty: clé naturelle incomplète (unique)',
+      );
+    }
+    const other = await repo.findOne({
+      where: { academic_year, kind, day_of_week } as any,
+    });
+    if (!other || String(other.id) === String(primaryId)) {
+      throw new BadRequestException(
+        'school_week_duty: conflit unique sans ligne existante',
+      );
+    }
+    const incomingAt = this.parseTime(updatedAt);
+    const otherAt = this.parseTime(other[timeField]);
+    if (!this.shouldApply(incomingAt, otherAt, sourceNodeId)) {
+      await this.markDeleted('SchoolWeekDuty', primaryId);
+      return 'skipped';
+    }
+    await this.markDeleted('SchoolWeekDuty', other.id);
+    this.applyingRemoteTombstone += 1;
+    try {
+      await repo.delete(other.id);
+    } finally {
+      this.applyingRemoteTombstone -= 1;
+    }
+    await this.persist(repo, meta, primaryId, data, updatedAt, timeField);
+    return 'ok';
   }
 
   private isForeignKeyViolation(err: unknown): boolean {

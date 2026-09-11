@@ -147,6 +147,19 @@ export const ROLES_SCHOOL_MANAGEMENT = [
   ROLE_NAMES.STAFF,
 ];
 
+/** Direction, pédagogie, secrétariat : dossier scolaire complet (parcours, PDF). */
+export const ROLES_STUDENT_DOSSIER = [
+  ...ROLES_FULL_SCHOOL,
+  ...ROLES_PEDAGOGIQUE,
+  ...ROLES_SECRETAIRE,
+];
+
+export function canAccessStudentDossierComplet(name?: string | null): boolean {
+  const n = (name ?? '').toUpperCase().trim();
+  if (isFullAccessRoleName(n)) return true;
+  return (ROLES_STUDENT_DOSSIER as readonly string[]).includes(n);
+}
+
 export const ROLES_GRADES = [
   ...ROLES_FULL_SCHOOL,
   ...ROLES_PEDAGOGIQUE,

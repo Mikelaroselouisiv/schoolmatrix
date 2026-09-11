@@ -390,6 +390,34 @@ export type ScheduleSlot = {
   start_time?: string;
   end_time?: string;
   materials?: string | null;
+  kind?: string;
+  title?: string;
+  is_school_wide?: boolean;
+};
+
+export type ClassDayMoment = {
+  id: string;
+  class_id: string;
+  class_name?: string | null;
+  academic_year?: string | null;
+  kind: string;
+  title: string;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  label?: string | null;
+};
+
+export type SchoolWeekDuty = {
+  id: string;
+  academic_year: string;
+  kind: string;
+  title: string;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  responsible_user_id: number | null;
+  responsible_name: string | null;
 };
 
 export type ExamScheduleItem = {
@@ -465,6 +493,8 @@ function unwrapList<T>(data: unknown): T[] {
       'expenses',
       'activities',
       'schedule_slots',
+      'schedule_moments',
+      'school_week_duties',
       'exam_schedules',
       'extracurricular_activities',
       'rooms',
@@ -621,6 +651,59 @@ export async function createScheduleSlot(body: {
 
 export async function deleteScheduleSlot(id: string): Promise<void> {
   await api.delete(`/schedule-slots/${id}`);
+}
+
+export async function listScheduleMoments(params?: {
+  class_id?: string;
+  academic_year?: string;
+  kind?: string;
+  day_of_week?: number;
+}): Promise<ClassDayMoment[]> {
+  try {
+    const { data } = await api.get('/schedule-moments', { params });
+    return unwrapList<ClassDayMoment>(data);
+  } catch {
+    return [];
+  }
+}
+
+export async function createScheduleMoments(body: {
+  class_id: string;
+  academic_year?: string;
+  kind: string;
+  days?: number[];
+  day_of_week?: number;
+  start_time: string;
+  end_time: string;
+  label?: string | null;
+}): Promise<void> {
+  await api.post('/schedule-moments', body);
+}
+
+export async function deleteScheduleMoment(id: string): Promise<void> {
+  await api.delete(`/schedule-moments/${id}`);
+}
+
+export async function listSchoolWeekDuties(params?: {
+  academic_year?: string;
+  kind?: string;
+}): Promise<SchoolWeekDuty[]> {
+  try {
+    const { data } = await api.get('/school-week-duties', { params });
+    return unwrapList<SchoolWeekDuty>(data);
+  } catch {
+    return [];
+  }
+}
+
+export async function upsertSchoolWeekDuties(body: {
+  academic_year: string;
+  kind?: string;
+  start_time: string;
+  end_time: string;
+  days: { day_of_week: number; responsible_user_id?: number | null }[];
+}): Promise<void> {
+  await api.put('/school-week-duties', body);
 }
 
 export async function listExamSchedules(params?: {
@@ -806,6 +889,32 @@ export async function getPeriods(academicYearId: string): Promise<PeriodItem[]> 
 export async function getTeacherClasses(): Promise<ClassItem[]> {
   const { data } = await api.get('/teachers/me/classes');
   return unwrapList<ClassItem>(data);
+}
+
+export type UpcomingBirthday = {
+  student_id: string;
+  first_name: string;
+  last_name: string;
+  class_id: string | null;
+  class_name: string | null;
+  room_id: string | null;
+  room_name: string | null;
+  birth_date: string;
+  turning_age: number | null;
+  when: 'today' | 'tomorrow';
+};
+
+export async function getUpcomingBirthdays(): Promise<{
+  today: string;
+  tomorrow: string;
+  birthdays: UpcomingBirthday[];
+}> {
+  const { data } = await api.get('/teachers/me/upcoming-birthdays');
+  return {
+    today: data?.today ?? '',
+    tomorrow: data?.tomorrow ?? '',
+    birthdays: data?.birthdays ?? [],
+  };
 }
 
 export type HomeworkKind = 'DEVOIR' | 'LECON';

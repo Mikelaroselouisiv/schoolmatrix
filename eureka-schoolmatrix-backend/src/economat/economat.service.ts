@@ -228,12 +228,18 @@ export class EconomatService {
     }));
   }
 
-  async getStudentPaymentStatus(studentId: string, academicYear?: string): Promise<any> {
+  async getStudentPaymentStatus(
+    studentId: string,
+    academicYear?: string,
+    classId?: string | null,
+  ): Promise<any> {
     const student = await this.studentRepo.findOne({ where: { id: studentId }, relations: ['class'] });
     if (!student) throw new NotFoundException('Student not found');
     const year = academicYear || getCurrentAcademicYear();
+    const cid = classId || student.class?.id;
+    if (!cid) return { academic_year: year, by_service: [], transactions: [] };
     const classFees = await this.classFeeRepo.find({
-      where: { academic_year: year, class: { id: student.class.id } },
+      where: { academic_year: year, class: { id: cid } },
       relations: ['service'],
     });
     const result: any[] = [];

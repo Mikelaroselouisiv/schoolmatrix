@@ -225,6 +225,24 @@ export function canSeeSensitiveDashboardStats(
   return ROLES_FULL.includes(roleName);
 }
 
+export function canSeeStudentDossierComplet(
+  roleName: string,
+  rolePermissions?: string[],
+): boolean {
+  if (rolePermissions?.includes("full_access")) return true;
+  const role = (roleName ?? "").toUpperCase().trim();
+  if (
+    role === "TEACHER" ||
+    role === "PARENT" ||
+    role === "ECONOME" ||
+    role === "COMPTABLE"
+  ) {
+    return false;
+  }
+  if (ROLES_FULL.includes(role)) return true;
+  return !!rolePermissions?.includes("students");
+}
+
 /**
  * Rôles "moniteur" : uniquement le tableau de bord avec bloc Profil / Moniteur
  * (pas d’accès aux menus de gestion : classes, élèves, professeurs, etc.).

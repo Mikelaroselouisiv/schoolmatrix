@@ -16,6 +16,8 @@ import { UserMustChangePassword1739000000013 } from './1739000000013-UserMustCha
 import { RefreshToken1739000000014 } from './1739000000014-RefreshToken';
 import { RoleEducationLevels1739000000015 } from './1739000000015-RoleEducationLevels';
 import { HomeworkAndScheduleMaterials1739000000016 } from './1739000000016-HomeworkAndScheduleMaterials';
+import { StudentArchive1739000000017 } from './1739000000017-StudentArchive';
+import { ScheduleDayMoments1739000000018 } from './1739000000018-ScheduleDayMoments';
 
 /** Liste des migrations (ordre d’exécution). Utilisée par l’app au démarrage (migrationsRun). */
 export const migrations = [
@@ -37,4 +39,6 @@ export const migrations = [
   RefreshToken1739000000014,
   RoleEducationLevels1739000000015,
   HomeworkAndScheduleMaterials1739000000016,
+  StudentArchive1739000000017,
+  ScheduleDayMoments1739000000018,
 ];

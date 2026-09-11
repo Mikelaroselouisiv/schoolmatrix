@@ -22,6 +22,8 @@ export const ENTITY_ORDER = [
   'ClassSubjectCoefficient',
   'ExamSchedule',
   'ScheduleSlot',
+  'ClassDayMoment',
+  'SchoolWeekDuty',
   'ExtracurricularActivity',
   'StudentClassAssignment',
   'ClassDecisionThreshold',

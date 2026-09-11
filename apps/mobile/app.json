@@ -46,7 +46,8 @@
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.POST_NOTIFICATIONS"
       ]
     },
     "web": {
@@ -63,6 +64,14 @@
         {
           "photosPermission": "School Matrix utilise vos photos pour les fiches élèves.",
           "cameraPermission": "School Matrix utilise la caméra pour photographier les élèves."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/logo.png",
+          "color": "#B85A48",
+          "defaultChannel": "birthdays"
         }
       ],
       "@react-native-community/datetimepicker"

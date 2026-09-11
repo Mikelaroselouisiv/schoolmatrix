@@ -38,6 +38,7 @@ export function PdfPreviewModal({ blob, filename, onClose }: PdfPreviewModalProp
     } catch {
       window.open(objectUrl, "_blank")?.print();
     }
+    window.schoolmatrixDesktop?.restoreKeyboardFocus?.();
   }
 
   return (

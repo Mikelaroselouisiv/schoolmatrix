@@ -16,6 +16,8 @@ import { PreschoolGrade } from '../grades/preschool-grade.entity';
 import { ClassSubjectCoefficient } from '../grades/class-subject-coefficient.entity';
 import { ExamSchedule } from '../exam-schedule/exam-schedule.entity';
 import { ScheduleSlot } from '../teachers/schedule-slot.entity';
+import { ClassDayMoment } from '../teachers/class-day-moment.entity';
+import { SchoolWeekDuty } from '../teachers/school-week-duty.entity';
 import { ExtracurricularActivity } from '../extracurricular-activity/extracurricular-activity.entity';
 import { Expense } from '../finance/expense.entity';
 import { Bank } from '../finance/bank.entity';
@@ -54,6 +56,8 @@ export type SyncEntityName =
   | 'ClassSubjectCoefficient'
   | 'ExamSchedule'
   | 'ScheduleSlot'
+  | 'ClassDayMoment'
+  | 'SchoolWeekDuty'
   | 'ExtracurricularActivity'
   | 'Expense'
   | 'Bank'
@@ -98,6 +102,8 @@ export const SYNC_ENTITY_DEFS: SyncEntityDef[] = [
   { name: 'ClassSubjectCoefficient', target: ClassSubjectCoefficient, timeField: 'updated_at' },
   { name: 'ExamSchedule', target: ExamSchedule, timeField: 'updated_at' },
   { name: 'ScheduleSlot', target: ScheduleSlot, timeField: 'updated_at' },
+  { name: 'ClassDayMoment', target: ClassDayMoment, timeField: 'updated_at' },
+  { name: 'SchoolWeekDuty', target: SchoolWeekDuty, timeField: 'updated_at' },
   { name: 'ExtracurricularActivity', target: ExtracurricularActivity, timeField: 'updated_at' },
   { name: 'StudentClassAssignment', target: StudentClassAssignment, timeField: 'updated_at' },
   { name: 'ClassDecisionThreshold', target: ClassDecisionThreshold, timeField: 'updated_at' },

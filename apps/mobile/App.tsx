@@ -7,6 +7,7 @@ import { SchoolProvider } from './src/context/SchoolContext';
 import { NetworkProvider } from './src/context/NetworkContext';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { AndroidUpdatePrompt } from './src/components/AndroidUpdatePrompt';
+import { TeacherBirthdayReminders } from './src/components/TeacherBirthdayReminders';
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
               <View style={{ flex: 1 }}>
                 <StatusBar style="dark" />
                 <RootNavigator />
+                <TeacherBirthdayReminders />
                 <AndroidUpdatePrompt />
               </View>
             </SchoolProvider>

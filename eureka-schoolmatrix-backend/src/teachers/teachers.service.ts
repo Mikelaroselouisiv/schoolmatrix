@@ -5,6 +5,7 @@ import { ClassTeacher } from './class-teacher.entity';
 import { TeacherSubject } from './teacher-subject.entity';
 import { TeacherClassSubject } from './teacher-class-subject.entity';
 import { ScheduleSlot } from './schedule-slot.entity';
+import { ScheduleMomentsService } from './schedule-moments.service';
 import { User } from '../users/user.entity';
 import { Role } from '../roles/role.entity';
 import { Class } from '../classes/class.entity';
@@ -41,6 +42,7 @@ export class TeachersService {
     private readonly studentRepo: Repository<Student>,
     @InjectRepository(Class)
     private readonly classRepo: Repository<Class>,
+    private readonly scheduleMoments: ScheduleMomentsService,
   ) {}
 
   /**
@@ -55,21 +57,59 @@ export class TeachersService {
     if (!student) throw new NotFoundException('Student not found');
 
     const classId = student.class?.id ?? null;
-    const slots = classId
-      ? await this.getScheduleSlots({
-          class_id: classId,
-          academic_year: academicYear,
-        })
-      : [];
+    const [slots, moments, duties] = classId
+      ? await Promise.all([
+          this.getScheduleSlots({
+            class_id: classId,
+            academic_year: academicYear,
+          }),
+          this.scheduleMoments.listClassMoments({
+            class_id: classId,
+            academic_year: academicYear,
+          }),
+          this.scheduleMoments.listDuties({ academic_year: academicYear }),
+        ])
+      : [[], [], []];
 
-    return {
-      student_id: student.id,
-      student_name: `${student.first_name} ${student.last_name}`,
-      class_id: classId,
-      class_name: student.class?.name ?? null,
-      academic_year: academicYear ?? null,
-      slots: slots.map((s) => ({
+    const merged = [
+      ...duties.map((d) => ({
+        id: `duty:${d.id}`,
+        kind: d.kind,
+        title: d.title,
+        day_of_week: d.day_of_week,
+        start_time: d.start_time,
+        end_time: d.end_time,
+        subject_id: null as string | null,
+        subject_name: d.title,
+        room_id: null as string | null,
+        room_name: null as string | null,
+        teacher_id: d.responsible_user_id,
+        teacher_name: d.responsible_name,
+        academic_year: d.academic_year,
+        materials: null as string | null,
+        is_school_wide: true,
+      })),
+      ...moments.map((m) => ({
+        id: `moment:${m.id}`,
+        kind: m.kind,
+        title: m.title,
+        day_of_week: m.day_of_week,
+        start_time: m.start_time,
+        end_time: m.end_time,
+        subject_id: null as string | null,
+        subject_name: m.title,
+        room_id: null as string | null,
+        room_name: null as string | null,
+        teacher_id: null as number | null,
+        teacher_name: null as string | null,
+        academic_year: m.academic_year,
+        materials: null as string | null,
+        is_school_wide: false,
+      })),
+      ...slots.map((s) => ({
         id: s.id,
+        kind: 'COURSE' as const,
+        title: s.subject_name ?? 'Cours',
         day_of_week: s.day_of_week,
         start_time: s.start_time,
         end_time: s.end_time,
@@ -81,7 +121,21 @@ export class TeachersService {
         teacher_name: s.teacher_name ?? null,
         academic_year: s.academic_year,
         materials: s.materials ?? null,
+        is_school_wide: false,
       })),
+    ].sort(
+      (a, b) =>
+        a.day_of_week - b.day_of_week ||
+        a.start_time.localeCompare(b.start_time),
+    );
+
+    return {
+      student_id: student.id,
+      student_name: `${student.first_name} ${student.last_name}`,
+      class_id: classId,
+      class_name: student.class?.name ?? null,
+      academic_year: academicYear ?? null,
+      slots: merged,
     };
   }
 
@@ -659,4 +713,134 @@ export class TeachersService {
     slot.materials = materials?.trim() ? materials.trim() : null;
     return this.scheduleSlotRepo.save(slot);
   }
+
+  /**
+   * Anniversaires des élèves des salles où ce professeur est affecté
+   * (assignation classe/salle/matière + créneaux d’horaire).
+   * Calendrier Haïti (America/Port-au-Prince) : aujourd’hui et demain.
+   */
+  async getUpcomingBirthdaysForTeacher(teacherId: number): Promise<{
+    today: string;
+    tomorrow: string;
+    birthdays: {
+      student_id: string;
+      first_name: string;
+      last_name: string;
+      class_id: string | null;
+      class_name: string | null;
+      room_id: string | null;
+      room_name: string | null;
+      birth_date: string;
+      turning_age: number | null;
+      when: 'today' | 'tomorrow';
+    }[];
+  }> {
+    await this.findOneTeacher(teacherId);
+    const [assignments, slots] = await Promise.all([
+      this.teacherClassSubjectRepo.find({
+        where: { teacher: { id: teacherId } },
+        relations: ['room'],
+      }),
+      this.scheduleSlotRepo.find({
+        where: { teacher: { id: teacherId } },
+        relations: ['room'],
+      }),
+    ]);
+    const roomIds = [
+      ...new Set(
+        [
+          ...assignments.map((a) => a.room?.id ?? a.room_id ?? null),
+          ...slots.map((s) => s.room?.id ?? (s as { room_id?: string }).room_id ?? null),
+        ].filter((id): id is string => !!id),
+      ),
+    ];
+    const today = haitiYmd(0);
+    const tomorrow = haitiYmd(1);
+    if (roomIds.length === 0) {
+      return { today: today.ymd, tomorrow: tomorrow.ymd, birthdays: [] };
+    }
+
+    const students = await this.studentRepo
+      .createQueryBuilder('s')
+      .leftJoinAndSelect('s.class', 'c')
+      .leftJoinAndSelect('s.room', 'r')
+      .where('s.room_id IN (:...roomIds)', { roomIds })
+      .andWhere('s.active = true')
+      .andWhere('s.archived_at IS NULL')
+      .andWhere('s.birth_date IS NOT NULL')
+      .andWhere(
+        `(
+          (EXTRACT(MONTH FROM s.birth_date) = :tm AND EXTRACT(DAY FROM s.birth_date) = :td)
+          OR
+          (EXTRACT(MONTH FROM s.birth_date) = :nm AND EXTRACT(DAY FROM s.birth_date) = :nd)
+        )`,
+        {
+          tm: today.month,
+          td: today.day,
+          nm: tomorrow.month,
+          nd: tomorrow.day,
+        },
+      )
+      .orderBy('s.last_name', 'ASC')
+      .addOrderBy('s.first_name', 'ASC')
+      .getMany();
+
+    const birthdays = students.map((s) => {
+      const birthYmd = toDateYmd(s.birth_date);
+      const [, bm, bd] = birthYmd.split('-').map(Number);
+      const when: 'today' | 'tomorrow' =
+        bm === tomorrow.month && bd === tomorrow.day ? 'tomorrow' : 'today';
+      const targetYear = when === 'tomorrow' ? tomorrow.year : today.year;
+      const birthYear = Number(birthYmd.slice(0, 4));
+      const turning_age =
+        Number.isFinite(birthYear) && birthYear > 1900 ? targetYear - birthYear : null;
+      return {
+        student_id: s.id,
+        first_name: s.first_name,
+        last_name: s.last_name,
+        class_id: s.class?.id ?? null,
+        class_name: s.class?.name ?? null,
+        room_id: s.room?.id ?? null,
+        room_name: s.room?.name ?? null,
+        birth_date: birthYmd,
+        turning_age,
+        when,
+      };
+    });
+
+    return { today: today.ymd, tomorrow: tomorrow.ymd, birthdays };
+  }
+}
+
+function haitiYmd(offsetDays: number): {
+  year: number;
+  month: number;
+  day: number;
+  ymd: string;
+} {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Port-au-Prince',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const [y, m, d] = fmt.format(new Date()).split('-').map(Number);
+  const shifted = new Date(Date.UTC(y, m - 1, d + offsetDays));
+  const year = shifted.getUTCFullYear();
+  const month = shifted.getUTCMonth() + 1;
+  const day = shifted.getUTCDate();
+  return {
+    year,
+    month,
+    day,
+    ymd: `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+  };
+}
+
+function toDateYmd(value: Date | string): string {
+  if (typeof value === 'string') return value.slice(0, 10);
+  const y = value.getUTCFullYear();
+  const m = String(value.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(value.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }

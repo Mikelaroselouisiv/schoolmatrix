@@ -8,6 +8,7 @@ import { ClassDayMoment } from './class-day-moment.entity';
 import { SchoolWeekDuty } from './school-week-duty.entity';
 import { SchoolOpeningInstruction } from './school-opening-instruction.entity';
 import { ClassBringItem } from './class-bring-item.entity';
+import { BringItemCatalog } from './bring-item-catalog.entity';
 import { ClassDaySubject } from './class-day-subject.entity';
 import { SchoolMaterial } from './school-material.entity';
 import { User } from '../users/user.entity';
@@ -42,6 +43,7 @@ import { UsersModule } from '../users/users.module';
       SchoolWeekDuty,
       SchoolOpeningInstruction,
       ClassBringItem,
+      BringItemCatalog,
       ClassDaySubject,
       SchoolMaterial,
       User,

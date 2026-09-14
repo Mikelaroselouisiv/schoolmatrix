@@ -36,6 +36,7 @@ import {
 } from './schedule-day.constants';
 import { SchoolOpeningInstruction } from './school-opening-instruction.entity';
 import { ClassBringItem } from './class-bring-item.entity';
+import { BringItemCatalog } from './bring-item-catalog.entity';
 import { ClassDaySubject } from './class-day-subject.entity';
 import { Subject } from '../subjects/subject.entity';
 import { isTeacherRoleName } from '../roles/roles.constants';
@@ -119,6 +120,8 @@ export class ScheduleMomentsService {
     private readonly instructionRepo: Repository<SchoolOpeningInstruction>,
     @InjectRepository(ClassBringItem)
     private readonly bringRepo: Repository<ClassBringItem>,
+    @InjectRepository(BringItemCatalog)
+    private readonly catalogRepo: Repository<BringItemCatalog>,
     @InjectRepository(ClassDaySubject)
     private readonly daySubjectRepo: Repository<ClassDaySubject>,
     @InjectRepository(Subject)
@@ -582,6 +585,34 @@ export class ScheduleMomentsService {
     return days;
   }
 
+  async listBringCatalog(): Promise<string[]> {
+    const rows = await this.catalogRepo.find({ order: { label: 'ASC' } });
+    return rows.map((r) => r.label);
+  }
+
+  private catalogLabels(raw?: string[] | null): string[] {
+    return cleanInstructionLines(raw).map((s) => s.slice(0, 160));
+  }
+
+  private async upsertBringCatalog(
+    labels: string[],
+    manager?: EntityManager,
+  ): Promise<void> {
+    const repo = manager ? manager.getRepository(BringItemCatalog) : this.catalogRepo;
+    for (const label of this.catalogLabels(labels)) {
+      const existing = await repo
+        .createQueryBuilder('c')
+        .where('LOWER(c.label) = LOWER(:label)', { label })
+        .getOne();
+      if (existing) continue;
+      try {
+        await repo.save(repo.create({ label }));
+      } catch {
+        // collision concurrente sur l’index unique
+      }
+    }
+  }
+
   async replaceDayLists(body: {
     class_id: string;
     academic_year?: string | null;
@@ -653,9 +684,7 @@ export class ScheduleMomentsService {
           );
         }
         order = 0;
-        for (const label of cleanInstructionLines(dayBody.materials).map((s) =>
-          s.slice(0, 160),
-        )) {
+        for (const label of this.catalogLabels(dayBody.materials)) {
           await manager.save(
             manager.create(ClassBringItem, {
               class_id: classId,
@@ -668,6 +697,10 @@ export class ScheduleMomentsService {
           );
         }
       }
+      await this.upsertBringCatalog(
+        incoming.flatMap((d) => d.materials ?? []),
+        manager,
+      );
     });
     return this.listDayLists(classId, year ?? undefined);
   }

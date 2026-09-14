@@ -25,9 +25,9 @@ export class ScheduleSlot {
   @JoinColumn({ name: 'subject_id' })
   subject: Subject;
 
-  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @ManyToOne(() => User, { onDelete: 'SET NULL', nullable: true })
   @JoinColumn({ name: 'teacher_id' })
-  teacher: User;
+  teacher: User | null;
 
   @ManyToOne(() => Room, { onDelete: 'SET NULL', nullable: true })
   @JoinColumn({ name: 'room_id' })

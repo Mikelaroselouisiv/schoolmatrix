@@ -34,6 +34,9 @@ import {
   emptyDayProgram,
   emptyClassDayLists,
   classDayListsFromApi,
+  mergeMaterialCatalog,
+  toggleMaterialLabel,
+  ensureMaterialLabel,
   isListScheduleLevel,
   MORNING_PRIMAIRE_LEVELS,
   MORNING_WEEKDAYS,
@@ -154,6 +157,7 @@ export function ScheduleScreen({}: Props) {
   const [teachers, setTeachers] = useState<TeacherItem[]>([]);
   const [assignments, setAssignments] = useState<TeacherAssignment[]>([]);
   const [subjects, setSubjects] = useState<SubjectItem[]>([]);
+  const [classListSubjects, setClassListSubjects] = useState<SubjectItem[]>([]);
 
   const [yearId, setYearId] = useState('');
   const [classId, setClassId] = useState('');
@@ -183,6 +187,7 @@ export function ScheduleScreen({}: Props) {
   const [flagDayTarget, setFlagDayTarget] = useState(1);
   const [savingMorning, setSavingMorning] = useState(false);
   const [dayLists, setDayLists] = useState(emptyClassDayLists);
+  const [materialCatalog, setMaterialCatalog] = useState<string[]>([]);
   const [savingBring, setSavingBring] = useState(false);
 
   const [formClassId, setFormClassId] = useState('');
@@ -205,6 +210,9 @@ export function ScheduleScreen({}: Props) {
   const listMode = isListScheduleLevel(selectedClass?.level);
   const classSubjectOptions = useMemo(() => {
     if (!classId) return [];
+    if (classListSubjects.length > 0) {
+      return [...classListSubjects].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+    }
     const map = new Map<string, string>();
     for (const a of assignments) {
       if (a.class_id !== classId || !a.subject_id || !a.subject_name) continue;
@@ -213,7 +221,7 @@ export function ScheduleScreen({}: Props) {
     return [...map.entries()]
       .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name, 'fr'));
-  }, [assignments, classId]);
+  }, [assignments, classId, classListSubjects]);
   const roomLabel = rooms.find((r) => r.id === roomId)?.name || 'Toutes';
   const preschoolTeachers = useMemo(
     () =>
@@ -368,10 +376,30 @@ export function ScheduleScreen({}: Props) {
       setDayLists(emptyClassDayLists());
       return;
     }
-    void listClassDayLists(classId, yearName || undefined).then((rows) =>
-      setDayLists(classDayListsFromApi(rows)),
-    );
+    void listClassDayLists(classId, yearName || undefined).then(({ days, catalog }) => {
+      const next = classDayListsFromApi(days);
+      setDayLists(next);
+      setMaterialCatalog(mergeMaterialCatalog(catalog, ...Object.values(next).map((s) => s.materials)));
+    });
   }, [listMode, classId, yearName]);
+
+  useEffect(() => {
+    if (!classId) {
+      setClassListSubjects([]);
+      return;
+    }
+    let cancelled = false;
+    void getClassSubjects(classId)
+      .then((list) => {
+        if (!cancelled) setClassListSubjects(list);
+      })
+      .catch(() => {
+        if (!cancelled) setClassListSubjects([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [classId]);
 
   useEffect(() => {
     if (!formClassId) {
@@ -986,15 +1014,38 @@ export function ScheduleScreen({}: Props) {
                           }
                         />
                         <Text style={styles.chipLabel}>Matériel à apporter</Text>
-                        <NameLines
-                          values={slot.materials}
+                        <MaterialCatalogField
+                          catalog={mergeMaterialCatalog(
+                            materialCatalog,
+                            ...Object.values(dayLists).map((s) => s.materials),
+                          )}
+                          selected={slot.materials}
                           editable={canEdit}
-                          onChange={(materials) =>
+                          onToggle={(label) =>
                             setDayLists((prev) => {
                               const cur = prev[d.index] ?? { subjectIds: [], materials: [] };
-                              return { ...prev, [d.index]: { ...cur, materials } };
+                              return {
+                                ...prev,
+                                [d.index]: {
+                                  ...cur,
+                                  materials: toggleMaterialLabel(cur.materials, label),
+                                },
+                              };
                             })
                           }
+                          onCreate={(label) => {
+                            setMaterialCatalog((prev) => mergeMaterialCatalog(prev, [label]));
+                            setDayLists((prev) => {
+                              const cur = prev[d.index] ?? { subjectIds: [], materials: [] };
+                              return {
+                                ...prev,
+                                [d.index]: {
+                                  ...cur,
+                                  materials: ensureMaterialLabel(cur.materials, label),
+                                },
+                              };
+                            });
+                          }}
                         />
                       </View>
                     );
@@ -1013,7 +1064,13 @@ export function ScheduleScreen({}: Props) {
                             materials: dayLists[d.index]?.materials ?? [],
                           })),
                         })
-                          .then((rows) => setDayLists(classDayListsFromApi(rows)))
+                          .then(({ days, catalog }) => {
+                            const next = classDayListsFromApi(days);
+                            setDayLists(next);
+                            setMaterialCatalog(
+                              mergeMaterialCatalog(catalog, ...Object.values(next).map((s) => s.materials)),
+                            );
+                          })
                           .finally(() => setSavingBring(false));
                       }}
                       disabled={savingBring || !yearName}
@@ -1375,6 +1432,61 @@ function OptionChips({
           </Pressable>
         );
       })}
+    </View>
+  );
+}
+
+function MaterialCatalogField({
+  catalog,
+  selected,
+  onToggle,
+  onCreate,
+  editable,
+}: {
+  catalog: string[];
+  selected: string[];
+  onToggle: (label: string) => void;
+  onCreate: (label: string) => void;
+  editable: boolean;
+}) {
+  const [draft, setDraft] = useState('');
+  function add() {
+    const name = draft.trim().replace(/\s+/g, ' ');
+    if (!name) return;
+    onCreate(name);
+    setDraft('');
+  }
+  if (!editable) {
+    return <Muted>{selected.length ? selected.join(', ') : '—'}</Muted>;
+  }
+  return (
+    <View style={{ gap: 6 }}>
+      {catalog.length > 0 ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {catalog.map((label) => {
+            const on = selected.some((x) => x.toLowerCase() === label.toLowerCase());
+            return (
+              <Pressable
+                key={label}
+                onPress={() => onToggle(label)}
+                style={[styles.chip, on ? styles.chipOn : null, { minWidth: 0, flexGrow: 0 }]}
+              >
+                <Text style={styles.chipValue}>{label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <TextInput
+          value={draft}
+          onChangeText={setDraft}
+          onSubmitEditing={add}
+          returnKeyType="done"
+          style={[styles.timeInput, { flex: 1 }]}
+        />
+        <Button title="Ajouter" onPress={add} />
+      </View>
     </View>
   );
 }

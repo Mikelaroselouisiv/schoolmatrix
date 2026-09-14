@@ -5,6 +5,7 @@ import { formatDateJJMMAAAA } from "@/lib/format";
 import { DateInputJJMMAAAA } from "@/components/DateInputJJMMAAAA";
 import { ExportPdfButton } from "@/components/ExportPdfButton";
 import { ScheduleGridModal } from "@/components/ScheduleGridModal";
+import { MaterialCatalogPicker } from "@/components/MaterialCatalogPicker";
 import { AppAccordion } from "@/components/AppAccordion";
 import { useRevealScroll } from "@/lib/useRevealScroll";
 import type { PdfColumn, PdfSection } from "@/lib/pdfExport";
@@ -22,6 +23,9 @@ import {
   dayHasPrimary,
   emptyClassDayLists,
   classDayListsFromApi,
+  mergeMaterialCatalog,
+  toggleMaterialLabel,
+  ensureMaterialLabel,
   type DayMorningProgram,
 } from "@/lib/morningOpening";
 import {
@@ -406,6 +410,7 @@ export function DashboardSchedulePage() {
   const [examGridPeriod, setExamGridPeriod] = useState("");
 
   const [assignments, setAssignments] = useState<TeacherAssignment[]>([]);
+  const [classSubjectsById, setClassSubjectsById] = useState<Record<string, { id: string; name: string }[]>>({});
   const [moments, setMoments] = useState<ClassMoment[]>([]);
   const [duties, setDuties] = useState<SchoolDuty[]>([]);
   const [morningByDay, setMorningByDay] = useState<Record<number, DayMorningProgram>>(emptyWeekProgram);
@@ -417,6 +422,7 @@ export function DashboardSchedulePage() {
   >({});
   const [listClass, setListClass] = useState<ClassItem | null>(null);
   const [listDraft, setListDraft] = useState(emptyClassDayLists);
+  const [materialCatalog, setMaterialCatalog] = useState<string[]>([]);
   const [savingBring, setSavingBring] = useState(false);
   const [savingMorning, setSavingMorning] = useState(false);
   const [savingMoment, setSavingMoment] = useState(false);
@@ -613,6 +619,30 @@ export function DashboardSchedulePage() {
     void Promise.all(list.map((c) => loadDayLists(c.id)));
   }, [classes, academicYearFilter, defaultYearName]);
 
+  useEffect(() => {
+    if (!classes.length) {
+      setClassSubjectsById({});
+      return;
+    }
+    let cancelled = false;
+    void Promise.all(
+      classes.map(async (c) => {
+        try {
+          const res = await fetchWithAuth(`${API_BASE}/classes/${c.id}/subjects`);
+          const data = await res.json();
+          return [c.id, res.ok ? (data.subjects ?? []) : []] as const;
+        } catch {
+          return [c.id, []] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (!cancelled) setClassSubjectsById(Object.fromEntries(entries));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [classes]);
+
   async function openRoomGrid(room: Room) {
     const level = classes.find((c) => c.id === room.class_id)?.level;
     if (tab === "cours" && isListScheduleLevel(level) && room.class_id) {
@@ -653,6 +683,7 @@ export function DashboardSchedulePage() {
       const res = await fetchWithAuth(`${API_BASE}/class-day-lists?${params}`);
       const data = await res.json();
       const next = classDayListsFromApi(data.days ?? []);
+      setMaterialCatalog(mergeMaterialCatalog(data.catalog, ...Object.values(next).map((s) => s.materials)));
       setDayListsByClass((prev) => ({ ...prev, [classId]: next }));
       return next;
     } catch {
@@ -684,6 +715,7 @@ export function DashboardSchedulePage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Erreur");
       const next = classDayListsFromApi(data.days ?? []);
+      setMaterialCatalog(mergeMaterialCatalog(data.catalog, ...Object.values(next).map((s) => s.materials)));
       setDayListsByClass((prev) => ({ ...prev, [classId]: next }));
       setListDraft(next);
     } catch (e) {
@@ -1262,6 +1294,12 @@ export function DashboardSchedulePage() {
   }
 
   function classSubjectOptions(classId: string) {
+    const fromClass = classSubjectsById[classId] ?? [];
+    if (fromClass.length > 0) {
+      return [...fromClass]
+        .map((s) => ({ id: s.id, name: s.name }))
+        .sort((a, b) => a.name.localeCompare(b.name, "fr"));
+    }
     const map = new Map<string, string>();
     for (const a of assignments) {
       if (a.class_id !== classId || !a.subject_id || !a.subject_name) continue;
@@ -2243,14 +2281,25 @@ export function DashboardSchedulePage() {
                       <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                         Matériel à apporter
                       </p>
-                      <ManualNames
-                        values={slot.materials}
-                        onChange={(materials) =>
+                      <MaterialCatalogPicker
+                        catalog={mergeMaterialCatalog(
+                          materialCatalog,
+                          ...Object.values(listDraft).map((s) => s.materials),
+                        )}
+                        selected={slot.materials}
+                        onToggle={(label) =>
                           setListDraft((prev) => ({
                             ...prev,
-                            [d.index]: { ...slot, materials },
+                            [d.index]: { ...slot, materials: toggleMaterialLabel(slot.materials, label) },
                           }))
                         }
+                        onCreate={(label) => {
+                          setMaterialCatalog((prev) => mergeMaterialCatalog(prev, [label]));
+                          setListDraft((prev) => ({
+                            ...prev,
+                            [d.index]: { ...slot, materials: ensureMaterialLabel(slot.materials, label) },
+                          }));
+                        }}
                       />
                     </div>
                   </div>

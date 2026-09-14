@@ -20,6 +20,7 @@ import { ClassDayMoment } from '../teachers/class-day-moment.entity';
 import { SchoolWeekDuty } from '../teachers/school-week-duty.entity';
 import { SchoolOpeningInstruction } from '../teachers/school-opening-instruction.entity';
 import { ClassBringItem } from '../teachers/class-bring-item.entity';
+import { BringItemCatalog } from '../teachers/bring-item-catalog.entity';
 import { ClassDaySubject } from '../teachers/class-day-subject.entity';
 import { SchoolMaterial } from '../teachers/school-material.entity';
 import { ExtracurricularActivity } from '../extracurricular-activity/extracurricular-activity.entity';
@@ -37,6 +38,9 @@ import { StudentParent } from '../student-parents/student-parent.entity';
 import { HomeworkAssignment } from '../homework/homework-assignment.entity';
 import { HomeworkGrade } from '../homework/homework-grade.entity';
 import { SyncTombstone } from './sync-tombstone.entity';
+import { ClassTeacher } from '../teachers/class-teacher.entity';
+import { TeacherSubject } from '../teachers/teacher-subject.entity';
+import { TeacherClassSubject } from '../teachers/teacher-class-subject.entity';
 
 export type SyncEntityName =
   | 'SchoolProfile'
@@ -48,6 +52,9 @@ export type SyncEntityName =
   | 'Subject'
   | 'Class'
   | 'ClassSubject'
+  | 'ClassTeacher'
+  | 'TeacherSubject'
+  | 'TeacherClassSubject'
   | 'Student'
   | 'UserLinkedStudent'
   | 'StudentParent'
@@ -64,6 +71,7 @@ export type SyncEntityName =
   | 'SchoolWeekDuty'
   | 'SchoolOpeningInstruction'
   | 'ClassBringItem'
+  | 'BringItemCatalog'
   | 'ClassDaySubject'
   | 'SchoolMaterial'
   | 'ExtracurricularActivity'
@@ -101,6 +109,9 @@ export const SYNC_ENTITY_DEFS: SyncEntityDef[] = [
   { name: 'Class', target: Class, timeField: 'updated_at' },
   { name: 'Room', target: Room, timeField: 'updated_at' },
   { name: 'ClassSubject', target: ClassSubject, timeField: 'created_at' },
+  { name: 'ClassTeacher', target: ClassTeacher, timeField: 'created_at' },
+  { name: 'TeacherSubject', target: TeacherSubject, timeField: 'created_at' },
+  { name: 'TeacherClassSubject', target: TeacherClassSubject, timeField: 'created_at' },
   { name: 'Student', target: Student, timeField: 'updated_at' },
   { name: 'UserLinkedStudent', target: UserLinkedStudent, timeField: 'created_at' },
   { name: 'StudentParent', target: StudentParent, timeField: 'created_at' },
@@ -114,6 +125,7 @@ export const SYNC_ENTITY_DEFS: SyncEntityDef[] = [
   { name: 'SchoolWeekDuty', target: SchoolWeekDuty, timeField: 'updated_at' },
   { name: 'SchoolOpeningInstruction', target: SchoolOpeningInstruction, timeField: 'updated_at' },
   { name: 'ClassBringItem', target: ClassBringItem, timeField: 'updated_at' },
+  { name: 'BringItemCatalog', target: BringItemCatalog, timeField: 'updated_at' },
   { name: 'ClassDaySubject', target: ClassDaySubject, timeField: 'updated_at' },
   { name: 'SchoolMaterial', target: SchoolMaterial, timeField: 'updated_at' },
   { name: 'ExtracurricularActivity', target: ExtracurricularActivity, timeField: 'updated_at' },

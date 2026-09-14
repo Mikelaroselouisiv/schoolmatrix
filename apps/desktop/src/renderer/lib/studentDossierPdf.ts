@@ -85,6 +85,7 @@ export function buildStudentDossierSections(dossier: StudentDossier): PdfSection
       lines: [
         `Nom : ${s.last_name} ${s.first_name}`,
         `Code de gestion : ${s.management_code ?? "—"}`,
+        ...(s.order_number ? [`NISU : ${s.order_number}`] : []),
         `Dernière classe : ${s.class_name ?? "—"}`,
         `Date de naissance : ${s.birth_date ? formatDateJJMMAAAA(String(s.birth_date)) : "—"}`,
         `Genre : ${s.gender ?? "—"}`,

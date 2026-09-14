@@ -18,8 +18,10 @@ export class ClassBringItemsController {
     @Query('class_id') classId?: string,
     @Query('academic_year') academicYear?: string,
   ) {
-    const days = await this.moments.listDayLists(classId ?? '', academicYear);
-    return { ok: true, days };
+    const catalog = await this.moments.listBringCatalog();
+    if (!classId) return { ok: true, days: [], catalog };
+    const days = await this.moments.listDayLists(classId, academicYear);
+    return { ok: true, days, catalog };
   }
 
   @Put()
@@ -33,6 +35,7 @@ export class ClassBringItemsController {
     },
   ) {
     const days = await this.moments.replaceBringItems(body);
-    return { ok: true, days };
+    const catalog = await this.moments.listBringCatalog();
+    return { ok: true, days, catalog };
   }
 }

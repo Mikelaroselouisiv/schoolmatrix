@@ -265,3 +265,35 @@ export function classDayListsFromApi(
   }
   return next;
 }
+
+export function mergeMaterialCatalog(...groups: (string[] | undefined | null)[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const group of groups) {
+    for (const raw of group ?? []) {
+      const label = String(raw ?? '').trim().replace(/\s+/g, ' ');
+      if (!label) continue;
+      const key = label.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(label);
+    }
+  }
+  return out.sort((a, b) => a.localeCompare(b, 'fr'));
+}
+
+export function toggleMaterialLabel(values: string[], label: string): string[] {
+  const key = label.trim().toLowerCase();
+  if (!key) return values;
+  if (values.some((x) => x.toLowerCase() === key)) {
+    return values.filter((x) => x.toLowerCase() !== key);
+  }
+  return [...values, label.trim().replace(/\s+/g, ' ')];
+}
+
+export function ensureMaterialLabel(values: string[], label: string): string[] {
+  const key = label.trim().toLowerCase();
+  if (!key) return values;
+  if (values.some((x) => x.toLowerCase() === key)) return values;
+  return [...values, label.trim().replace(/\s+/g, ' ')];
+}

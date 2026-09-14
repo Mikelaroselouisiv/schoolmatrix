@@ -329,7 +329,15 @@ export class UsersService {
     return links.map((l) => l.student.id);
   }
 
-  async getLinkedStudentsForFiche(userId: number): Promise<{ id: string; order_number: string | null; first_name: string; last_name: string; class_id: string; class_name: string }[]> {
+  async getLinkedStudentsForFiche(userId: number): Promise<{
+    id: string;
+    order_number: string | null;
+    management_code: string | null;
+    first_name: string;
+    last_name: string;
+    class_id: string;
+    class_name: string;
+  }[]> {
     const links = await this.linkedStudentRepo.find({
       where: { user: { id: userId } },
       relations: ['student', 'student.class'],
@@ -337,6 +345,7 @@ export class UsersService {
     return links.map((l) => ({
       id: l.student.id,
       order_number: l.student.order_number ?? null,
+      management_code: l.student.management_code ?? null,
       first_name: l.student.first_name,
       last_name: l.student.last_name,
       class_id: l.student.class?.id ?? '',

@@ -1181,6 +1181,15 @@ export class SyncService implements OnModuleInit {
           sourceNodeId,
         );
       }
+      if (
+        (entityName === 'TeacherClassSubject' ||
+          entityName === 'ClassTeacher' ||
+          entityName === 'TeacherSubject' ||
+          entityName === 'ClassSubject') &&
+        this.isUniqueViolation(err)
+      ) {
+        return 'skipped';
+      }
       throw err;
     }
   }

@@ -96,4 +96,6 @@ Ordre notable : **Class avant Room** (`room.class_id` → classe pédagogique ; 
 
 Inclut **`User`** (`password_hash`, photos, `role_id`). Les rôles sont seedés identiquement (mêmes ids) des deux côtés — pas de sync `Role` en V1.
 
+**Horaires** : `ClassSubject` (matières de la fiche classe) **et** `ClassTeacher` / `TeacherSubject` / `TeacherClassSubject` (titulaires et profs par matière / salle) doivent voyager. Sans les assignations, le bloc Horaires voyait des classes « sans matières » alors que la page Classes était complète. `ScheduleSlot.teacher_id` est optionnel à l’apply (un créneau n’est plus refusé si le compte prof n’est pas encore arrivé).
+
 Conséquence : une école qui **renomme** un rôle (ex. `TEACHER` → `PROFESSEUR`) ne change que son libellé local ; le cloud garde l’ancien nom pour le même `role_id`. Le code ne doit donc **jamais** comparer `role.name === 'TEACHER'` : utiliser `TEACHER_ROLE_NAMES` / `isTeacherRoleName()` (`roles.constants.ts`, portés côté desktop `lib/dashboardRoles.ts` et mobile `lib/permissions.ts`). Le seed ne recrée pas `TEACHER` si un alias existe déjà, sinon l’annuaire professeurs se scinde en deux rôles.

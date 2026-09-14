@@ -3,14 +3,14 @@ import { useSearchParams } from "react-router-dom";
 import { Link } from "react-router-dom";
 import { API_BASE, fetchWithAuth, getImageUrl } from "@/services/api";
 import { useSchoolProfile } from "@/context/SchoolProfileContext";
-import { ROLES_FULL, canSeeStudentDossierComplet } from "@/lib/dashboardRoles";
+import { ROLES_FULL, canSeeStudentDossierComplet, canSeeStudentNisu } from "@/lib/dashboardRoles";
 import { ExportPdfButton } from "@/components/ExportPdfButton";
 import { ExportBadgePdfButton } from "@/components/ExportBadgePdfButton";
 import { buildBadgesPdfBlob } from "@/lib/badgeProduction";
 import { formatDateJJMMAAAA } from "@/lib/format";
 import { formatPointsOnBareme, pointsToTen } from "@/lib/gradeScale";
 import type { PdfSection } from "@/lib/pdfExport";
-import { learnerNoun, learnerNounCap } from "@/lib/educationLevels";
+import { learnerNoun, learnerNounCap, isHigherEducationLevel } from "@/lib/educationLevels";
 import { dutiesForStudent, dutyDisplayTitle, isListScheduleLevel, namesJoin } from "@/lib/morningOpening";
 import {
   getStudentDossierPdfBlob,
@@ -260,9 +260,10 @@ export function DashboardFicheElevePage() {
     rolePermissions: [] as string[],
   };
   const canDossier = canSeeStudentDossierComplet(roleName, rolePermissions);
+  const canSeeNisu = canSeeStudentNisu(roleName, rolePermissions);
 
   const [classes, setClasses] = useState<ClassItem[]>([]);
-  const [students, setStudents] = useState<{ id: string; management_code: string | null; first_name: string; last_name: string; class_id: string }[]>([]);
+  const [students, setStudents] = useState<{ id: string; order_number: string | null; management_code: string | null; first_name: string; last_name: string; class_id: string }[]>([]);
   const [linkedStudents, setLinkedStudents] = useState<LinkedStudent[]>([]);
   const [restrictToLinkedStudents, setRestrictToLinkedStudents] = useState(false);
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
@@ -299,7 +300,7 @@ export function DashboardFicheElevePage() {
   const [rosterMode, setRosterMode] = useState<"active" | "alumni">("active");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<
-    { id: string; management_code: string | null; first_name: string; last_name: string; class_name?: string | null; is_alumni?: boolean }[]
+    { id: string; order_number: string | null; management_code: string | null; first_name: string; last_name: string; class_name?: string | null; is_alumni?: boolean }[]
   >([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -371,7 +372,7 @@ export function DashboardFicheElevePage() {
           setLinkedStudents(list);
           if (isParentOnly) {
             setRestrictToLinkedStudents(true);
-            setStudents(list.map((s: LinkedStudent) => ({ id: s.id, management_code: s.management_code ?? null, first_name: s.first_name, last_name: s.last_name, class_id: s.class_id })));
+            setStudents(list.map((s: LinkedStudent) => ({ id: s.id, order_number: s.order_number ?? null, management_code: s.management_code ?? null, first_name: s.first_name, last_name: s.last_name, class_id: s.class_id })));
             const toSelect = initialStudentId && list.some((x) => x.id === initialStudentId) ? initialStudentId : list[0].id;
             const sel = list.find((x) => x.id === toSelect) ?? list[0];
             setSelectedStudentId(toSelect);
@@ -775,7 +776,7 @@ export function DashboardFicheElevePage() {
               onBlur={() => {
                 window.setTimeout(() => setSearchOpen(false), 180);
               }}
-              placeholder="Nom, prénom ou code (2 caractères min.)"
+              placeholder={canSeeNisu ? "Nom, prénom, NISU ou code" : "Nom, prénom ou code (2 caractères min.)"}
               className="w-full border border-[var(--app-border)] rounded-lg px-3 py-2"
             />
             {searchOpen && searchQuery.trim().length >= 2 && (
@@ -798,6 +799,7 @@ export function DashboardFicheElevePage() {
                       }}
                     >
                       <span className="font-medium">{s.last_name} {s.first_name}</span>
+                      {canSeeNisu && s.order_number ? <span className="text-slate-500"> · NISU {s.order_number}</span> : null}
                       {s.management_code ? <span className="text-slate-500"> · {s.management_code}</span> : null}
                       {s.class_name ? <span className="text-slate-400"> · {s.class_name}</span> : null}
                     </button>
@@ -825,7 +827,12 @@ export function DashboardFicheElevePage() {
               <option value="">— Sélectionner —</option>
               {(restrictToLinkedStudents ? linkedStudents : students).map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.management_code ? `${s.management_code} — ` : ""}{s.first_name} {s.last_name}
+                  {canSeeNisu && "order_number" in s && s.order_number
+                    ? `${s.order_number} — `
+                    : s.management_code
+                      ? `${s.management_code} — `
+                      : ""}
+                  {s.first_name} {s.last_name}
                   {restrictToLinkedStudents && "class_name" in s ? ` (${(s as LinkedStudent).class_name})` : ""}
                 </option>
               ))}
@@ -859,6 +866,11 @@ export function DashboardFicheElevePage() {
                 <p className="text-slate-600 font-mono text-sm">
                   Code {student.management_code ?? "—"}
                 </p>
+                {canSeeNisu && student.order_number && !isHigherEducationLevel(student.class_level) ? (
+                  <p className="text-slate-600 font-mono text-sm">
+                    NISU {student.order_number}
+                  </p>
+                ) : null}
                 <p className="text-slate-700 mt-1">
                   <span className="font-medium">Tél. :</span> {student.phone ?? student.email ?? "—"}
                 </p>

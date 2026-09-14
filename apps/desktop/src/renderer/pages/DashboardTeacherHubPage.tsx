@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { API_BASE, fetchWithAuth } from "@/services/api";
 import { useSchoolProfile } from "@/context/SchoolProfileContext";
 import { educationLevelLabel } from "@/lib/educationLevels";
-import { dutiesForTeacher, dutyDisplayTitle, weekdayLabel, emptyClassDayLists, classDayListsFromApi, MORNING_WEEKDAYS } from "@/lib/morningOpening";
+import { dutiesForTeacher, dutyDisplayTitle, weekdayLabel, emptyClassDayLists, classDayListsFromApi, mergeMaterialCatalog, toggleMaterialLabel, ensureMaterialLabel, MORNING_WEEKDAYS } from "@/lib/morningOpening";
+import { MaterialCatalogPicker } from "@/components/MaterialCatalogPicker";
 
 type HubTab = "appel" | "travaux" | "materiel";
 type HomeworkKind = "DEVOIR" | "LECON";
@@ -677,6 +678,7 @@ function MaterialsTab({
   const [yearName, setYearName] = useState("");
   const [subjects, setSubjects] = useState<{ id: string; name: string }[]>([]);
   const [lists, setLists] = useState(emptyClassDayLists);
+  const [catalog, setCatalog] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -695,6 +697,7 @@ function MaterialsTab({
     if (!classId) {
       setLists(emptyClassDayLists());
       setSubjects([]);
+      setCatalog([]);
       return;
     }
     (async () => {
@@ -707,7 +710,9 @@ function MaterialsTab({
         ]);
         const listData = await listRes.json();
         const subjData = await subjRes.json();
-        setLists(classDayListsFromApi(listRes.ok ? listData.days ?? [] : []));
+        const next = classDayListsFromApi(listRes.ok ? listData.days ?? [] : []);
+        setLists(next);
+        setCatalog(mergeMaterialCatalog(listData.catalog, ...Object.values(next).map((s) => s.materials)));
         setSubjects(subjRes.ok ? (subjData.subjects ?? []) : []);
         onError("");
       } catch {
@@ -734,7 +739,9 @@ function MaterialsTab({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Enregistrement refusé");
-      setLists(classDayListsFromApi(data.days ?? []));
+      const next = classDayListsFromApi(data.days ?? []);
+      setLists(next);
+      setCatalog(mergeMaterialCatalog(data.catalog, ...Object.values(next).map((s) => s.materials)));
       onError("");
     } catch (err) {
       onError(err instanceof Error ? err.message : "Enregistrement impossible.");
@@ -793,11 +800,22 @@ function MaterialsTab({
               <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                 Matériel à apporter
               </p>
-              <DayNameLines
-                values={slot.materials}
-                onChange={(materials) =>
-                  setLists((prev) => ({ ...prev, [d.index]: { ...slot, materials } }))
+              <MaterialCatalogPicker
+                catalog={mergeMaterialCatalog(catalog, ...Object.values(lists).map((s) => s.materials))}
+                selected={slot.materials}
+                onToggle={(label) =>
+                  setLists((prev) => ({
+                    ...prev,
+                    [d.index]: { ...slot, materials: toggleMaterialLabel(slot.materials, label) },
+                  }))
                 }
+                onCreate={(label) => {
+                  setCatalog((prev) => mergeMaterialCatalog(prev, [label]));
+                  setLists((prev) => ({
+                    ...prev,
+                    [d.index]: { ...slot, materials: ensureMaterialLabel(slot.materials, label) },
+                  }));
+                }}
               />
             </div>
           </div>
@@ -811,57 +829,6 @@ function MaterialsTab({
       >
         {saving ? "Enregistrement…" : "Enregistrer"}
       </button>
-    </div>
-  );
-}
-
-function DayNameLines({
-  values,
-  onChange,
-}: {
-  values: string[];
-  onChange: (next: string[]) => void;
-}) {
-  const [draft, setDraft] = useState("");
-  function add() {
-    const line = draft.trim();
-    if (!line) return;
-    if (values.some((x) => x.toLowerCase() === line.toLowerCase())) {
-      setDraft("");
-      return;
-    }
-    onChange([...values, line]);
-    setDraft("");
-  }
-  return (
-    <div className="space-y-1.5">
-      <div className="flex gap-1.5">
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key !== "Enter") return;
-            e.preventDefault();
-            add();
-          }}
-          className="class-input min-w-0 flex-1"
-        />
-        <button type="button" onClick={add} className="app-btn-secondary text-xs">
-          Ajouter
-        </button>
-      </div>
-      <div className="flex flex-wrap gap-1.5">
-        {values.map((line) => (
-          <button
-            key={line}
-            type="button"
-            onClick={() => onChange(values.filter((x) => x !== line))}
-            className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-800 ring-1 ring-slate-200 hover:bg-red-50 hover:text-red-700"
-          >
-            {line} ×
-          </button>
-        ))}
-      </div>
     </div>
   );
 }

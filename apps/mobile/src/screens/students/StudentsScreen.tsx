@@ -20,7 +20,7 @@ import {
 } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 import { useSchool } from '../../context/SchoolContext';
-import { canEditStudent } from '../../lib/permissions';
+import { canEditStudent, canSeeStudentNisu } from '../../lib/permissions';
 import { AccessDenied, useCanBrowseStudents } from '../../lib/access';
 import { studentDisplayName } from '../../lib/format';
 import { isHigherEducationLevel, learnerNoun } from '../../lib/educationLevels';
@@ -54,6 +54,7 @@ export function StudentsScreen({ navigation }: Props) {
   const canBrowse = useCanBrowseStudents();
   const linkedOnly = useLinkedOnly(roleName);
   const canEnroll = canEditStudent(roleName, rolePermissions);
+  const canSeeNisu = canSeeStudentNisu(roleName, rolePermissions);
 
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<(StudentListItem | LinkedStudent)[]>([]);
@@ -161,10 +162,11 @@ export function StudentsScreen({ navigation }: Props) {
     return items.filter((s) => {
       const name = studentDisplayName(s).toLowerCase();
       const nisu = (s.order_number || '').toLowerCase();
+      const code = (s.management_code || '').toLowerCase();
       const cls = ('class_name' in s ? s.class_name || '' : '').toLowerCase();
-      return name.includes(q) || nisu.includes(q) || cls.includes(q);
+      return name.includes(q) || (canSeeNisu && nisu.includes(q)) || code.includes(q) || cls.includes(q);
     });
-  }, [items, query]);
+  }, [items, query, canSeeNisu]);
 
   if (!canBrowse) {
     return <AccessDenied />;
@@ -216,7 +218,9 @@ export function StudentsScreen({ navigation }: Props) {
           <SearchBar
             value={query}
             onChangeText={setQuery}
-            placeholder={listHigherEd ? 'Nom…' : 'Nom ou NISU…'}
+            placeholder={
+              listHigherEd ? 'Nom…' : canSeeNisu ? 'Nom ou NISU…' : 'Nom ou code…'
+            }
           />
         ) : null}
 
@@ -259,7 +263,11 @@ export function StudentsScreen({ navigation }: Props) {
             <ListRow
               title={studentDisplayName(item)}
               subtitle={[
-                listHigherEd ? null : item.order_number,
+                listHigherEd
+                  ? null
+                  : canSeeNisu
+                    ? item.order_number
+                    : item.management_code,
                 'class_name' in item ? item.class_name : null,
               ]
                 .filter(Boolean)

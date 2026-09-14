@@ -40,7 +40,7 @@ import {
   type HomeworkKind,
   type SubjectItem,
 } from '../../services/api';
-import { dutiesForTeacher, dutyDisplayTitle, weekdayLabel, emptyClassDayLists, classDayListsFromApi, MORNING_WEEKDAYS } from '../../lib/morningOpening';
+import { dutiesForTeacher, dutyDisplayTitle, weekdayLabel, emptyClassDayLists, classDayListsFromApi, mergeMaterialCatalog, toggleMaterialLabel, ensureMaterialLabel, MORNING_WEEKDAYS } from '../../lib/morningOpening';
 import { saveAttendanceWithQueue } from '../../lib/mutationQueue';
 import { useNetwork } from '../../context/NetworkContext';
 import { colors } from '../../theme/tokens';
@@ -449,6 +449,7 @@ function MaterialsPanel({
     context?.academic_year?.name || context?.current_academic_year_name || undefined;
   const activeId = classes.some((c) => c.id === classId) ? classId : classes[0]?.id || '';
   const [lists, setLists] = useState(emptyClassDayLists);
+  const [catalog, setCatalog] = useState<string[]>([]);
   const [subjects, setSubjects] = useState<SubjectItem[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -458,11 +459,13 @@ function MaterialsPanel({
     if (!activeId) return;
     (async () => {
       try {
-        const [rows, subj] = await Promise.all([
+        const [{ days, catalog: labels }, subj] = await Promise.all([
           listClassDayLists(activeId, yearName),
           getTeacherSubjectsInClass(activeId).catch(() => []),
         ]);
-        setLists(classDayListsFromApi(rows));
+        const next = classDayListsFromApi(days);
+        setLists(next);
+        setCatalog(mergeMaterialCatalog(labels, ...Object.values(next).map((s) => s.materials)));
         setSubjects(subj);
         setError('');
       } catch (err) {
@@ -475,7 +478,7 @@ function MaterialsPanel({
     if (!activeId) return;
     setSaving(true);
     try {
-      const rows = await replaceClassDayLists({
+      const { days, catalog: labels } = await replaceClassDayLists({
         class_id: activeId,
         academic_year: yearName || null,
         days: MORNING_WEEKDAYS.map((d) => ({
@@ -484,7 +487,9 @@ function MaterialsPanel({
           materials: next[d.index]?.materials ?? [],
         })),
       });
-      setLists(classDayListsFromApi(rows));
+      const parsed = classDayListsFromApi(days);
+      setLists(parsed);
+      setCatalog(mergeMaterialCatalog(labels, ...Object.values(parsed).map((s) => s.materials)));
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Enregistrement impossible');
@@ -533,44 +538,46 @@ function MaterialsPanel({
               })}
             </View>
             <Text style={styles.label}>Matériel à apporter</Text>
+            <View style={styles.pills}>
+              {mergeMaterialCatalog(catalog, ...Object.values(lists).map((s) => s.materials)).map(
+                (label) => {
+                  const on = slot.materials.some((x) => x.toLowerCase() === label.toLowerCase());
+                  return (
+                    <Pressable
+                      key={label}
+                      onPress={() =>
+                        setLists((prev) => ({
+                          ...prev,
+                          [d.index]: {
+                            ...slot,
+                            materials: toggleMaterialLabel(slot.materials, label),
+                          },
+                        }))
+                      }
+                      style={[styles.pill, on ? styles.pillOn : null]}
+                    >
+                      <Text style={styles.pillText}>{label}</Text>
+                    </Pressable>
+                  );
+                },
+              )}
+            </View>
             <TextInput
               value={draft}
               onChangeText={(t) => setDraftByDay((p) => ({ ...p, [d.index]: t }))}
               onSubmitEditing={() => {
-                const line = draft.trim();
+                const line = draft.trim().replace(/\s+/g, ' ');
                 if (!line) return;
-                if (slot.materials.some((x) => x.toLowerCase() === line.toLowerCase())) {
-                  setDraftByDay((p) => ({ ...p, [d.index]: '' }));
-                  return;
-                }
+                setCatalog((prev) => mergeMaterialCatalog(prev, [line]));
                 setLists((prev) => ({
                   ...prev,
-                  [d.index]: { ...slot, materials: [...slot.materials, line] },
+                  [d.index]: { ...slot, materials: ensureMaterialLabel(slot.materials, line) },
                 }));
                 setDraftByDay((p) => ({ ...p, [d.index]: '' }));
               }}
               returnKeyType="done"
               style={styles.input}
             />
-            <View style={styles.pills}>
-              {slot.materials.map((line) => (
-                <Pressable
-                  key={line}
-                  onPress={() =>
-                    setLists((prev) => ({
-                      ...prev,
-                      [d.index]: {
-                        ...slot,
-                        materials: slot.materials.filter((x) => x !== line),
-                      },
-                    }))
-                  }
-                  style={styles.pill}
-                >
-                  <Text style={styles.pillText}>{line} ×</Text>
-                </Pressable>
-              ))}
-            </View>
           </View>
         );
       })}

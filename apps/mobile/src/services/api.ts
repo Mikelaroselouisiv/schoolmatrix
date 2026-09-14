@@ -302,6 +302,7 @@ export type StudentListItem = {
 export type LinkedStudent = {
   id: string;
   order_number: string | null;
+  management_code?: string | null;
   first_name: string;
   last_name: string;
   class_id: string;
@@ -772,14 +773,17 @@ export type ClassDayList = {
 export async function listClassDayLists(
   classId: string,
   academicYear?: string,
-): Promise<ClassDayList[]> {
+): Promise<{ days: ClassDayList[]; catalog: string[] }> {
   try {
     const { data } = await api.get('/class-day-lists', {
       params: { class_id: classId, academic_year: academicYear },
     });
-    return Array.isArray(data?.days) ? data.days : [];
+    return {
+      days: Array.isArray(data?.days) ? data.days : [],
+      catalog: Array.isArray(data?.catalog) ? data.catalog : [],
+    };
   } catch {
-    return [];
+    return { days: [], catalog: [] };
   }
 }
 
@@ -791,9 +795,12 @@ export async function replaceClassDayLists(body: {
     subject_ids?: string[];
     materials?: string[];
   }[];
-}): Promise<ClassDayList[]> {
+}): Promise<{ days: ClassDayList[]; catalog: string[] }> {
   const { data } = await api.put('/class-day-lists', body);
-  return Array.isArray(data?.days) ? data.days : [];
+  return {
+    days: Array.isArray(data?.days) ? data.days : [],
+    catalog: Array.isArray(data?.catalog) ? data.catalog : [],
+  };
 }
 
 export async function getStudentSchedule(

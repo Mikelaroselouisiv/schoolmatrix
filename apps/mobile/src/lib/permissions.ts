@@ -183,6 +183,37 @@ export function canEditStudent(
   return ROLES_STUDENT_EDIT.includes(roleName);
 }
 
+/** NISU : direction, pédagogie, secrétariat — pas parent, prof, économe. */
+export function canSeeStudentNisu(
+  roleName: string,
+  rolePermissions?: string[],
+): boolean {
+  if (rolePermissions?.includes('full_access')) return true;
+  const role = (roleName ?? '').toUpperCase().trim();
+  if (
+    isTeacherRole(role) ||
+    isParentRole(role) ||
+    role === 'ECONOME' ||
+    role === 'COMPTABLE' ||
+    role === 'DISCIPLINE' ||
+    role === 'SURVEILLANT_GENERAL' ||
+    role === 'PHOTOGRAPHER'
+  ) {
+    return false;
+  }
+  if (ROLES_FULL.includes(role)) return true;
+  if (ROLES_STUDENT_EDIT.includes(role)) return true;
+  if (
+    role === 'SECRETAIRE_GENERAL' ||
+    role === 'SECRETAIRE_FORMATION_SUPERIEURE' ||
+    role === 'ADMINISTRATEUR' ||
+    role === 'DIRECTEUR_ADMINISTRATIF'
+  ) {
+    return true;
+  }
+  return !!rolePermissions?.includes('students') || !!rolePermissions?.includes('formation-classe');
+}
+
 export function canSeeFinanceTab(
   roleName: string,
   rolePermissions?: string[],

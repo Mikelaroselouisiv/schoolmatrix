@@ -309,6 +309,14 @@ export function canSeeStudentDossierComplet(
   );
 }
 
+/** NISU : direction, pédagogie, secrétariat — pas parent, prof, économe. */
+export function canSeeStudentNisu(
+  roleName: string,
+  rolePermissions?: string[],
+): boolean {
+  return canSeeStudentDossierComplet(roleName, rolePermissions);
+}
+
 /**
  * Rôles "moniteur" : uniquement le tableau de bord avec bloc Profil / Moniteur
  * (pas d’accès aux menus de gestion : classes, élèves, professeurs, etc.).

@@ -18,7 +18,7 @@ import {
 } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 import { useSchool } from '../../context/SchoolContext';
-import { canEditStudent, canAccessPermission } from '../../lib/permissions';
+import { canEditStudent, canAccessPermission, canSeeStudentNisu } from '../../lib/permissions';
 import { AccessDenied } from '../../lib/access';
 import {
   formatDateJJMMAAAA,
@@ -59,6 +59,7 @@ export function StudentFicheScreen({ navigation, route }: Props) {
   const { context, theme } = useSchool();
   const { roleName, rolePermissions, linkedStudents } = useAuth();
   const canEdit = canEditStudent(roleName, rolePermissions);
+  const canSeeNisu = canSeeStudentNisu(roleName, rolePermissions);
   const isLinkedChild = linkedStudents.some((s) => s.id === studentId);
   const canView =
     isLinkedChild ||
@@ -215,7 +216,11 @@ export function StudentFicheScreen({ navigation, route }: Props) {
           <Text style={styles.name}>{studentDisplayName(student)}</Text>
           <Text style={styles.meta}>
             {[
-              isHigherEducationLevel(student.class_level) ? null : student.order_number,
+              canSeeNisu && !isHigherEducationLevel(student.class_level) && student.order_number
+                ? `NISU ${student.order_number}`
+                : student.management_code
+                  ? `Code ${student.management_code}`
+                  : null,
               student.class_name,
               student.room_name,
             ]
@@ -379,6 +384,10 @@ export function StudentFicheScreen({ navigation, route }: Props) {
 
           {detailTab === 'infos' ? (
             <>
+              {canSeeNisu && !isHigherEducationLevel(student.class_level) ? (
+                <Info label="NISU" value={student.order_number} />
+              ) : null}
+              <Info label="Code de gestion" value={student.management_code} />
               <Info label="Genre" value={student.gender} />
               <Info label="Naissance" value={formatDateJJMMAAAA(student.birth_date)} />
               <Info label="Lieu" value={student.birth_place} />

@@ -19,9 +19,7 @@ import { DashboardSchedulePage } from './pages/DashboardSchedulePage';
 import { DashboardSchoolPage } from './pages/DashboardSchoolPage';
 import { DashboardStudentsImportPage } from './pages/DashboardStudentsImportPage';
 import { DashboardStudentsPage } from './pages/DashboardStudentsPage';
-import { DashboardRoomsPage } from './pages/DashboardRoomsPage';
 import { DashboardSubjectsPage } from './pages/DashboardSubjectsPage';
-import { DashboardTeachersPage } from './pages/DashboardTeachersPage';
 import { DashboardUsersPage } from './pages/DashboardUsersPage';
 import { LoginPage } from './pages/LoginPage';
 import { ProtectedRoute } from './pages/ProtectedRoute';
@@ -47,8 +45,8 @@ export default function App() {
               <Route path="students" element={<DashboardStudentsPage />} />
               <Route path="students/import" element={<DashboardStudentsImportPage />} />
               <Route path="classes" element={<DashboardClassesPage />} />
-              <Route path="rooms" element={<DashboardRoomsPage />} />
-              <Route path="teachers" element={<DashboardTeachersPage />} />
+              <Route path="rooms" element={<Navigate to="/dashboard/classes" replace />} />
+              <Route path="teachers" element={<Navigate to="/dashboard/classes" replace />} />
               <Route path="subjects" element={<DashboardSubjectsPage />} />
               <Route path="school" element={<DashboardSchoolPage />} />
               <Route path="academic-years" element={<DashboardAcademicYearsPage />} />

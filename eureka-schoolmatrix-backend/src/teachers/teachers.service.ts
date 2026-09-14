@@ -19,7 +19,10 @@ import {
 import {
   isAttendanceLevel,
   isMaterialsLevel,
+  morningCycleFromLevel,
 } from '../roles/education-levels';
+import { isPreschoolClass } from '../utils/preschool';
+import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class TeachersService {
@@ -43,7 +46,81 @@ export class TeachersService {
     @InjectRepository(Class)
     private readonly classRepo: Repository<Class>,
     private readonly scheduleMoments: ScheduleMomentsService,
+    private readonly usersService: UsersService,
   ) {}
+
+  serializeTeacher(t: User) {
+    return {
+      id: t.id,
+      first_name: t.first_name,
+      last_name: t.last_name,
+      email: t.email,
+      phone: t.phone,
+      profile_photo_url: t.profile_photo_url ?? null,
+      active: t.active,
+    };
+  }
+
+  async searchStaffCandidates(q?: string): Promise<User[]> {
+    const blocked = [...TEACHER_ROLE_NAMES, 'PARENT'];
+    const qb = this.userRepo
+      .createQueryBuilder('u')
+      .leftJoinAndSelect('u.role', 'r')
+      .where('u.active = :active', { active: true })
+      .andWhere('(r.name IS NULL OR UPPER(r.name) NOT IN (:...blocked))', {
+        blocked,
+      })
+      .orderBy('u.last_name', 'ASC')
+      .addOrderBy('u.first_name', 'ASC')
+      .take(30);
+    const query = (q ?? '').trim();
+    if (query) {
+      const like = `%${query.replace(/[%_\\]/g, '')}%`;
+      qb.andWhere(
+        `(u.first_name ILIKE :like OR u.last_name ILIKE :like OR u.email ILIKE :like
+          OR COALESCE(u.phone, '') ILIKE :like
+          OR CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')) ILIKE :like)`,
+        { like },
+      );
+    }
+    return qb.getMany();
+  }
+
+  async createTeacher(params: {
+    first_name?: string;
+    last_name?: string;
+    email: string;
+    phone?: string;
+    password: string;
+    profile_photo_url?: string;
+  }): Promise<User> {
+    return this.usersService.createUser({
+      first_name: params.first_name,
+      last_name: params.last_name,
+      email: params.email,
+      phone: params.phone,
+      password: params.password,
+      roleName: 'TEACHER',
+      profile_photo_url: params.profile_photo_url,
+      must_change_password: true,
+    });
+  }
+
+  async promoteToTeacher(userId: number): Promise<User> {
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      relations: ['role'],
+    });
+    if (!user) throw new NotFoundException('Utilisateur introuvable');
+    if (isTeacherRoleName(user.role?.name)) return user;
+    const role = (user.role?.name ?? '').toUpperCase();
+    if (role === 'PARENT') {
+      throw new BadRequestException(
+        'Un compte parent ne peut pas être promu professeur depuis la classe.',
+      );
+    }
+    return this.usersService.setUserRole(userId, 'TEACHER');
+  }
 
   /**
    * Emploi du temps d'un élève = celui de sa classe.
@@ -71,8 +148,15 @@ export class TeachersService {
         ])
       : [[], [], []];
 
+    const cycle = morningCycleFromLevel(student.class?.level);
+    const relevantDuties = duties.filter((d) => {
+      if (d.kind === 'FLAG') return d.class_id === classId;
+      if (d.kind === 'RENTREE') return !!cycle && d.cycle === cycle;
+      return false;
+    });
+
     const merged = [
-      ...duties.map((d) => ({
+      ...relevantDuties.map((d) => ({
         id: `duty:${d.id}`,
         kind: d.kind,
         title: d.title,
@@ -82,12 +166,12 @@ export class TeachersService {
         subject_id: null as string | null,
         subject_name: d.title,
         room_id: null as string | null,
-        room_name: null as string | null,
+        room_name: d.class_name,
         teacher_id: d.responsible_user_id,
         teacher_name: d.responsible_name,
         academic_year: d.academic_year,
         materials: null as string | null,
-        is_school_wide: true,
+        is_school_wide: d.kind === 'FLAG',
       })),
       ...moments.map((m) => ({
         id: `moment:${m.id}`,
@@ -392,6 +476,7 @@ export class TeachersService {
       teacher_name: a.teacher
         ? `${a.teacher.first_name ?? ''} ${a.teacher.last_name ?? ''}`.trim()
         : '',
+      teacher_photo_url: a.teacher?.profile_photo_url ?? null,
       class_id: a.class?.id ?? a.class_id,
       class_name: a.class?.name ?? '',
       subject_id: a.subject?.id ?? a.subject_id,
@@ -456,6 +541,7 @@ export class TeachersService {
       id: string;
       name: string;
       level: string | null;
+      is_preschool: boolean;
       can_take_attendance: boolean;
       can_set_materials: boolean;
     }[] = [];
@@ -467,6 +553,7 @@ export class TeachersService {
           id: cid,
           name: a.class?.name ?? '',
           level: a.class?.level ?? null,
+          is_preschool: isPreschoolClass(a.class?.description, a.class?.level),
           can_take_attendance: isAttendanceLevel(a.class?.level),
           can_set_materials: isMaterialsLevel(a.class?.level),
         });
@@ -488,6 +575,7 @@ export class TeachersService {
     return list.map((a) => ({
       id: a.subject?.id ?? (a as any).subject_id,
       name: a.subject?.name ?? '',
+      preschool_eval: a.subject?.preschool_eval === 'FREQUENCY' ? 'FREQUENCY' : 'LEVEL',
     }));
   }
 

@@ -24,6 +24,7 @@ export const ENTITY_ORDER = [
   'ScheduleSlot',
   'ClassDayMoment',
   'SchoolWeekDuty',
+  'SchoolMaterial',
   'ExtracurricularActivity',
   'StudentClassAssignment',
   'ClassDecisionThreshold',

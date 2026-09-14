@@ -48,6 +48,7 @@ import {
 } from '../../lib/offlineCache';
 import { colors } from '../../theme/tokens';
 import { isHigherEducationLevel, learnerNoun } from '../../lib/educationLevels';
+import { dutiesForStudent, dutyDisplayTitle } from '../../lib/morningOpening';
 import type { StudentsStackParamList } from '../../navigation/types';
 
 const DAYS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
@@ -112,14 +113,15 @@ export function StudentFicheScreen({ navigation, route }: Props) {
           }),
           listSchoolWeekDuties({
             academic_year: yearName || undefined,
-            kind: 'DEVOTION',
           }),
         ]);
+        const relevant = dutiesForStudent(duties, s.class_id, s.class_level);
         const extra: ScheduleSlot[] = [
-          ...duties.map((d) => ({
+          ...relevant.map((d) => ({
             id: `duty:${d.id}`,
-            subject_name: d.title,
+            subject_name: dutyDisplayTitle(d),
             teacher_name: d.responsible_name,
+            class_name: d.class_name ?? undefined,
             day_of_week: d.day_of_week,
             start_time: d.start_time,
             end_time: d.end_time,

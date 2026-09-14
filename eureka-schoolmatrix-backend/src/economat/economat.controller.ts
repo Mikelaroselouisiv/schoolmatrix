@@ -150,19 +150,48 @@ export class EconomatController {
     };
   }
 
+  @DenyParents()
+  @Post('payments/:id/cancel')
+  async cancelPayment(@Param('id') id: string) {
+    const tx = await this.economatService.cancelPayment(id);
+    try {
+      await this.financeService.voidEconomatPayment(tx);
+    } catch {
+      // le paiement reste annulé même si l'écriture inverse échoue
+    }
+    return {
+      ok: true,
+      payment: {
+        id: tx.id,
+        cancelled_at: tx.cancelled_at,
+      },
+    };
+  }
+
   @ParentScopedStudent(STUDENT_QUERY)
   @Get('transactions')
   async listTransactions(
     @Query('student_id') studentId?: string,
     @Query('academic_year') academicYear?: string,
     @Query('class_id') classId?: string,
+    @Query('limit') limitRaw?: string,
+    @Query('offset') offsetRaw?: string,
   ) {
-    const list = await this.economatService.findTransactions({
+    const limit = Math.min(Math.max(parseInt(limitRaw ?? '40', 10) || 40, 1), 100);
+    const offset = Math.max(parseInt(offsetRaw ?? '0', 10) || 0, 0);
+    const { items, total } = await this.economatService.findTransactions({
       student_id: studentId,
       academic_year: academicYear,
       class_id: classId,
+      limit,
+      offset,
     });
-    return { ok: true, transactions: list };
+    return {
+      ok: true,
+      transactions: items,
+      total,
+      has_more: offset + items.length < total,
+    };
   }
 
   @ParentScopedStudent({ in: 'param', key: 'studentId' })

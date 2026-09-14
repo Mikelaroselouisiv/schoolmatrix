@@ -2,6 +2,7 @@ import type { PdfSection } from "@/lib/pdfExport";
 import { getSectionsPdfBlob } from "@/lib/pdfExport";
 import { formatDateJJMMAAAA } from "@/lib/format";
 import { formatPointsOnBareme } from "@/lib/gradeScale";
+import { preschoolFrequencyLabel, preschoolLevelLabel } from "@/lib/preschoolScale";
 
 const DECISION_LABELS: Record<string, string> = {
   ADMIS: "Admis",
@@ -193,7 +194,11 @@ export function buildStudentDossierSections(dossier: StudentDossier): PdfSection
             const row: Record<string, string> = { subject_name: subj.name };
             pre.periods!.forEach((p, i) => {
               const cell = pre.cells?.[`${subj.id}:${p.id}`];
-              row[`period_${i}`] = [cell?.level, cell?.frequency, cell?.observation]
+              row[`period_${i}`] = [
+                preschoolLevelLabel(cell?.level),
+                preschoolFrequencyLabel(cell?.frequency),
+                cell?.observation,
+              ]
                 .filter(Boolean)
                 .join(" · ") || "—";
             });

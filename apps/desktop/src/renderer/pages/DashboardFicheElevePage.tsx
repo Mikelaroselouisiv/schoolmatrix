@@ -11,6 +11,7 @@ import { formatDateJJMMAAAA } from "@/lib/format";
 import { formatPointsOnBareme, pointsToTen } from "@/lib/gradeScale";
 import type { PdfSection } from "@/lib/pdfExport";
 import { learnerNoun, learnerNounCap } from "@/lib/educationLevels";
+import { dutiesForStudent, dutyDisplayTitle } from "@/lib/morningOpening";
 import {
   getStudentDossierPdfBlob,
   type StudentDossier,
@@ -167,20 +168,27 @@ function mergeClassSchedule(
   duties: {
     id: string;
     title: string;
+    kind?: string;
+    cycle?: string | null;
+    class_id?: string | null;
+    class_name?: string | null;
     day_of_week: number;
     start_time: string;
     end_time: string;
     responsible_name?: string | null;
   }[],
+  classId?: string | null,
+  classLevel?: string | null,
 ): ScheduleSlot[] {
+  const relevant = dutiesForStudent(duties, classId, classLevel);
   const extra: ScheduleSlot[] = [
-    ...duties.map((d) => ({
+    ...relevant.map((d) => ({
       id: `duty:${d.id}`,
       academic_year: null,
-      class_id: "",
-      class_name: "Toute l’école",
+      class_id: d.class_id ?? "",
+      class_name: d.class_name ?? "",
       subject_id: "",
-      subject_name: d.title,
+      subject_name: dutyDisplayTitle(d),
       teacher_id: null,
       teacher_name: d.responsible_name ?? null,
       room_id: null,
@@ -188,7 +196,7 @@ function mergeClassSchedule(
       day_of_week: d.day_of_week,
       start_time: d.start_time,
       end_time: d.end_time,
-      kind: "DEVOTION",
+      kind: d.kind ?? "RENTREE",
     })),
     ...moments.map((m) => ({
       id: `moment:${m.id}`,
@@ -464,7 +472,7 @@ export function DashboardFicheElevePage() {
           fetchWithAuth(`${API_BASE}/extracurricular-activities?class_id=${yearClassId}&academic_year_id=${selectedYearId}`),
           fetchWithAuth(`${API_BASE}/homework/student/${studentId}`),
           fetchWithAuth(`${API_BASE}/schedule-moments?class_id=${yearClassId}${yearName ? `&academic_year=${encodeURIComponent(yearName)}` : ""}`),
-          fetchWithAuth(`${API_BASE}/school-week-duties?kind=DEVOTION${yearName ? `&academic_year=${encodeURIComponent(yearName)}` : ""}`),
+          fetchWithAuth(`${API_BASE}/school-week-duties?${yearName ? `academic_year=${encodeURIComponent(yearName)}` : ""}`),
         ]);
         const examData = await examRes.json();
         const formationData = await formationRes.json();
@@ -484,6 +492,8 @@ export function DashboardFicheElevePage() {
             slotsRes.ok ? (slotsData.schedule_slots ?? []) : [],
             momentsRes.ok ? (momentsData.schedule_moments ?? []) : [],
             dutiesRes.ok ? (dutiesData.school_week_duties ?? []) : [],
+            yearClassId,
+            sData?.class_level || classes.find((c) => c.id === yearClassId)?.level,
           ),
         );
         setExamSchedules(examSchedRes.ok ? (examSchedData.exam_schedules ?? []) : []);
@@ -499,7 +509,7 @@ export function DashboardFicheElevePage() {
             fetchWithAuth(`${API_BASE}/extracurricular-activities?class_id=${yearClassId}`),
             fetchWithAuth(`${API_BASE}/homework/student/${studentId}`),
             fetchWithAuth(`${API_BASE}/schedule-moments?class_id=${yearClassId}`),
-            fetchWithAuth(`${API_BASE}/school-week-duties?kind=DEVOTION`),
+            fetchWithAuth(`${API_BASE}/school-week-duties`),
           ]);
           const slotsData = await slotsRes.json();
           const examSchedData = await examSchedRes.json();
@@ -512,6 +522,8 @@ export function DashboardFicheElevePage() {
               slotsRes.ok ? (slotsData.schedule_slots ?? []) : [],
               momentsRes.ok ? (momentsData.schedule_moments ?? []) : [],
               dutiesRes.ok ? (dutiesData.school_week_duties ?? []) : [],
+              yearClassId,
+              sData?.class_level || classes.find((c) => c.id === yearClassId)?.level,
             ),
           );
           setExamSchedules(examSchedRes.ok ? (examSchedData.exam_schedules ?? []) : []);

@@ -93,14 +93,7 @@ export class TeachersController {
       await this.teachersService.findTeachersForClassAndSubject(classId, subjectId);
     return {
       ok: true,
-      teachers: teachers.map((t) => ({
-        id: t.id,
-        first_name: t.first_name,
-        last_name: t.last_name,
-        email: t.email,
-        phone: t.phone,
-        active: t.active,
-      })),
+      teachers: teachers.map((t) => this.teachersService.serializeTeacher(t)),
     };
   }
 
@@ -116,6 +109,45 @@ export class TeachersController {
     return { ok: true, assignments: list };
   }
 
+  /** Comptes staff (hors professeur / parent) à promouvoir depuis le panneau classe. */
+  @Get('staff-search')
+  async staffSearch(@Query('q') q?: string) {
+    const users = await this.teachersService.searchStaffCandidates(q);
+    return {
+      ok: true,
+      users: users.map((u) => ({
+        ...this.teachersService.serializeTeacher(u),
+        role: u.role?.name ?? null,
+      })),
+    };
+  }
+
+  @Post()
+  async create(
+    @Body()
+    body: {
+      first_name?: string;
+      last_name?: string;
+      email: string;
+      phone?: string;
+      password: string;
+      profile_photo_url?: string;
+    },
+  ) {
+    if (!body?.email || !body?.password) {
+      throw new BadRequestException('Email et mot de passe requis');
+    }
+    const teacher = await this.teachersService.createTeacher(body);
+    return { ok: true, teacher: this.teachersService.serializeTeacher(teacher) };
+  }
+
+  @Post('promote')
+  async promote(@Body() body: { user_id?: number }) {
+    if (!body?.user_id) throw new BadRequestException('user_id requis');
+    const teacher = await this.teachersService.promoteToTeacher(body.user_id);
+    return { ok: true, teacher: this.teachersService.serializeTeacher(teacher) };
+  }
+
   @Get(':id')
   async one(@Param('id', ParseIntPipe) id: number) {
     const teacher = await this.teachersService.findOneTeacher(id);
@@ -126,12 +158,7 @@ export class TeachersController {
     return {
       ok: true,
       teacher: {
-        id: teacher.id,
-        first_name: teacher.first_name,
-        last_name: teacher.last_name,
-        email: teacher.email,
-        phone: teacher.phone,
-        active: teacher.active,
+        ...this.teachersService.serializeTeacher(teacher),
         classes,
         subjects,
         class_subjects,

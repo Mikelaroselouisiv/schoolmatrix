@@ -1,9 +1,14 @@
 import { BadRequestException } from '@nestjs/common';
 import { CLASS_MOMENT_KINDS, ClassMomentKind } from './class-day-moment.entity';
 import { SCHOOL_DUTY_KINDS, SchoolDutyKind } from './school-week-duty.entity';
+import type { MorningDutyCycle } from '../roles/education-levels';
 
-/** Lundi → samedi (comme la grille horaire). 0 = dimanche. */
-export const CLASS_WEEKDAYS = [1, 2, 3, 4, 5, 6] as const;
+/** Horaires internes (non affichés) pour trier le début de journée avant les cours. */
+export const MORNING_DUTY_START = '07:00';
+export const MORNING_DUTY_END = '07:30';
+
+/** Lundi → vendredi (semaine de classe). 0 = dimanche. */
+export const CLASS_WEEKDAYS = [1, 2, 3, 4, 5] as const;
 
 export const CLASS_MOMENT_LABELS: Record<ClassMomentKind, string> = {
   ENTRY: 'Rentrée',
@@ -12,8 +17,21 @@ export const CLASS_MOMENT_LABELS: Record<ClassMomentKind, string> = {
 };
 
 export const SCHOOL_DUTY_LABELS: Record<SchoolDutyKind, string> = {
+  FLAG: 'Montée du drapeau',
+  RENTREE: 'Rentrée',
   DEVOTION: 'Dévotion',
 };
+
+export function morningDutyTitle(
+  kind: SchoolDutyKind | string,
+  cycle?: string | null,
+): string {
+  const k = String(kind ?? '').toUpperCase();
+  if (k === 'FLAG') return SCHOOL_DUTY_LABELS.FLAG;
+  if (k === 'RENTREE' && cycle === 'PRESCOLAIRE') return 'Rentrée préscolaire';
+  if (k === 'RENTREE') return 'Rentrée primaire';
+  return SCHOOL_DUTY_LABELS[k as SchoolDutyKind] || k;
+}
 
 export function parseHhMm(raw: string | undefined, field = 'horaire'): string {
   const m = String(raw ?? '')
@@ -54,11 +72,21 @@ export function parseClassMomentKind(kind: string | undefined): ClassMomentKind 
 }
 
 export function parseSchoolDutyKind(kind?: string | null): SchoolDutyKind {
-  const k = String(kind ?? 'DEVOTION').trim().toUpperCase();
+  const k = String(kind ?? 'RENTREE').trim().toUpperCase();
   if (!(SCHOOL_DUTY_KINDS as readonly string[]).includes(k)) {
-    throw new BadRequestException('Type de responsabilité invalide (DEVOTION)');
+    throw new BadRequestException(
+      'Type de responsabilité invalide (FLAG, RENTREE)',
+    );
   }
   return k as SchoolDutyKind;
+}
+
+export function parseMorningCycle(raw?: string | null): MorningDutyCycle {
+  const k = String(raw ?? '').trim().toUpperCase();
+  if (k !== 'PRESCOLAIRE' && k !== 'PRIMAIRE') {
+    throw new BadRequestException('Cycle invalide (PRESCOLAIRE, PRIMAIRE)');
+  }
+  return k;
 }
 
 export function personName(

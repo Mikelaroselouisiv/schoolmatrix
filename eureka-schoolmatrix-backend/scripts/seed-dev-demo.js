@@ -679,10 +679,11 @@ async function main() {
     for (const [si, s] of allStudents.entries()) {
       const codes = subjectsFor(s.level);
       if (s.level === 'Préscolaire') {
-        const levels = ['A', 'EA', 'NA'];
-        const freqs = ['Régulier', 'Occasionnel', 'En progrès'];
+        const levels = ['MOINS_BIEN', 'BIEN', 'TRES_BIEN', 'EXCELLENT'];
+        const freqs = ['JAMAIS', 'PARFOIS', 'TOUJOURS'];
         for (const code of codes) {
           const sub = subjectByCode[code];
+          const byFreq = code === 'EPS';
           await client.query(
             `INSERT INTO preschool_grade (student_id, academic_year_id, class_id, subject_id, period_id, level, frequency, observation)
              SELECT $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6::varchar, $7::varchar, $8::text
@@ -692,8 +693,8 @@ async function main() {
              )`,
             [
               s.id, yearId, s.class_id, sub.id, t1.id,
-              pick(levels, si + code.length),
-              pick(freqs, si),
+              byFreq ? null : pick(levels, si + code.length),
+              byFreq ? pick(freqs, si) : null,
               si % 4 === 0 ? 'Participe bien aux activités.' : null,
             ],
           );
@@ -807,23 +808,6 @@ async function main() {
       );
     }
 
-    for (const c of classes.filter((x) => x.level !== 'Préscolaire')) {
-      const codes = subjectsFor(c.level).slice(0, 4);
-      for (const [i, code] of codes.entries()) {
-        await client.query(
-          `INSERT INTO exam_schedule (class_id, subject_id, period_id, period, exam_date, start_time, end_time)
-           SELECT $1::uuid, $2::uuid, $3::uuid, $4::varchar, $5::date, $6::varchar, $7::varchar
-           WHERE NOT EXISTS (
-             SELECT 1 FROM exam_schedule
-             WHERE class_id = $1::uuid AND subject_id = $2::uuid AND period_id = $3::uuid
-           )`,
-          [
-            c.id, subjectByCode[code].id, t1.id, t1.name,
-            `2026-10-${String(12 + i).padStart(2, '0')}`, '08:00', '10:00',
-          ],
-        );
-      }
-    }
     for (const c of classes) {
       await client.query(
         `INSERT INTO extracurricular_activity (academic_year_id, activity_date, start_time, end_time, class_id, occasion, participation_fee, dress_code)

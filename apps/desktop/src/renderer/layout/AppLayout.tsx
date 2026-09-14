@@ -31,6 +31,13 @@ function canSeeByPermissions(permissionKey: string, rolePermissions: string[]): 
     );
   }
   if (permissionKey === 'rooms') return rolePermissions.includes('rooms') || rolePermissions.includes('classes');
+  if (permissionKey === 'classes') {
+    return (
+      rolePermissions.includes('classes') ||
+      rolePermissions.includes('rooms') ||
+      rolePermissions.includes('teachers')
+    );
+  }
   if (permissionKey === 'stats-academiques') {
     return rolePermissions.includes('stats-academiques');
   }

@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository, DataSource } from 'typeorm';
 import { Class } from '../classes/class.entity';
 import { User } from '../users/user.entity';
 import {
@@ -16,10 +16,15 @@ import {
   SchoolWeekDuty,
 } from './school-week-duty.entity';
 import {
+  isMorningOpeningLevel,
+} from '../roles/education-levels';
+import {
   CLASS_MOMENT_LABELS,
   CLASS_WEEKDAYS,
-  SCHOOL_DUTY_LABELS,
+  MORNING_DUTY_END,
+  MORNING_DUTY_START,
   assertTimeRange,
+  morningDutyTitle,
   parseClassMomentKind,
   parseHhMm,
   parseSchoolDutyKind,
@@ -47,6 +52,10 @@ export type SchoolWeekDutyDto = {
   academic_year: string;
   kind: SchoolDutyKind;
   title: string;
+  cycle: string | null;
+  class_id: string | null;
+  class_name: string | null;
+  class_level: string | null;
   day_of_week: number;
   start_time: string;
   end_time: string;
@@ -54,6 +63,13 @@ export type SchoolWeekDutyDto = {
   responsible_name: string | null;
   created_at: Date;
   updated_at: Date;
+};
+
+export type MorningOpeningDayBody = {
+  day_of_week: number;
+  flag_class_id?: string | null;
+  preschool_teacher_ids?: number[];
+  primary_teacher_ids?: number[];
 };
 
 @Injectable()
@@ -67,6 +83,7 @@ export class ScheduleMomentsService {
     private readonly classRepo: Repository<Class>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    private readonly dataSource: DataSource,
   ) {}
 
   private toMomentDto(m: ClassDayMoment): ClassDayMomentDto {
@@ -93,7 +110,11 @@ export class ScheduleMomentsService {
       id: d.id,
       academic_year: d.academic_year,
       kind: d.kind,
-      title: SCHOOL_DUTY_LABELS[d.kind] || d.kind,
+      title: morningDutyTitle(d.kind, d.cycle),
+      cycle: d.cycle ?? null,
+      class_id: d.class?.id ?? d.class_id ?? null,
+      class_name: d.class?.name ?? null,
+      class_level: d.class?.level ?? null,
       day_of_week: d.day_of_week,
       start_time: d.start_time,
       end_time: d.end_time,
@@ -227,7 +248,9 @@ export class ScheduleMomentsService {
     const qb = this.dutyRepo
       .createQueryBuilder('d')
       .leftJoinAndSelect('d.responsible', 'responsible')
-      .orderBy('d.day_of_week', 'ASC');
+      .leftJoinAndSelect('d.class', 'class')
+      .orderBy('d.day_of_week', 'ASC')
+      .addOrderBy('d.kind', 'ASC');
     if (filters.academic_year) {
       qb.andWhere('d.academic_year = :academic_year', {
         academic_year: filters.academic_year,
@@ -244,54 +267,121 @@ export class ScheduleMomentsService {
 
   async upsertWeekDuties(body: {
     academic_year: string;
-    kind?: string;
-    start_time: string;
-    end_time: string;
-    days: { day_of_week: number; responsible_user_id?: number | null }[];
+    days: MorningOpeningDayBody[];
   }): Promise<SchoolWeekDutyDto[]> {
     const year = body.academic_year?.trim();
     if (!year) throw new BadRequestException('academic_year requis');
-    const kind = parseSchoolDutyKind(body.kind);
-    const start = parseHhMm(body.start_time, 'début');
-    const end = parseHhMm(body.end_time, 'fin');
-    assertTimeRange(start, end);
     if (!Array.isArray(body.days) || body.days.length === 0) {
       throw new BadRequestException('Indiquez au moins un jour');
     }
-    const out: SchoolWeekDuty[] = [];
-    for (const dayBody of body.days) {
-      const day = parseWeekday(dayBody.day_of_week);
-      let responsible: User | null = null;
-      const uid = dayBody.responsible_user_id;
-      if (uid != null) {
-        responsible = await this.userRepo.findOne({ where: { id: uid } });
-        if (!responsible) {
-          throw new BadRequestException(`Utilisateur ${uid} introuvable`);
+
+    const uniqueIds = [
+      ...new Set(
+        body.days.flatMap((d) => [
+          ...(d.preschool_teacher_ids ?? []),
+          ...(d.primary_teacher_ids ?? []),
+        ]),
+      ),
+    ].filter((id) => Number.isInteger(id));
+    const users =
+      uniqueIds.length > 0
+        ? await this.userRepo.find({ where: { id: In(uniqueIds) } })
+        : [];
+    const userById = new Map(users.map((u) => [u.id, u]));
+    for (const id of uniqueIds) {
+      if (!userById.has(id)) {
+        throw new BadRequestException(`Utilisateur ${id} introuvable`);
+      }
+    }
+
+    const flagIds = [
+      ...new Set(
+        body.days
+          .map((d) => d.flag_class_id?.trim())
+          .filter((id): id is string => !!id),
+      ),
+    ];
+    const flagClasses =
+      flagIds.length > 0
+        ? await this.classRepo.find({ where: { id: In(flagIds) } })
+        : [];
+    const classById = new Map(flagClasses.map((c) => [c.id, c]));
+    for (const id of flagIds) {
+      const cls = classById.get(id);
+      if (!cls) throw new BadRequestException(`Classe ${id} introuvable`);
+      if (!isMorningOpeningLevel(cls.level)) {
+        throw new BadRequestException(
+          `La montée du drapeau concerne le préscolaire et le primaire (${cls.name})`,
+        );
+      }
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      await manager.delete(SchoolWeekDuty, { academic_year: year });
+
+      for (const dayBody of body.days) {
+        const day = parseWeekday(dayBody.day_of_week);
+        if (day < 1 || day > 5) continue;
+        const flagId = dayBody.flag_class_id?.trim() || '';
+        if (flagId) {
+          const cls = classById.get(flagId)!;
+          await manager.save(
+            manager.create(SchoolWeekDuty, {
+              academic_year: year,
+              kind: 'FLAG',
+              cycle: null,
+              class_id: cls.id,
+              class: cls,
+              day_of_week: day,
+              start_time: MORNING_DUTY_START,
+              end_time: MORNING_DUTY_END,
+              responsible_user_id: null,
+              responsible: null,
+            }),
+          );
+        }
+        const preschool = [...new Set(dayBody.preschool_teacher_ids ?? [])];
+        const primary = [...new Set(dayBody.primary_teacher_ids ?? [])];
+        for (const uid of preschool) {
+          const user = userById.get(uid);
+          if (!user) continue;
+          await manager.save(
+            manager.create(SchoolWeekDuty, {
+              academic_year: year,
+              kind: 'RENTREE',
+              cycle: 'PRESCOLAIRE',
+              class_id: null,
+              class: null,
+              day_of_week: day,
+              start_time: MORNING_DUTY_START,
+              end_time: MORNING_DUTY_END,
+              responsible_user_id: user.id,
+              responsible: user,
+            }),
+          );
+        }
+        for (const uid of primary) {
+          const user = userById.get(uid);
+          if (!user) continue;
+          await manager.save(
+            manager.create(SchoolWeekDuty, {
+              academic_year: year,
+              kind: 'RENTREE',
+              cycle: 'PRIMAIRE',
+              class_id: null,
+              class: null,
+              day_of_week: day,
+              start_time: MORNING_DUTY_START,
+              end_time: MORNING_DUTY_END,
+              responsible_user_id: user.id,
+              responsible: user,
+            }),
+          );
         }
       }
-      let row = await this.dutyRepo.findOne({
-        where: { academic_year: year, kind, day_of_week: day },
-        relations: ['responsible'],
-      });
-      if (!row) {
-        row = this.dutyRepo.create({
-          academic_year: year,
-          kind,
-          day_of_week: day,
-          start_time: start,
-          end_time: end,
-          responsible_user_id: responsible?.id ?? null,
-          responsible,
-        });
-      } else {
-        row.start_time = start;
-        row.end_time = end;
-        row.responsible = responsible;
-        row.responsible_user_id = responsible?.id ?? null;
-      }
-      out.push(await this.dutyRepo.save(row));
-    }
-    return out.map((d) => this.toDutyDto(d));
+    });
+
+    return this.listDuties({ academic_year: year });
   }
 
   async deleteDuty(id: string): Promise<void> {

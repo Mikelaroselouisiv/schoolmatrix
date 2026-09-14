@@ -64,7 +64,11 @@ export function ExportPdfButton({
     <>
       <button
         type="button"
-        onClick={handleClick}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          void handleClick();
+        }}
         disabled={disabled || loading || !canExport}
         className={className || "inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"}
       >

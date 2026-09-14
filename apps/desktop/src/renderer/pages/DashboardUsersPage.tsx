@@ -4,6 +4,8 @@ import { PasswordInput } from "@/components/PasswordInput";
 import { ImageUpload } from "@/components/ImageUpload";
 import { PERMISSION_OPTIONS } from "@/lib/permissionKeys";
 import { EDUCATION_LEVELS, educationLevelLabel } from "@/lib/educationLevels";
+import { formatRoleLabel } from "@/lib/dashboardRoles";
+import { useRevealScroll } from "@/lib/useRevealScroll";
 
 type User = {
   id: number;
@@ -70,6 +72,10 @@ export function DashboardUsersPage() {
   const [rolePermissionsInput, setRolePermissionsInput] = useState<string[]>([]);
   const [roleLevelsInput, setRoleLevelsInput] = useState<string[]>([]);
   const [savingRole, setSavingRole] = useState(false);
+  const rolesPanelRef = useRevealScroll<HTMLDivElement>(rolesSectionExpanded);
+  const roleFormRef = useRevealScroll<HTMLFormElement>(showRoleForm, editingRole?.id ?? "new");
+  const userFormRef = useRevealScroll<HTMLFormElement>(showForm, editing?.id ?? "new");
+  const resetPwdRef = useRevealScroll<HTMLFormElement>(!!resetPwdUser, resetPwdUser?.id);
 
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
@@ -470,9 +476,9 @@ export function DashboardUsersPage() {
           </div>
         </div>
         {rolesSectionExpanded && (
-        <div className="p-5 border-t border-[var(--app-border)]">
+        <div ref={rolesPanelRef} tabIndex={-1} className="p-5 border-t border-[var(--app-border)] outline-none">
           {showRoleForm && (
-            <form onSubmit={handleRoleSubmit} className="mb-6 p-5 rounded-xl border border-[var(--app-border)] bg-slate-50/50 space-y-4 max-w-2xl">
+            <form ref={roleFormRef} onSubmit={handleRoleSubmit} className="mb-6 p-5 rounded-xl border border-[var(--app-border)] bg-slate-50/50 space-y-4 max-w-2xl">
               <h4 className="font-semibold text-slate-900">{editingRole ? "Modifier le rôle" : "Nouveau rôle"}</h4>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Nom du rôle</label>
@@ -514,7 +520,7 @@ export function DashboardUsersPage() {
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Périmètre (niveaux)</label>
                 <p className="text-xs text-slate-500 mb-2">
-                  Aucune case = toute l’école. Cocher pour limiter le rôle à ces cycles (directeur pédagogique, secrétaire de formation supérieure, etc.).
+                  Aucune case = toute l’école. En Haïti : directeur pédagogique du primaire = 1er et 2e cycles ; directeur pédagogique du secondaire = 3e cycle et secondaire.
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-2 border border-[var(--app-border)] rounded-lg bg-white">
                   {EDUCATION_LEVELS.map((l) => (
@@ -557,7 +563,12 @@ export function DashboardUsersPage() {
                 ) : (
                   roles.map((r) => (
                     <tr key={r.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
-                      <td className="px-4 py-3 font-medium text-slate-900">{r.name}</td>
+                      <td className="px-4 py-3 font-medium text-slate-900">
+                        {formatRoleLabel(r.name)}
+                        {formatRoleLabel(r.name) !== r.name ? (
+                          <span className="block text-xs font-normal text-slate-400">{r.name}</span>
+                        ) : null}
+                      </td>
                       <td className="px-4 py-3 text-slate-600 text-sm">{r.description ?? "—"}</td>
                       <td className="px-4 py-3 text-sm text-slate-600">
                         {r.permissions?.includes("full_access")
@@ -584,7 +595,7 @@ export function DashboardUsersPage() {
       </section>
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="p-5 rounded-xl border border-[var(--app-border)] bg-white space-y-4 max-w-lg">
+        <form ref={userFormRef} onSubmit={handleSubmit} className="p-5 rounded-xl border border-[var(--app-border)] bg-white space-y-4 max-w-lg">
           <h3 className="font-semibold text-slate-900">{editing ? "Modifier" : "Nouvel utilisateur"}</h3>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -692,7 +703,7 @@ export function DashboardUsersPage() {
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
               <select value={roleName} onChange={(e) => setRoleName(e.target.value)} className="w-full border border-[var(--app-border)] rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--school-accent-1)]/40">
-                {roles.map((r) => <option key={r.id} value={r.name}>{r.name}</option>)}
+                {roles.map((r) => <option key={r.id} value={r.name}>{formatRoleLabel(r.name)}</option>)}
               </select>
             </div>
           )}
@@ -705,7 +716,7 @@ export function DashboardUsersPage() {
       )}
 
       {resetPwdUser && (
-        <form onSubmit={handleResetPassword} className="p-5 rounded-xl border border-amber-200 bg-amber-50/50 space-y-4 max-w-md">
+        <form ref={resetPwdRef} onSubmit={handleResetPassword} className="p-5 rounded-xl border border-amber-200 bg-amber-50/50 space-y-4 max-w-md">
           <h3 className="font-semibold text-slate-900">Réinitialiser le mot de passe</h3>
           <p className="text-sm text-slate-600">Utilisateur : {resetPwdUser.first_name} {resetPwdUser.last_name} ({resetPwdUser.email})</p>
           <div>
@@ -742,7 +753,7 @@ export function DashboardUsersPage() {
           >
             <option value="">Tous</option>
             {roles.map((r) => (
-              <option key={r.id} value={r.name}>{r.name}</option>
+              <option key={r.id} value={r.name}>{formatRoleLabel(r.name)}</option>
             ))}
           </select>
         </div>
@@ -783,7 +794,7 @@ export function DashboardUsersPage() {
                   <td className="px-4 py-3 text-slate-600">{u.phone ?? "—"}</td>
                   <td className="px-4 py-3">
                     <select value={u.role ?? ""} onChange={(e) => handleSetRole(u.id, e.target.value)} className="text-sm border border-[var(--app-border)] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[var(--school-accent-1)]">
-                      {roles.map((r) => <option key={r.id} value={r.name}>{r.name}</option>)}
+                      {roles.map((r) => <option key={r.id} value={r.name}>{formatRoleLabel(r.name)}</option>)}
                     </select>
                   </td>
                   <td className="px-4 py-3 flex gap-2 flex-wrap">

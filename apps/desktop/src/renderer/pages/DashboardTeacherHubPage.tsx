@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { API_BASE, fetchWithAuth } from "@/services/api";
+import { useSchoolProfile } from "@/context/SchoolProfileContext";
 import { educationLevelLabel } from "@/lib/educationLevels";
+import { dutiesForTeacher, dutyDisplayTitle, weekdayLabel } from "@/lib/morningOpening";
+import {
+  parseMaterialLines,
+  toggleMaterialLine,
+  type SchoolMaterialItem,
+} from "@/lib/schoolMaterials";
 
 type HubTab = "appel" | "travaux" | "materiel";
 type HomeworkKind = "DEVOIR" | "LECON";
@@ -68,10 +75,13 @@ function todayYmd() {
 }
 
 export function DashboardTeacherHubPage() {
+  const { user } = useSchoolProfile();
+  const userId = user?.id ?? user?.userId ?? null;
   const [tab, setTab] = useState<HubTab>("travaux");
   const [error, setError] = useState("");
   const [classes, setClasses] = useState<TeacherClass[]>([]);
   const [classId, setClassId] = useState("");
+  const [morningLines, setMorningLines] = useState<{ day: string; label: string }[]>([]);
   const selectedClass = useMemo(
     () => classes.find((c) => c.id === classId) ?? null,
     [classes, classId],
@@ -95,6 +105,37 @@ export function DashboardTeacherHubPage() {
   }, []);
 
   useEffect(() => {
+    (async () => {
+      try {
+        const ctxRes = await fetchWithAuth(`${API_BASE}/school/current-context`);
+        const ctx = await ctxRes.json();
+        const yearName = ctxRes.ok ? (ctx.current_academic_year_name ?? "") : "";
+        const dRes = await fetchWithAuth(
+          `${API_BASE}/school-week-duties${yearName ? `?academic_year=${encodeURIComponent(yearName)}` : ""}`,
+        );
+        const dData = await dRes.json();
+        const list = dRes.ok ? (dData.school_week_duties ?? []) : [];
+        const mine = dutiesForTeacher(
+          list,
+          userId,
+          classes.map((c) => c.id),
+        ).sort((a, b) => a.day_of_week - b.day_of_week);
+        setMorningLines(
+          mine.map((d) => ({
+            day: weekdayLabel(d.day_of_week),
+            label:
+              d.kind === "FLAG"
+                ? `Montée du drapeau${d.class_name ? ` · ${d.class_name}` : ""}`
+                : dutyDisplayTitle(d),
+          })),
+        );
+      } catch {
+        setMorningLines([]);
+      }
+    })();
+  }, [classes, userId]);
+
+  useEffect(() => {
     if (tab === "appel" && selectedClass && !selectedClass.can_take_attendance) {
       const next = attendanceClasses[0];
       if (next) setClassId(next.id);
@@ -113,6 +154,23 @@ export function DashboardTeacherHubPage() {
           Appel, devoirs, leçons et matériel de vos classes.
         </p>
       </div>
+
+      {morningLines.length > 0 ? (
+        <div className="rounded-2xl border border-amber-100 bg-amber-50/70 px-4 py-3">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-800">
+            Début de journée
+          </p>
+          <ul className="mt-1 space-y-0.5 text-sm text-amber-950">
+            {morningLines.map((line, i) => (
+              <li key={`${line.day}-${line.label}-${i}`}>
+                <span className="font-medium">{line.day}</span>
+                {" · "}
+                {line.label}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <div className="flex gap-2 border-b border-[var(--app-border)]">
         {(["travaux", "appel", "materiel"] as const).map((t) => (
@@ -635,6 +693,7 @@ function MaterialsTab({
 }) {
   const [slots, setSlots] = useState<ScheduleSlot[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [catalog, setCatalog] = useState<SchoolMaterialItem[]>([]);
   const [savingId, setSavingId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -644,13 +703,18 @@ function MaterialsTab({
     }
     (async () => {
       try {
-        const res = await fetchWithAuth(`${API_BASE}/schedule-slots?class_id=${classId}`);
+        const [res, catRes] = await Promise.all([
+          fetchWithAuth(`${API_BASE}/schedule-slots?class_id=${classId}`),
+          fetchWithAuth(`${API_BASE}/school-materials`),
+        ]);
         const data = await res.json();
+        const cat = await catRes.json();
         const list: ScheduleSlot[] = data.schedule_slots || [];
         setSlots(list);
         const next: Record<string, string> = {};
         for (const s of list) next[s.id] = s.materials || "";
         setDrafts(next);
+        setCatalog(catRes.ok ? (cat.school_materials ?? []) : []);
         onError("");
       } catch {
         onError("Impossible de charger l’horaire.");
@@ -700,15 +764,54 @@ function MaterialsTab({
                 {DAYS[s.day_of_week] ?? s.day_of_week} · {s.start_time}–{s.end_time} ·{" "}
                 {s.subject_name || "Cours"}
               </div>
-              <label className="block text-sm text-slate-600">
-                Matériel à apporter (une ligne par item)
-              </label>
-              <textarea
-                value={drafts[s.id] ?? ""}
-                onChange={(e) => setDrafts((d) => ({ ...d, [s.id]: e.target.value }))}
-                rows={3}
-                className="w-full text-sm border border-[var(--app-border)] rounded-lg px-3 py-2"
-              />
+              <label className="block text-sm text-slate-600">Matériel à apporter</label>
+              {catalog.length > 0 ? (
+                <div className="space-y-2">
+                  {(["LIVRE", "CAHIER"] as const).map((kind) => {
+                    const items = catalog.filter((m) => m.kind === kind);
+                    if (items.length === 0) return null;
+                    const selected = parseMaterialLines(drafts[s.id]);
+                    return (
+                      <div key={kind}>
+                        <p className="mb-1 text-[11px] font-medium text-slate-500">
+                          {kind === "LIVRE" ? "Livres" : "Cahiers"}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {items.map((m) => {
+                            const on = selected.includes(m.label);
+                            return (
+                              <button
+                                key={m.id}
+                                type="button"
+                                onClick={() =>
+                                  setDrafts((d) => ({
+                                    ...d,
+                                    [s.id]: toggleMaterialLine(d[s.id], m.label),
+                                  }))
+                                }
+                                className={`rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ${
+                                  on
+                                    ? "bg-teal-700 text-white ring-teal-700"
+                                    : "bg-white text-slate-700 ring-slate-200"
+                                }`}
+                              >
+                                {m.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <textarea
+                  value={drafts[s.id] ?? ""}
+                  onChange={(e) => setDrafts((d) => ({ ...d, [s.id]: e.target.value }))}
+                  rows={3}
+                  className="w-full text-sm border border-[var(--app-border)] rounded-lg px-3 py-2"
+                />
+              )}
               <button
                 type="button"
                 disabled={savingId === s.id}

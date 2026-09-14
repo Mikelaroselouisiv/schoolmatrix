@@ -21,6 +21,12 @@ export const ROLES_FULL: string[] = [
 export const ROLES_STUDENT_EDIT: string[] = [
   ...ROLES_FULL,
   'DIRECTEUR_PEDAGOGIQUE',
+  'DIRECTEUR_PEDAGOGIQUE_PRESCOLAIRE',
+  'DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL',
+  'DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_2',
+  'DIRECTEUR_PEDAGOGIQUE_FONDAMENTAL_3',
+  'DIRECTEUR_PEDAGOGIQUE_SECONDAIRE',
+  'DIRECTEUR_PEDAGOGIQUE_FORMATION_SUPERIEURE',
   'CENSEUR',
   'ADMIN_PRESCOLAIRE',
   'ADMIN_FONDAMENTAL',
@@ -118,6 +124,13 @@ function canSeeByPermissions(permissionKey: string, rolePermissions: string[]): 
   }
   if (permissionKey === 'rooms') {
     return rolePermissions.includes('rooms') || rolePermissions.includes('classes');
+  }
+  if (permissionKey === 'classes') {
+    return (
+      rolePermissions.includes('classes') ||
+      rolePermissions.includes('rooms') ||
+      rolePermissions.includes('teachers')
+    );
   }
   if (permissionKey === 'stats-academiques') {
     return (

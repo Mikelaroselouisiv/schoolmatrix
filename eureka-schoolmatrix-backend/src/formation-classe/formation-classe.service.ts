@@ -559,6 +559,8 @@ export class FormationClasseService {
           this.schoolWeekDutyRepo.create({
             academic_year: nextYear.name,
             kind: d.kind,
+            cycle: d.cycle ?? null,
+            class_id: d.class_id ?? null,
             day_of_week: d.day_of_week,
             start_time: d.start_time,
             end_time: d.end_time,

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  SectionList,
   FlatList,
   Modal,
   Pressable,
@@ -28,6 +29,16 @@ import { useSchool } from '../../context/SchoolContext';
 import { canAccessPermission } from '../../lib/permissions';
 import { AccessDenied } from '../../lib/access';
 import { toYYYYMMDD } from '../../lib/format';
+import {
+  emptyWeekProgram,
+  isMorningOpeningLevel,
+  MORNING_PRIMAIRE_LEVELS,
+  MORNING_WEEKDAYS,
+  namesJoin,
+  programFromDuties,
+  uniqueTeachersFromAssignments,
+  type DayMorningProgram,
+} from '../../lib/morningOpening';
 import { colors } from '../../theme/tokens';
 import {
   createExamSchedule,
@@ -48,7 +59,9 @@ import {
   listScheduleSlots,
   listScheduleMoments,
   listSchoolWeekDuties,
+  listTeacherAssignments,
   upsertSchoolWeekDuties,
+  updateExtracurricularActivity,
   type AcademicYear,
   type ClassDayMoment,
   type ClassItem,
@@ -56,15 +69,15 @@ import {
   type ExtracurricularItem,
   type RoomItem,
   type ScheduleSlot,
-  type SchoolWeekDuty,
   type SubjectItem,
+  type TeacherAssignment,
   type TeacherItem,
 } from '../../services/api';
 import type { WorkStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<WorkStackParamList, 'Schedule'>;
 type TabId = 'cours' | 'examens' | 'parascolaires';
-type FormKind = 'slot' | 'moment' | 'devotion';
+type FormKind = 'slot' | 'moment';
 type PickerKind =
   | 'year'
   | 'class'
@@ -79,7 +92,7 @@ type PickerKind =
   | 'formDay'
   | 'formPeriod'
   | 'formMomentKind'
-  | 'devotionTeacher'
+  | 'flagClass'
   | null;
 
 const DAYS = [
@@ -104,7 +117,7 @@ const MOMENT_KINDS = [
   { id: 'CLOSING', label: 'Prière de fin' },
 ];
 
-const WEEKDAYS = DAYS.filter((d) => d.id !== '0');
+const WEEKDAYS = DAYS.filter((d) => d.id !== '0' && d.id !== '6');
 
 function dayLabel(n?: number): string {
   if (n == null) return '—';
@@ -126,6 +139,7 @@ export function ScheduleScreen({}: Props) {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [rooms, setRooms] = useState<RoomItem[]>([]);
   const [teachers, setTeachers] = useState<TeacherItem[]>([]);
+  const [assignments, setAssignments] = useState<TeacherAssignment[]>([]);
   const [subjects, setSubjects] = useState<SubjectItem[]>([]);
 
   const [yearId, setYearId] = useState('');
@@ -135,7 +149,6 @@ export function ScheduleScreen({}: Props) {
 
   const [slots, setSlots] = useState<ScheduleSlot[]>([]);
   const [moments, setMoments] = useState<ClassDayMoment[]>([]);
-  const [duties, setDuties] = useState<SchoolWeekDuty[]>([]);
   const [exams, setExams] = useState<ExamScheduleItem[]>([]);
   const [activities, setActivities] = useState<ExtracurricularItem[]>([]);
 
@@ -148,19 +161,11 @@ export function ScheduleScreen({}: Props) {
   const [showForm, setShowForm] = useState(false);
   const [formKind, setFormKind] = useState<FormKind>('slot');
   const [formMomentKind, setFormMomentKind] = useState('RECESS');
-  const [formMomentDays, setFormMomentDays] = useState<number[]>([1, 2, 3, 4, 5, 6]);
+  const [formMomentDays, setFormMomentDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [formMomentLabel, setFormMomentLabel] = useState('');
-  const [devotionStart, setDevotionStart] = useState('07:30');
-  const [devotionEnd, setDevotionEnd] = useState('07:45');
-  const [devotionByDay, setDevotionByDay] = useState<Record<number, string>>({
-    1: '',
-    2: '',
-    3: '',
-    4: '',
-    5: '',
-    6: '',
-  });
-  const [devotionDayTarget, setDevotionDayTarget] = useState(1);
+  const [morningByDay, setMorningByDay] = useState<Record<number, DayMorningProgram>>(emptyWeekProgram);
+  const [flagDayTarget, setFlagDayTarget] = useState(1);
+  const [savingMorning, setSavingMorning] = useState(false);
 
   const [formClassId, setFormClassId] = useState('');
   const [formSubjectId, setFormSubjectId] = useState('');
@@ -174,10 +179,32 @@ export function ScheduleScreen({}: Props) {
   const [formOccasion, setFormOccasion] = useState('');
   const [formFee, setFormFee] = useState('');
   const [formDress, setFormDress] = useState('');
+  const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
 
   const yearName = years.find((y) => y.id === yearId)?.name || '';
   const classLabel = classes.find((c) => c.id === classId)?.name || 'Toutes';
   const roomLabel = rooms.find((r) => r.id === roomId)?.name || 'Toutes';
+  const preschoolTeachers = useMemo(
+    () =>
+      uniqueTeachersFromAssignments(
+        assignments,
+        new Set(classes.filter((c) => c.level === 'PRESCOLAIRE').map((c) => c.id)),
+      ),
+    [assignments, classes],
+  );
+  const primaryTeachers = useMemo(
+    () =>
+      uniqueTeachersFromAssignments(
+        assignments,
+        new Set(
+          classes
+            .filter((c) => (MORNING_PRIMAIRE_LEVELS as readonly string[]).includes(c.level ?? ''))
+            .map((c) => c.id),
+        ),
+      ),
+    [assignments, classes],
+  );
+
   const dayFilterLabel =
     dayFilter === '' ? 'Tous' : dayLabel(Number(dayFilter));
 
@@ -199,24 +226,11 @@ export function ScheduleScreen({}: Props) {
           }),
           listSchoolWeekDuties({
             academic_year: yearName || undefined,
-            kind: 'DEVOTION',
           }),
         ]);
         setSlots(list);
         setMoments(momentList);
-        setDuties(dutyList);
-        if (dutyList.length > 0) {
-          setDevotionStart(dutyList[0].start_time);
-          setDevotionEnd(dutyList[0].end_time);
-          setDevotionByDay((prev) => {
-            const next = { ...prev };
-            for (const d of dutyList) {
-              next[d.day_of_week] =
-                d.responsible_user_id != null ? String(d.responsible_user_id) : '';
-            }
-            return next;
-          });
-        }
+        setMorningByDay(programFromDuties(dutyList));
       } else if (tab === 'examens') {
         setExams(await listExamSchedules({ class_id: classId || undefined }));
       } else {
@@ -234,21 +248,53 @@ export function ScheduleScreen({}: Props) {
     }
   }, [tab, yearName, yearId, classId, roomId, dayFilter]);
 
+  async function handleSaveMorning() {
+    if (!yearName) {
+      setError('Choisissez une année scolaire.');
+      return;
+    }
+    setSavingMorning(true);
+    setError('');
+    setSuccess('');
+    try {
+      await upsertSchoolWeekDuties({
+        academic_year: yearName,
+        days: MORNING_WEEKDAYS.map((d) => {
+          const slot = morningByDay[d.index] ?? emptyWeekProgram()[d.index];
+          return {
+            day_of_week: d.index,
+            flag_class_id: slot.flagClassId || null,
+            preschool_teacher_ids: slot.preschoolIds,
+            primary_teacher_ids: slot.primaryIds,
+          };
+        }),
+      });
+      setSuccess('Début de journée enregistré.');
+      await loadLists();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur');
+    } finally {
+      setSavingMorning(false);
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [y, c, r, t] = await Promise.all([
+        const [y, c, r, t, a] = await Promise.all([
           getAcademicYears(),
           getClasses(),
           getRooms(),
           getTeachers(),
+          listTeacherAssignments(),
         ]);
         if (cancelled) return;
         setYears(y);
         setClasses(c);
         setRooms(r);
         setTeachers(t);
+        setAssignments(a);
         const defaultYear =
           context?.academic_year?.id ||
           context?.current_academic_year_id ||
@@ -304,25 +350,58 @@ export function ScheduleScreen({}: Props) {
     });
   }, [slots]);
 
+  const slotSections = useMemo(() => {
+    const by = new Map<number, ScheduleSlot[]>();
+    for (const s of sortedSlots) {
+      const k = s.day_of_week ?? 0;
+      const list = by.get(k) ?? [];
+      list.push(s);
+      by.set(k, list);
+    }
+    return [1, 2, 3, 4, 5]
+      .filter((d) => by.has(d))
+      .map((d) => ({ title: dayLabel(d), data: by.get(d)! }));
+  }, [sortedSlots]);
+
   function openCreate(kind: FormKind = 'slot') {
     setSuccess('');
     setError('');
+    setEditingActivityId(null);
     setFormKind(kind);
     setFormClassId(classId || classes[0]?.id || '');
     setFormRoomId(roomId || '');
     setFormTeacherId(teachers[0] ? String(teachers[0].id) : '');
     setFormDay(dayFilter !== '' ? Number(dayFilter) : 1);
-    setFormStart(kind === 'moment' ? '10:00' : kind === 'devotion' ? devotionStart : '08:00');
-    setFormEnd(kind === 'moment' ? '10:15' : kind === 'devotion' ? devotionEnd : '09:00');
+    setFormStart(kind === 'moment' ? '10:00' : '08:00');
+    setFormEnd(kind === 'moment' ? '10:15' : '09:00');
     setFormPeriod('');
     setFormDate(toYYYYMMDD());
     setFormOccasion('');
     setFormFee('');
     setFormDress('');
     setFormMomentKind('RECESS');
-    setFormMomentDays([1, 2, 3, 4, 5, 6]);
+    setFormMomentDays([1, 2, 3, 4, 5]);
     setFormMomentLabel('');
     setShowForm(true);
+  }
+
+  function openEditActivity(item: ExtracurricularItem) {
+    setSuccess('');
+    setError('');
+    setEditingActivityId(item.id);
+    setFormClassId(item.class_id || classId || '');
+    setFormDate((item.activity_date || '').slice(0, 10) || toYYYYMMDD());
+    setFormStart(item.start_time || '14:00');
+    setFormEnd(item.end_time || '16:00');
+    setFormOccasion(item.occasion || '');
+    setFormFee(item.participation_fee || '');
+    setFormDress(item.dress_code || '');
+    setShowForm(true);
+  }
+
+  function closeForm() {
+    setShowForm(false);
+    setEditingActivityId(null);
   }
 
   async function handleCreate() {
@@ -330,25 +409,7 @@ export function ScheduleScreen({}: Props) {
     setError('');
     setSuccess('');
     try {
-      if (tab === 'cours' && formKind === 'devotion') {
-        if (!yearName) throw new Error('Choisissez une année scolaire.');
-        await upsertSchoolWeekDuties({
-          academic_year: yearName,
-          kind: 'DEVOTION',
-          start_time: devotionStart,
-          end_time: devotionEnd,
-          days: WEEKDAYS.map((d) => {
-            const day = Number(d.id);
-            return {
-              day_of_week: day,
-              responsible_user_id: devotionByDay[day]
-                ? Number(devotionByDay[day])
-                : null,
-            };
-          }),
-        });
-        setSuccess('Dévotion enregistrée pour toute l’école.');
-      } else if (tab === 'cours' && formKind === 'moment') {
+      if (tab === 'cours' && formKind === 'moment') {
         if (!formClassId) throw new Error('Classe requise.');
         if (!formMomentDays.length) throw new Error('Choisissez au moins un jour.');
         await createScheduleMoments({
@@ -393,19 +454,30 @@ export function ScheduleScreen({}: Props) {
         if (!yearId || !formClassId || !formOccasion.trim() || !formDate) {
           throw new Error('Année, classe, occasion et date requis.');
         }
-        await createExtracurricularActivity({
+        const payload = {
           academic_year_id: yearId,
           activity_date: formDate,
           start_time: formStart,
           end_time: formEnd,
-          class_ids: [formClassId],
           occasion: formOccasion.trim(),
           participation_fee: formFee.trim() || null,
           dress_code: formDress.trim() || null,
-        });
-        setSuccess('Activité ajoutée.');
+        };
+        if (editingActivityId) {
+          await updateExtracurricularActivity(editingActivityId, {
+            ...payload,
+            class_id: formClassId,
+          });
+          setSuccess('Activité mise à jour.');
+        } else {
+          await createExtracurricularActivity({
+            ...payload,
+            class_ids: [formClassId],
+          });
+          setSuccess('Activité ajoutée.');
+        }
       }
-      setShowForm(false);
+      closeForm();
       await loadLists();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur');
@@ -496,8 +568,13 @@ export function ScheduleScreen({}: Props) {
     if (picker === 'formMomentKind') {
       return MOMENT_KINDS;
     }
-    if (picker === 'devotionTeacher' || picker === 'formTeacher') {
-      return teachers.map((t) => ({ id: String(t.id), label: teacherLabel(t) }));
+    if (picker === 'flagClass') {
+      return [
+        { id: '', label: '— Classe —' },
+        ...classes
+          .filter((c) => isMorningOpeningLevel(c.level))
+          .map((c) => ({ id: c.id, label: c.name })),
+      ];
     }
     return [];
   }, [picker, years, classes, rooms, subjects, teachers, formClassId]);
@@ -529,8 +606,11 @@ export function ScheduleScreen({}: Props) {
       case 'formTeacher':
         setFormTeacherId(id);
         break;
-      case 'devotionTeacher':
-        setDevotionByDay((prev) => ({ ...prev, [devotionDayTarget]: id }));
+      case 'flagClass':
+        setMorningByDay((prev) => {
+          const slot = prev[flagDayTarget] ?? emptyWeekProgram()[flagDayTarget];
+          return { ...prev, [flagDayTarget]: { ...slot, flagClassId: id } };
+        });
         break;
       case 'formMomentKind':
         setFormMomentKind(id);
@@ -562,6 +642,7 @@ export function ScheduleScreen({}: Props) {
   return (
     <Screen style={{ paddingHorizontal: 0, paddingBottom: 0 }}>
       <View style={styles.top}>
+        <Text style={styles.kicker}>Organisation</Text>
         <Title>Horaires</Title>
 
         <View style={{ marginTop: 12 }}>
@@ -572,7 +653,7 @@ export function ScheduleScreen({}: Props) {
           />
         </View>
 
-        <View style={styles.filters}>
+        <View style={styles.filterCard}>
           <SelectChip
             label="Année"
             value={yearName || '—'}
@@ -600,11 +681,6 @@ export function ScheduleScreen({}: Props) {
                 variant="ghost"
                 onPress={() => openCreate('moment')}
               />
-              <Button
-                title="Dévotion (toute l’école)"
-                variant="ghost"
-                onPress={() => openCreate('devotion')}
-              />
             </View>
           ) : (
             <Button title="Ajouter" onPress={() => openCreate('slot')} />
@@ -622,29 +698,119 @@ export function ScheduleScreen({}: Props) {
       {loading ? (
         <LoadingBlock />
       ) : tab === 'cours' ? (
-        <FlatList
-          data={sortedSlots}
+        <SectionList
+          sections={slotSections}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
+          stickySectionHeadersEnabled
+          extraData={slots}
           ListHeaderComponent={
-            <View style={{ marginBottom: 8 }}>
-              {duties.length > 0 ? (
-                <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Dévotion · toute l’école</Text>
-                  {duties
-                    .slice()
-                    .sort((a, b) => a.day_of_week - b.day_of_week)
-                    .map((d) => (
-                      <Muted key={d.id}>
-                        {dayLabel(d.day_of_week)} {d.start_time}–{d.end_time}
-                        {d.responsible_name ? ` · ${d.responsible_name}` : ''}
-                      </Muted>
-                    ))}
-                </View>
-              ) : null}
+            <View style={{ marginBottom: 8, gap: 10 }}>
+              <View style={styles.panelAmber}>
+                <Text style={styles.kickerAmber}>Préscolaire & primaire</Text>
+                <Text style={styles.panelTitle}>Début de journée</Text>
+                {MORNING_WEEKDAYS.map((d) => {
+                  const slot = morningByDay[d.index] ?? emptyWeekProgram()[d.index];
+                  const flagName =
+                    classes.find((c) => c.id === slot.flagClassId)?.name || '— Classe —';
+                  const prescoNames = namesJoin(
+                    preschoolTeachers
+                      .filter((t) => slot.preschoolIds.includes(t.id))
+                      .map((t) => t.name),
+                  );
+                  const primNames = namesJoin(
+                    primaryTeachers
+                      .filter((t) => slot.primaryIds.includes(t.id))
+                      .map((t) => t.name),
+                  );
+                  return (
+                    <View key={d.index} style={{ marginTop: 8, gap: 6 }}>
+                      <Text style={styles.cardTitle}>{d.label}</Text>
+                      {canEdit ? (
+                        <>
+                          <SelectChip
+                            label="Montée du drapeau"
+                            value={flagName}
+                            onPress={() => {
+                              setFlagDayTarget(d.index);
+                              setPicker('flagClass');
+                            }}
+                          />
+                          <Text style={styles.chipLabel}>Rentrée préscolaire</Text>
+                          <View style={styles.filters}>
+                            {preschoolTeachers.length === 0 ? (
+                              <Muted>Aucun professeur affecté.</Muted>
+                            ) : (
+                              preschoolTeachers.map((t) => {
+                                const on = slot.preschoolIds.includes(t.id);
+                                return (
+                                  <Pressable
+                                    key={t.id}
+                                    onPress={() =>
+                                      setMorningByDay((prev) => {
+                                        const cur = prev[d.index] ?? emptyWeekProgram()[d.index];
+                                        const ids = cur.preschoolIds.includes(t.id)
+                                          ? cur.preschoolIds.filter((x) => x !== t.id)
+                                          : [...cur.preschoolIds, t.id];
+                                        return { ...prev, [d.index]: { ...cur, preschoolIds: ids } };
+                                      })
+                                    }
+                                    style={[styles.chip, on ? styles.chipOn : null]}
+                                  >
+                                    <Text style={styles.chipValue}>{t.name}</Text>
+                                  </Pressable>
+                                );
+                              })
+                            )}
+                          </View>
+                          <Text style={styles.chipLabel}>Rentrée primaire</Text>
+                          <View style={styles.filters}>
+                            {primaryTeachers.length === 0 ? (
+                              <Muted>Aucun professeur affecté.</Muted>
+                            ) : (
+                              primaryTeachers.map((t) => {
+                                const on = slot.primaryIds.includes(t.id);
+                                return (
+                                  <Pressable
+                                    key={t.id}
+                                    onPress={() =>
+                                      setMorningByDay((prev) => {
+                                        const cur = prev[d.index] ?? emptyWeekProgram()[d.index];
+                                        const ids = cur.primaryIds.includes(t.id)
+                                          ? cur.primaryIds.filter((x) => x !== t.id)
+                                          : [...cur.primaryIds, t.id];
+                                        return { ...prev, [d.index]: { ...cur, primaryIds: ids } };
+                                      })
+                                    }
+                                    style={[styles.chip, on ? styles.chipOn : null]}
+                                  >
+                                    <Text style={styles.chipValue}>{t.name}</Text>
+                                  </Pressable>
+                                );
+                              })
+                            )}
+                          </View>
+                        </>
+                      ) : (
+                        <Muted>
+                          {`Drapeau · ${flagName}\nPréscolaire · ${prescoNames}\nPrimaire · ${primNames}`}
+                        </Muted>
+                      )}
+                    </View>
+                  );
+                })}
+                {canEdit ? (
+                  <Button
+                    title={savingMorning ? 'Enregistrement…' : 'Enregistrer'}
+                    onPress={() => void handleSaveMorning()}
+                    disabled={savingMorning || !yearName}
+                  />
+                ) : null}
+              </View>
               {moments.length > 0 ? (
-                <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Moments de la classe</Text>
+                <View style={styles.panelTeal}>
+                  <Text style={styles.kickerTeal}>Classe</Text>
+                  <Text style={styles.panelTitle}>Moments spéciaux</Text>
                   {moments
                     .slice()
                     .sort(
@@ -653,11 +819,14 @@ export function ScheduleScreen({}: Props) {
                         a.start_time.localeCompare(b.start_time),
                     )
                     .map((m) => (
-                      <View key={m.id} style={{ marginTop: 8 }}>
-                        <Muted>
-                          {m.title} · {dayLabel(m.day_of_week)} {m.start_time}–{m.end_time}
-                          {m.class_name ? ` · ${m.class_name}` : ''}
-                        </Muted>
+                      <View key={m.id} style={styles.momentRow}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.cardTitle}>{m.title}</Text>
+                          <Muted>
+                            {dayLabel(m.day_of_week)} {m.start_time}–{m.end_time}
+                            {m.class_name ? ` · ${m.class_name}` : ''}
+                          </Muted>
+                        </View>
                         {canEdit ? (
                           <Pressable onPress={() => confirmDeleteMoment(m.id)}>
                             <Text style={styles.deleteLink}>Supprimer</Text>
@@ -670,22 +839,29 @@ export function ScheduleScreen({}: Props) {
             </View>
           }
           ListEmptyComponent={<EmptyState title="Aucun créneau" />}
+          renderSectionHeader={({ section }) => (
+            <View style={styles.sectionHead}>
+              <Text style={styles.sectionTitle}>{section.title}</Text>
+              <View style={styles.sectionLine} />
+            </View>
+          )}
           renderItem={({ item }) => (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>
-                {item.subject_name || 'Matière'} · {dayLabel(item.day_of_week)}
-              </Text>
-              <Muted>
-                {[item.start_time, item.end_time].filter(Boolean).join(' – ')}
-                {item.class_name ? ` · ${item.class_name}` : ''}
-                {item.room_name ? ` · ${item.room_name}` : ''}
-              </Muted>
-              {item.teacher_name ? <Muted>{item.teacher_name}</Muted> : null}
-              {canEdit ? (
-                <Pressable onPress={() => confirmDelete('cours', item.id)}>
-                  <Text style={styles.deleteLink}>Supprimer</Text>
-                </Pressable>
-              ) : null}
+            <View style={styles.eventCard}>
+              <View style={styles.accentTeal} />
+              <View style={styles.eventBody}>
+                <Text style={styles.timeBadge}>
+                  {[item.start_time, item.end_time].filter(Boolean).join(' – ')}
+                </Text>
+                <Text style={styles.cardTitle}>{item.subject_name || 'Matière'}</Text>
+                <Muted>
+                  {[item.class_name, item.room_name, item.teacher_name].filter(Boolean).join(' · ')}
+                </Muted>
+                {canEdit ? (
+                  <Pressable onPress={() => confirmDelete('cours', item.id)}>
+                    <Text style={styles.deleteLink}>Supprimer</Text>
+                  </Pressable>
+                ) : null}
+              </View>
             </View>
           )}
         />
@@ -696,20 +872,23 @@ export function ScheduleScreen({}: Props) {
           contentContainerStyle={styles.list}
           ListEmptyComponent={<EmptyState title="Aucun examen" />}
           renderItem={({ item }) => (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>
-                {item.subject_name || 'Matière'} · {item.exam_date || '—'}
-              </Text>
-              <Muted>
-                {[item.start_time, item.end_time].filter(Boolean).join(' – ')}
-                {item.class_name ? ` · ${item.class_name}` : ''}
-                {item.period ? ` · ${item.period}` : ''}
-              </Muted>
-              {canEdit ? (
-                <Pressable onPress={() => confirmDelete('examens', item.id)}>
-                  <Text style={styles.deleteLink}>Supprimer</Text>
-                </Pressable>
-              ) : null}
+            <View style={styles.eventCard}>
+              <View style={styles.accentAmber} />
+              <View style={styles.eventBody}>
+                <Text style={styles.timeBadgeAmber}>
+                  {item.exam_date || '—'}
+                  {` · ${[item.start_time, item.end_time].filter(Boolean).join(' – ')}`}
+                </Text>
+                <Text style={styles.cardTitle}>{item.subject_name || 'Matière'}</Text>
+                <Muted>
+                  {[item.class_name, item.period].filter(Boolean).join(' · ')}
+                </Muted>
+                {canEdit ? (
+                  <Pressable onPress={() => confirmDelete('examens', item.id)}>
+                    <Text style={styles.deleteLink}>Supprimer</Text>
+                  </Pressable>
+                ) : null}
+              </View>
             </View>
           )}
         />
@@ -720,66 +899,49 @@ export function ScheduleScreen({}: Props) {
           contentContainerStyle={styles.list}
           ListEmptyComponent={<EmptyState title="Aucune activité" />}
           renderItem={({ item }) => (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>{item.occasion || 'Activité'}</Text>
-              <Muted>
-                {item.activity_date || '—'}
-                {` · ${[item.start_time, item.end_time].filter(Boolean).join(' – ')}`}
-                {item.class_name ? ` · ${item.class_name}` : ''}
-              </Muted>
-              {item.dress_code ? <Muted>Tenue · {item.dress_code}</Muted> : null}
-              {canEdit ? (
-                <Pressable onPress={() => confirmDelete('parascolaires', item.id)}>
-                  <Text style={styles.deleteLink}>Supprimer</Text>
-                </Pressable>
-              ) : null}
+            <View style={styles.eventCard}>
+              <View style={styles.accentAmber} />
+              <View style={styles.eventBody}>
+                <Text style={styles.timeBadgeAmber}>
+                  {item.activity_date || '—'}
+                  {` · ${[item.start_time, item.end_time].filter(Boolean).join(' – ')}`}
+                </Text>
+                <Text style={styles.cardTitle}>{item.occasion || 'Activité'}</Text>
+                <Muted>{item.class_name || ''}</Muted>
+                {item.dress_code ? <Muted>Tenue · {item.dress_code}</Muted> : null}
+                {canEdit ? (
+                  <View style={styles.cardActions}>
+                    <Pressable onPress={() => openEditActivity(item)}>
+                      <Text style={styles.editLink}>Modifier</Text>
+                    </Pressable>
+                    <Pressable onPress={() => confirmDelete('parascolaires', item.id)}>
+                      <Text style={[styles.deleteLink, { marginTop: 0 }]}>Supprimer</Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+              </View>
             </View>
           )}
         />
       )}
 
-      <FormModal visible={showForm} onRequestClose={() => setShowForm(false)}>
+      <FormModal visible={showForm} onRequestClose={closeForm}>
         <Text style={styles.formTitle}>
-          {tab === 'cours' && formKind === 'devotion'
-            ? 'Dévotion (toute l’école)'
-            : tab === 'cours' && formKind === 'moment'
-              ? 'Moment spécial'
-              : tab === 'cours'
-                ? 'Nouveau créneau'
-                : tab === 'examens'
-                  ? 'Nouvel examen'
+          {tab === 'cours' && formKind === 'moment'
+            ? 'Moment spécial'
+            : tab === 'cours'
+              ? 'Nouveau créneau'
+              : tab === 'examens'
+                ? 'Nouvel examen'
+                : editingActivityId
+                  ? 'Modifier'
                   : 'Nouvelle activité'}
         </Text>
-        {tab === 'cours' && formKind === 'devotion' ? (
-          <>
-            <Muted>
-              Un responsable par jour. L’horaire est le même pour toutes les classes.
-            </Muted>
-            {WEEKDAYS.map((d) => {
-              const day = Number(d.id);
-              const tid = devotionByDay[day];
-              const teacher = teachers.find((t) => String(t.id) === tid);
-              return (
-                <SelectChip
-                  key={d.id}
-                  label={d.label}
-                  value={teacher ? teacherLabel(teacher) : 'Responsable'}
-                  onPress={() => {
-                    setDevotionDayTarget(day);
-                    setPicker('devotionTeacher');
-                  }}
-                />
-              );
-            })}
-          </>
-        ) : null}
-        {!(tab === 'cours' && formKind === 'devotion') ? (
         <SelectChip
           label="Classe"
           value={classes.find((c) => c.id === formClassId)?.name || 'Choisir'}
           onPress={() => setPicker('formClass')}
         />
-        ) : null}
         {tab === 'cours' && formKind === 'moment' ? (
           <>
             <SelectChip
@@ -882,8 +1044,8 @@ export function ScheduleScreen({}: Props) {
             <Text style={styles.timeLabel}>Début</Text>
             <TextInput
               style={styles.timeInput}
-              value={formKind === 'devotion' ? devotionStart : formStart}
-              onChangeText={formKind === 'devotion' ? setDevotionStart : setFormStart}
+              value={formStart}
+              onChangeText={setFormStart}
               placeholder="08:00"
               autoCapitalize="none"
             />
@@ -892,8 +1054,8 @@ export function ScheduleScreen({}: Props) {
             <Text style={styles.timeLabel}>Fin</Text>
             <TextInput
               style={styles.timeInput}
-              value={formKind === 'devotion' ? devotionEnd : formEnd}
-              onChangeText={formKind === 'devotion' ? setDevotionEnd : setFormEnd}
+              value={formEnd}
+              onChangeText={setFormEnd}
               placeholder="09:00"
               autoCapitalize="none"
             />
@@ -909,7 +1071,7 @@ export function ScheduleScreen({}: Props) {
           <Button
             title="Annuler"
             variant="ghost"
-            onPress={() => setShowForm(false)}
+            onPress={closeForm}
             disabled={saving}
           />
         </View>
@@ -956,28 +1118,133 @@ function SelectChip({
 
 const styles = StyleSheet.create({
   top: { paddingHorizontal: 20, paddingBottom: 8, gap: 8 },
+  kicker: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: '#0F766E',
+  },
+  kickerTeal: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+    color: '#0F766E',
+    marginBottom: 2,
+  },
+  kickerAmber: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+    color: '#92400E',
+    marginBottom: 2,
+  },
+  filterCard: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 10,
+  },
   filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
     minWidth: '46%',
     flexGrow: 1,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 10,
+    borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 8,
     backgroundColor: colors.surface,
-    marginBottom: 4,
   },
   chipLabel: { fontSize: 11, color: colors.textMuted, fontWeight: '600' },
   chipValue: { fontSize: 14, color: colors.text, fontWeight: '700', marginTop: 2 },
-  chipOn: { borderColor: colors.text, backgroundColor: '#F8FAFC' },
+  chipOn: { borderColor: '#0F766E', backgroundColor: '#F0FDFA' },
   list: { paddingHorizontal: 20, paddingBottom: 48 },
+  sectionHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 14,
+    marginBottom: 8,
+    backgroundColor: colors.bg,
+  },
+  sectionTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: colors.textMuted,
+  },
+  sectionLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
+  panelTeal: {
+    backgroundColor: '#F0FDFA',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#99F6E4',
+    padding: 12,
+  },
+  panelAmber: {
+    backgroundColor: '#FFFBEB',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    padding: 12,
+    gap: 4,
+  },
+  panelTitle: { fontSize: 15, fontWeight: '800', color: colors.text, marginBottom: 6 },
+  pillAmber: {
+    fontSize: 13,
+    color: '#78350F',
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  momentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 10,
+    marginTop: 6,
+  },
+  eventCard: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+    marginBottom: 10,
+  },
+  accentTeal: { width: 6, backgroundColor: '#0F766E' },
+  accentAmber: { width: 6, backgroundColor: '#F59E0B' },
+  eventBody: { flex: 1, padding: 12 },
+  timeBadge: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0F766E',
+    marginBottom: 4,
+  },
+  timeBadgeAmber: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#92400E',
+    marginBottom: 4,
+  },
   card: {
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
   cardTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+  cardActions: { marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 16 },
+  editLink: { color: colors.ink, fontWeight: '600', fontSize: 13 },
   deleteLink: { marginTop: 8, color: colors.danger, fontWeight: '600', fontSize: 13 },
   successBanner: {
     padding: 10,

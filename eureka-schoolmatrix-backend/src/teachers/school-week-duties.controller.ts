@@ -11,7 +11,10 @@ import {
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ParentScopeGuard } from '../auth/parent-scope.guard';
 import { DenyParents } from '../auth/parent-scope.decorator';
-import { ScheduleMomentsService } from './schedule-moments.service';
+import {
+  MorningOpeningDayBody,
+  ScheduleMomentsService,
+} from './schedule-moments.service';
 
 @Controller('school-week-duties')
 @UseGuards(JwtAuthGuard, ParentScopeGuard)
@@ -31,16 +34,13 @@ export class SchoolWeekDutiesController {
     return { ok: true, school_week_duties: duties };
   }
 
-  /** Crée ou met à jour la dévotion (une fois pour toute l’école, un responsable par jour). */
+  /** Programmation du début de journée (drapeau + rentrée préscolaire / primaire). */
   @Put()
   async upsert(
     @Body()
     body: {
       academic_year: string;
-      kind?: string;
-      start_time: string;
-      end_time: string;
-      days: { day_of_week: number; responsible_user_id?: number | null }[];
+      days: MorningOpeningDayBody[];
     },
   ) {
     const school_week_duties = await this.moments.upsertWeekDuties(body);

@@ -20,8 +20,50 @@ export const EDUCATION_LEVEL_KEYS: EducationLevelKey[] = EDUCATION_LEVELS.map(
   (l) => l.key,
 );
 
+/**
+ * Répartition habituelle en Haïti :
+ * - Directeur pédagogique du primaire → 1er et 2e cycles fondamental
+ * - Directeur pédagogique du secondaire → 3e cycle fondamental + secondaire
+ */
+export const LEVELS_PEDAGOGIQUE_PRIMAIRE: EducationLevelKey[] = [
+  'FONDAMENTAL_1',
+  'FONDAMENTAL_2',
+];
+
+export const LEVELS_PEDAGOGIQUE_SECONDAIRE: EducationLevelKey[] = [
+  'FONDAMENTAL_3',
+  'SECONDAIRE',
+];
+
 export function isEducationLevelKey(value?: string | null): value is EducationLevelKey {
   return !!value && (EDUCATION_LEVEL_KEYS as string[]).includes(value);
+}
+
+/** Début de journée (drapeau + rentrée) : préscolaire et primaire seulement. */
+export const MORNING_OPENING_LEVELS: EducationLevelKey[] = [
+  'PRESCOLAIRE',
+  'FONDAMENTAL_1',
+  'FONDAMENTAL_2',
+];
+
+export const MORNING_PRIMAIRE_LEVELS: EducationLevelKey[] = [
+  'FONDAMENTAL_1',
+  'FONDAMENTAL_2',
+];
+
+export type MorningDutyCycle = 'PRESCOLAIRE' | 'PRIMAIRE';
+
+export function morningCycleFromLevel(
+  level?: string | null,
+): MorningDutyCycle | null {
+  const key = (level ?? '').toUpperCase().trim();
+  if (key === 'PRESCOLAIRE') return 'PRESCOLAIRE';
+  if (key === 'FONDAMENTAL_1' || key === 'FONDAMENTAL_2') return 'PRIMAIRE';
+  return null;
+}
+
+export function isMorningOpeningLevel(level?: string | null): boolean {
+  return !!level && (MORNING_OPENING_LEVELS as string[]).includes(level);
 }
 
 /** Appel sur l’app : préscolaire + 1er / 2e cycles fondamentaux. */
@@ -75,4 +117,15 @@ export function normalizeEducationLevels(
     ...new Set(values.filter((v): v is EducationLevelKey => isEducationLevelKey(v))),
   ];
   return unique.length ? unique : null;
+}
+
+export function educationLevelsEqual(
+  a?: string[] | null,
+  b?: string[] | null,
+): boolean {
+  const na = normalizeEducationLevels(a);
+  const nb = normalizeEducationLevels(b);
+  if (!na && !nb) return true;
+  if (!na || !nb || na.length !== nb.length) return false;
+  return [...na].sort().join(',') === [...nb].sort().join(',');
 }

@@ -18,6 +18,11 @@ import { RoleEducationLevels1739000000015 } from './1739000000015-RoleEducationL
 import { HomeworkAndScheduleMaterials1739000000016 } from './1739000000016-HomeworkAndScheduleMaterials';
 import { StudentArchive1739000000017 } from './1739000000017-StudentArchive';
 import { ScheduleDayMoments1739000000018 } from './1739000000018-ScheduleDayMoments';
+import { PedagogicalDirectorHaitiLevels1739000000019 } from './1739000000019-PedagogicalDirectorHaitiLevels';
+import { MorningOpeningDuties1739000000020 } from './1739000000020-MorningOpeningDuties';
+import { SchoolMaterialsCatalog1739000000021 } from './1739000000021-SchoolMaterialsCatalog';
+import { PreschoolEvalAndScale1739000000022 } from './1739000000022-PreschoolEvalAndScale';
+import { PaymentTransactionCancelled1739000000023 } from './1739000000023-PaymentTransactionCancelled';
 
 /** Liste des migrations (ordre d’exécution). Utilisée par l’app au démarrage (migrationsRun). */
 export const migrations = [
@@ -41,4 +46,9 @@ export const migrations = [
   HomeworkAndScheduleMaterials1739000000016,
   StudentArchive1739000000017,
   ScheduleDayMoments1739000000018,
+  PedagogicalDirectorHaitiLevels1739000000019,
+  MorningOpeningDuties1739000000020,
+  SchoolMaterialsCatalog1739000000021,
+  PreschoolEvalAndScale1739000000022,
+  PaymentTransactionCancelled1739000000023,
 ];

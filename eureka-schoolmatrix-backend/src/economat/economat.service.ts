@@ -163,6 +163,7 @@ export class EconomatService {
       .where('t.student_id = :studentId', { studentId })
       .andWhere('t.academic_year = :academicYear', { academicYear })
       .andWhere('t.service_id = :serviceId', { serviceId })
+      .andWhere('t.cancelled_at IS NULL')
       .getRawOne();
     return Number(result?.total ?? 0);
   }
@@ -199,7 +200,21 @@ export class EconomatService {
     return this.transactionRepo.save(tx);
   }
 
-  async findTransactions(filters: { student_id?: string; academic_year?: string; class_id?: string }): Promise<any[]> {
+  async cancelPayment(id: string): Promise<PaymentTransaction> {
+    const tx = await this.transactionRepo.findOne({ where: { id } });
+    if (!tx) throw new NotFoundException('Paiement introuvable');
+    if (tx.cancelled_at) throw new BadRequestException('Ce paiement est déjà supprimé.');
+    tx.cancelled_at = new Date();
+    return this.transactionRepo.save(tx);
+  }
+
+  async findTransactions(filters: {
+    student_id?: string;
+    academic_year?: string;
+    class_id?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ items: any[]; total: number }> {
     const qb = this.transactionRepo
       .createQueryBuilder('t')
       .leftJoinAndSelect('t.student', 'student')
@@ -210,8 +225,12 @@ export class EconomatService {
     if (filters.student_id) qb.andWhere('t.student_id = :sid', { sid: filters.student_id });
     if (filters.academic_year) qb.andWhere('t.academic_year = :y', { y: filters.academic_year });
     if (filters.class_id) qb.andWhere('t.class_id = :c', { c: filters.class_id });
-    const list = await qb.getMany();
-    return list.map((t) => ({
+    const paginate = filters.limit != null;
+    if (paginate) {
+      qb.skip(Math.max(filters.offset ?? 0, 0)).take(Math.min(Math.max(filters.limit ?? 40, 1), 100));
+    }
+    const [list, total] = paginate ? await qb.getManyAndCount() : [await qb.getMany(), 0];
+    const items = list.map((t) => ({
       id: t.id,
       student_id: t.student?.id,
       student_name: t.student ? `${t.student.first_name} ${t.student.last_name}` : null,
@@ -224,8 +243,10 @@ export class EconomatService {
       amount_paid: Number(t.amount_paid),
       payment_date: t.payment_date,
       bank_account_id: t.bank_account_id ?? null,
+      cancelled_at: t.cancelled_at ?? null,
       created_at: t.created_at,
     }));
+    return { items, total: paginate ? total : items.length };
   }
 
   async getStudentPaymentStatus(
@@ -257,7 +278,7 @@ export class EconomatService {
         balance: Math.round((amount_due - total_paid) * 100) / 100,
       });
     }
-    const transactions = await this.findTransactions({ student_id: studentId, academic_year: year });
+    const { items: transactions } = await this.findTransactions({ student_id: studentId, academic_year: year });
     return { academic_year: year, by_service: result, transactions };
   }
 

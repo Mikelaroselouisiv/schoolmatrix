@@ -22,7 +22,7 @@ export class SubjectsService {
     return subject;
   }
 
-  async create(params: { name: string; code?: string }): Promise<Subject> {
+  async create(params: { name: string; code?: string; preschool_eval?: string }): Promise<Subject> {
     const name = params.name.trim();
     const exists = await this.subjectRepo.findOne({ where: { name } });
     if (exists) {
@@ -32,13 +32,14 @@ export class SubjectsService {
       name,
       code: params.code?.trim(),
       active: true,
+      preschool_eval: params.preschool_eval === 'FREQUENCY' ? 'FREQUENCY' : 'LEVEL',
     });
     return this.subjectRepo.save(subject);
   }
 
   async update(
     id: string,
-    params: { name?: string; code?: string; active?: boolean },
+    params: { name?: string; code?: string; active?: boolean; preschool_eval?: string },
   ): Promise<Subject> {
     const subject = await this.subjectRepo.findOne({ where: { id } });
     if (!subject) {
@@ -54,6 +55,9 @@ export class SubjectsService {
     }
     if (params.code !== undefined) subject.code = params.code.trim() || undefined;
     if (params.active !== undefined) subject.active = params.active;
+    if (params.preschool_eval !== undefined) {
+      subject.preschool_eval = params.preschool_eval === 'FREQUENCY' ? 'FREQUENCY' : 'LEVEL';
+    }
     return this.subjectRepo.save(subject);
   }
 

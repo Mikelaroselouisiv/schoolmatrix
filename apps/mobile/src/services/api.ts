@@ -413,6 +413,10 @@ export type SchoolWeekDuty = {
   academic_year: string;
   kind: string;
   title: string;
+  cycle?: string | null;
+  class_id?: string | null;
+  class_name?: string | null;
+  class_level?: string | null;
   day_of_week: number;
   start_time: string;
   end_time: string;
@@ -451,6 +455,7 @@ export type RoomItem = {
   name: string;
   class_id?: string | null;
   capacity?: number | null;
+  student_count?: number;
   active?: boolean;
 };
 
@@ -459,6 +464,9 @@ export type TeacherItem = {
   first_name?: string | null;
   last_name?: string | null;
   email?: string;
+  phone?: string | null;
+  profile_photo_url?: string | null;
+  role?: string | null;
   active?: boolean;
 };
 
@@ -495,10 +503,12 @@ function unwrapList<T>(data: unknown): T[] {
       'schedule_slots',
       'schedule_moments',
       'school_week_duties',
+      'school_materials',
       'exam_schedules',
       'extracurricular_activities',
       'rooms',
       'teachers',
+      'assignments',
       'photos',
       'users',
       'roles',
@@ -698,12 +708,46 @@ export async function listSchoolWeekDuties(params?: {
 
 export async function upsertSchoolWeekDuties(body: {
   academic_year: string;
-  kind?: string;
-  start_time: string;
-  end_time: string;
-  days: { day_of_week: number; responsible_user_id?: number | null }[];
+  days: {
+    day_of_week: number;
+    flag_class_id?: string | null;
+    preschool_teacher_ids?: number[];
+    primary_teacher_ids?: number[];
+  }[];
 }): Promise<void> {
   await api.put('/school-week-duties', body);
+}
+
+export type SchoolMaterialItem = {
+  id: string;
+  kind: 'LIVRE' | 'CAHIER';
+  name: string;
+  label: string;
+  subject_id?: string | null;
+  subject_name?: string | null;
+};
+
+export async function listSchoolMaterials(): Promise<SchoolMaterialItem[]> {
+  try {
+    const { data } = await api.get('/school-materials');
+    return unwrapList<SchoolMaterialItem>(data);
+  } catch {
+    return [];
+  }
+}
+
+export async function createSchoolMaterial(body: {
+  kind: 'LIVRE' | 'CAHIER';
+  name: string;
+  subject_id?: string | null;
+}): Promise<SchoolMaterialItem> {
+  const { data } = await api.post<{ school_material?: SchoolMaterialItem }>('/school-materials', body);
+  if (!data?.school_material) throw new Error('Matériel non créé');
+  return data.school_material;
+}
+
+export async function deleteSchoolMaterial(id: string): Promise<void> {
+  await api.delete(`/school-materials/${id}`);
 }
 
 export async function listExamSchedules(params?: {
@@ -747,6 +791,22 @@ export async function createExtracurricularActivity(body: {
   dress_code?: string | null;
 }): Promise<void> {
   await api.post('/extracurricular-activities', body);
+}
+
+export async function updateExtracurricularActivity(
+  id: string,
+  body: {
+    academic_year_id?: string;
+    activity_date?: string;
+    start_time?: string;
+    end_time?: string;
+    class_id?: string;
+    occasion?: string;
+    participation_fee?: string | null;
+    dress_code?: string | null;
+  },
+): Promise<void> {
+  await api.patch(`/extracurricular-activities/${id}`, body);
 }
 
 export async function deleteExtracurricularActivity(id: string): Promise<void> {
@@ -872,6 +932,8 @@ export type PreschoolGradeRow = {
   frequency: string | null;
   observation: string;
   grade_id: string | null;
+  assignment_id?: string | null;
+  decision?: string | null;
 };
 
 export async function getAcademicYears(): Promise<AcademicYear[]> {
@@ -999,6 +1061,8 @@ export async function getGradesFormData(params: {
   can_edit: boolean;
   default_coefficient?: number | null;
   teacher?: { id: number; name: string } | null;
+  eval_mode?: 'LEVEL' | 'FREQUENCY';
+  is_last_period?: boolean;
 }> {
   const path = params.preschool ? '/grades/preschool/form-data' : '/grades/form-data';
   const { data } = await api.get(path, {
@@ -1014,13 +1078,24 @@ export async function getGradesFormData(params: {
     can_edit?: boolean;
     default_coefficient?: number | null;
     teacher?: { id: number; name: string } | null;
+    eval_mode?: 'LEVEL' | 'FREQUENCY';
+    is_last_period?: boolean;
   };
   return {
     rows: payload.rows || [],
     can_edit: payload.can_edit !== false,
     default_coefficient: payload.default_coefficient ?? null,
     teacher: payload.teacher ?? null,
+    eval_mode: payload.eval_mode === 'FREQUENCY' ? 'FREQUENCY' : 'LEVEL',
+    is_last_period: !!payload.is_last_period,
   };
+}
+
+export async function setSubjectPreschoolEval(
+  id: string,
+  preschool_eval: 'LEVEL' | 'FREQUENCY',
+): Promise<void> {
+  await api.patch(`/subjects/${id}`, { preschool_eval });
 }
 
 export async function saveGrades(body: {
@@ -1042,6 +1117,7 @@ export async function saveGrades(body: {
         frequency?: string;
         observation?: string;
       }[];
+  decisions?: { assignment_id: string; decision?: string | null }[];
 }): Promise<void> {
   const path = body.preschool ? '/grades/preschool/save' : '/grades/save';
   await api.post(path, {
@@ -1050,6 +1126,7 @@ export async function saveGrades(body: {
     subject_id: body.subject_id,
     period_id: body.period_id,
     grades: body.grades,
+    ...(body.decisions ? { decisions: body.decisions } : {}),
   });
 }
 
@@ -1072,6 +1149,7 @@ export type PaymentTransaction = {
   service_name?: string;
   amount_paid?: number;
   payment_date?: string;
+  cancelled_at?: string | null;
 };
 
 export async function getFeeServices(): Promise<FeeService[]> {
@@ -1091,9 +1169,23 @@ export async function getPaymentTransactions(params?: {
   academic_year?: string;
   class_id?: string;
   student_id?: string;
-}): Promise<PaymentTransaction[]> {
-  const { data } = await api.get('/economat/transactions', { params });
-  return unwrapList<PaymentTransaction>(data);
+  limit?: number;
+  offset?: number;
+}): Promise<{ transactions: PaymentTransaction[]; has_more: boolean }> {
+  const { data } = await api.get('/economat/transactions', {
+    params: {
+      academic_year: params?.academic_year,
+      class_id: params?.class_id,
+      student_id: params?.student_id,
+      limit: params?.limit ?? 40,
+      offset: params?.offset ?? 0,
+    },
+  });
+  const payload = data as { transactions?: PaymentTransaction[]; has_more?: boolean };
+  return {
+    transactions: payload.transactions ?? unwrapList<PaymentTransaction>(data),
+    has_more: !!payload.has_more,
+  };
 }
 
 export async function recordPayment(body: {
@@ -1106,6 +1198,10 @@ export async function recordPayment(body: {
   bank_account_id?: string | null;
 }): Promise<void> {
   await api.post('/economat/payments', body);
+}
+
+export async function cancelPayment(id: string): Promise<void> {
+  await api.post(`/economat/payments/${id}/cancel`);
 }
 
 export type LatenessItem = {
@@ -1580,8 +1676,10 @@ export async function listSubjects(): Promise<SubjectOrg[]> {
 export async function createSubject(body: {
   name: string;
   code?: string;
-}): Promise<void> {
-  await api.post('/subjects', body);
+}): Promise<SubjectOrg> {
+  const { data } = await api.post<{ subject?: SubjectOrg }>('/subjects', body);
+  if (!data?.subject) throw new Error('Matière non créée');
+  return data.subject;
 }
 
 export async function updateSubject(
@@ -1611,8 +1709,10 @@ export async function createClass(body: {
   level?: string;
   section?: string;
   subject_ids?: string[];
-}): Promise<void> {
-  await api.post('/classes', body);
+}): Promise<ClassOrg> {
+  const { data } = await api.post<{ class?: ClassOrg }>('/classes', body);
+  if (!data?.class) throw new Error('Classe non créée');
+  return data.class;
 }
 
 export async function updateClass(
@@ -1638,8 +1738,10 @@ export async function createRoom(body: {
   description?: string;
   capacity?: number | null;
   class_id?: string | null;
-}): Promise<void> {
-  await api.post('/rooms', body);
+}): Promise<RoomItem> {
+  const { data } = await api.post<{ room?: RoomItem }>('/rooms', body);
+  if (!data?.room) throw new Error('Salle non créée');
+  return data.room;
 }
 
 export async function updateRoom(
@@ -1738,9 +1840,62 @@ export async function getTeacherDetail(id: number): Promise<TeacherDetail | null
   return data?.teacher ?? null;
 }
 
+export type TeacherAssignment = {
+  id: string;
+  teacher_id: number;
+  teacher_name: string;
+  teacher_photo_url?: string | null;
+  class_id: string;
+  subject_id: string;
+  subject_name: string;
+  room_id: string | null;
+  room_name: string;
+};
+
+export async function listTeacherAssignments(params?: {
+  class_id?: string;
+  room_id?: string;
+}): Promise<TeacherAssignment[]> {
+  const { data } = await api.get('/teachers/assignments', { params });
+  return unwrapList<TeacherAssignment>(data);
+}
+
+export async function searchStaffTeachers(q?: string): Promise<TeacherItem[]> {
+  const { data } = await api.get('/teachers/staff-search', {
+    params: q?.trim() ? { q: q.trim() } : undefined,
+  });
+  return unwrapList<TeacherItem>(data);
+}
+
+export async function promoteToTeacher(userId: number): Promise<TeacherItem> {
+  const { data } = await api.post<{ teacher?: TeacherItem }>('/teachers/promote', {
+    user_id: userId,
+  });
+  if (!data?.teacher) throw new Error('Promotion impossible');
+  return data.teacher;
+}
+
+export async function createTeacher(body: {
+  first_name?: string;
+  last_name?: string;
+  email: string;
+  phone?: string;
+  password: string;
+  profile_photo_url?: string;
+}): Promise<TeacherItem> {
+  const { data } = await api.post<{ teacher?: TeacherItem }>('/teachers', body);
+  if (!data?.teacher) throw new Error('Compte professeur non créé');
+  return data.teacher;
+}
+
 export async function addTeacherClassSubject(
   teacherId: number,
-  body: { class_id: string; subject_id: string; room_id: string },
+  body: {
+    class_id: string;
+    room_id: string;
+    subject_id?: string;
+    subject_ids?: string[];
+  },
 ): Promise<void> {
   await api.post(`/teachers/${teacherId}/class-subjects`, body);
 }

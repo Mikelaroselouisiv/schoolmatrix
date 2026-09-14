@@ -1191,8 +1191,7 @@ export class SyncService implements OnModuleInit {
   }
 
   /**
-   * Même (année, type, jour) déjà présent sous un autre UUID.
-   * LWW : le gagnant garde son id, le perdant est tombstoné.
+   * FLAG : même (année, jour). RENTREE : même (année, cycle, jour, professeur).
    */
   private async reconcileSchoolWeekDutyUnique(
     repo: Repository<any>,
@@ -1204,15 +1203,25 @@ export class SyncService implements OnModuleInit {
     sourceNodeId?: string,
   ): Promise<'ok' | 'skipped'> {
     const academic_year = String(data.academic_year ?? '').trim();
-    const kind = String(data.kind ?? 'DEVOTION').trim();
+    const kind = String(data.kind ?? 'RENTREE').trim();
     const day_of_week = Number(data.day_of_week);
     if (!academic_year || !Number.isInteger(day_of_week)) {
       throw new BadRequestException(
         'school_week_duty: clé naturelle incomplète (unique)',
       );
     }
+    const where =
+      kind === 'FLAG'
+        ? { academic_year, kind: 'FLAG', day_of_week }
+        : {
+            academic_year,
+            kind,
+            day_of_week,
+            cycle: data.cycle ?? null,
+            responsible_user_id: data.responsible_user_id ?? null,
+          };
     const other = await repo.findOne({
-      where: { academic_year, kind, day_of_week } as any,
+      where: where as any,
     });
     if (!other || String(other.id) === String(primaryId)) {
       throw new BadRequestException(

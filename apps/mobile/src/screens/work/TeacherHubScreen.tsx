@@ -18,6 +18,7 @@ import {
   SegmentedControl,
   Title,
 } from '../../components/ui';
+import { useAuth } from '../../context/AuthContext';
 import { useSchool } from '../../context/SchoolContext';
 import { toYYYYMMDD } from '../../lib/format';
 import {
@@ -28,6 +29,8 @@ import {
   getTeacherClasses,
   getTeacherSubjectsInClass,
   listHomework,
+  listSchoolMaterials,
+  listSchoolWeekDuties,
   saveAttendanceBulk,
   saveHomeworkGrade,
   saveSlotMaterials,
@@ -37,8 +40,11 @@ import {
   type HomeworkAssignment,
   type HomeworkKind,
   type ScheduleSlot,
+  type SchoolMaterialItem,
   type SubjectItem,
 } from '../../services/api';
+import { dutiesForTeacher, dutyDisplayTitle, weekdayLabel } from '../../lib/morningOpening';
+import { parseMaterialLines, toggleMaterialLine } from '../../lib/schoolMaterials';
 import { saveAttendanceWithQueue } from '../../lib/mutationQueue';
 import { useNetwork } from '../../context/NetworkContext';
 import { colors } from '../../theme/tokens';
@@ -58,12 +64,15 @@ const STATUSES: { value: AttendanceStatus; label: string }[] = [
 
 export function TeacherHubScreen({}: Props) {
   const allowed = useCanAccess('teacher-hub') || useCanAccess('grades');
-  const { theme } = useSchool();
+  const { theme, context } = useSchool();
+  const { user } = useAuth();
+  const userId = user?.id ?? user?.userId ?? null;
   const [tab, setTab] = useState<HubTab>('travaux');
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [classId, setClassId] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [morningLines, setMorningLines] = useState<{ day: string; label: string }[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -79,12 +88,48 @@ export function TeacherHubScreen({}: Props) {
     })();
   }, []);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        const yearName =
+          context?.academic_year?.name || context?.current_academic_year_name || undefined;
+        const list = await listSchoolWeekDuties({ academic_year: yearName });
+        const mine = dutiesForTeacher(
+          list,
+          userId,
+          classes.map((c) => c.id),
+        ).sort((a, b) => a.day_of_week - b.day_of_week);
+        setMorningLines(
+          mine.map((d) => ({
+            day: weekdayLabel(d.day_of_week),
+            label:
+              d.kind === 'FLAG'
+                ? `Montée du drapeau${d.class_name ? ` · ${d.class_name}` : ''}`
+                : dutyDisplayTitle(d),
+          })),
+        );
+      } catch {
+        setMorningLines([]);
+      }
+    })();
+  }, [classes, userId, context?.academic_year?.name, context?.current_academic_year_name]);
+
   if (!allowed) return <AccessDenied />;
   if (loading) return <LoadingBlock />;
 
   return (
     <Screen>
       <Title>Tableau professeur</Title>
+      {morningLines.length > 0 ? (
+        <View style={styles.morningBox}>
+          <Text style={styles.morningKicker}>Début de journée</Text>
+          {morningLines.map((line, i) => (
+            <Text key={`${line.day}-${line.label}-${i}`} style={styles.morningLine}>
+              {line.day} · {line.label}
+            </Text>
+          ))}
+        </View>
+      ) : null}
       <SegmentedControl
         options={[
           { id: 'travaux', label: 'Travaux' },
@@ -407,17 +452,22 @@ function MaterialsPanel({
   const activeId = classes.some((c) => c.id === classId) ? classId : classes[0]?.id || '';
   const [slots, setSlots] = useState<ScheduleSlot[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [catalog, setCatalog] = useState<SchoolMaterialItem[]>([]);
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (!activeId) return;
     (async () => {
       try {
-        const list = await getScheduleSlots(activeId);
+        const [list, items] = await Promise.all([
+          getScheduleSlots(activeId),
+          listSchoolMaterials(),
+        ]);
         setSlots(list);
         const next: Record<string, string> = {};
         for (const s of list) next[s.id] = s.materials || '';
         setDrafts(next);
+        setCatalog(items);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Horaire indisponible');
       }
@@ -437,13 +487,47 @@ function MaterialsPanel({
           <Text style={styles.cardTitle}>
             {DAYS[s.day_of_week] ?? s.day_of_week} · {s.start_time}–{s.end_time} · {s.subject_name}
           </Text>
-          <TextInput
-            value={drafts[s.id] ?? ''}
-            onChangeText={(t) => setDrafts((d) => ({ ...d, [s.id]: t }))}
-            placeholder="Matériel à apporter (une ligne par item)"
-            multiline
-            style={[styles.input, { minHeight: 72 }]}
-          />
+          {catalog.length > 0 ? (
+            <>
+              {(['LIVRE', 'CAHIER'] as const).map((kind) => {
+                const items = catalog.filter((m) => m.kind === kind);
+                if (!items.length) return null;
+                const selected = parseMaterialLines(drafts[s.id]);
+                return (
+                  <View key={kind} style={{ marginTop: 8 }}>
+                    <Text style={styles.label}>{kind === 'LIVRE' ? 'Livres' : 'Cahiers'}</Text>
+                    <View style={styles.pills}>
+                      {items.map((m) => {
+                        const on = selected.includes(m.label);
+                        return (
+                          <Pressable
+                            key={m.id}
+                            onPress={() =>
+                              setDrafts((d) => ({
+                                ...d,
+                                [s.id]: toggleMaterialLine(d[s.id], m.label),
+                              }))
+                            }
+                            style={[styles.pill, on ? styles.pillOn : null]}
+                          >
+                            <Text style={styles.pillText}>{m.name}</Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </View>
+                );
+              })}
+            </>
+          ) : (
+            <TextInput
+              value={drafts[s.id] ?? ''}
+              onChangeText={(t) => setDrafts((d) => ({ ...d, [s.id]: t }))}
+              placeholder="Matériel à apporter"
+              multiline
+              style={[styles.input, { minHeight: 72 }]}
+            />
+          )}
           <Button
             title="Enregistrer"
             onPress={() => void saveSlotMaterials(s.id, drafts[s.id] || null)}
@@ -455,6 +539,24 @@ function MaterialsPanel({
 }
 
 const styles = StyleSheet.create({
+  morningBox: {
+    marginTop: 10,
+    marginBottom: 4,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  morningKicker: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    color: '#92400E',
+    marginBottom: 4,
+  },
+  morningLine: { color: '#78350F', fontSize: 14, fontWeight: '600', marginTop: 2 },
   pad: { paddingBottom: 40 },
   chip: {
     paddingHorizontal: 12,

@@ -225,6 +225,36 @@ export function dayHasPreschool(slot?: DayMorningProgram | null): boolean {
   );
 }
 
+export function emptyClassDayLists(): Record<number, { subjectIds: string[]; materials: string[] }> {
+  return {
+    1: { subjectIds: [], materials: [] },
+    2: { subjectIds: [], materials: [] },
+    3: { subjectIds: [], materials: [] },
+    4: { subjectIds: [], materials: [] },
+    5: { subjectIds: [], materials: [] },
+  };
+}
+
+export type ClassDayListRow = {
+  day_of_week: number;
+  subject_ids?: string[];
+  subject_names?: string[];
+  materials?: string[];
+};
+
+export function classDayListsFromApi(
+  rows?: ClassDayListRow[] | null,
+): Record<number, { subjectIds: string[]; materials: string[] }> {
+  const next = emptyClassDayLists();
+  for (const row of rows ?? []) {
+    const slot = next[row.day_of_week];
+    if (!slot) continue;
+    slot.subjectIds = [...(row.subject_ids ?? [])];
+    slot.materials = [...(row.materials ?? [])];
+  }
+  return next;
+}
+
 export function dayHasPrimary(slot?: DayMorningProgram | null): boolean {
   if (!slot) return false;
   return !!(

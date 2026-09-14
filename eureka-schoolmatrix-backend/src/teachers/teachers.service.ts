@@ -223,24 +223,17 @@ export class TeachersService {
     );
 
     const listMode = isListScheduleLevel(student.class?.level);
-    let bring_items: { id: string; label: string }[] = [];
-    let list_subjects: string[] = [];
+    let day_lists: {
+      day_of_week: number;
+      subject_ids: string[];
+      subject_names: string[];
+      materials: string[];
+    }[] = [];
     if (listMode && classId) {
-      bring_items = await this.scheduleMoments.listBringItems(
+      day_lists = await this.scheduleMoments.listDayLists(
         classId,
         academicYear,
       );
-      const assigns = await this.teacherClassSubjectRepo.find({
-        where: { class_id: classId },
-        relations: ['subject'],
-      });
-      list_subjects = [
-        ...new Set(
-          assigns
-            .map((a) => a.subject?.name?.trim())
-            .filter((n): n is string => !!n),
-        ),
-      ].sort((a, b) => a.localeCompare(b, 'fr'));
     }
 
     return {
@@ -250,8 +243,13 @@ export class TeachersService {
       class_name: student.class?.name ?? null,
       academic_year: academicYear ?? null,
       schedule_mode: listMode ? 'list' : 'timed',
-      bring_items,
-      list_subjects,
+      day_lists,
+      bring_items: day_lists.flatMap((d) =>
+        d.materials.map((label) => ({ id: `${d.day_of_week}:${label}`, label })),
+      ),
+      list_subjects: [
+        ...new Set(day_lists.flatMap((d) => d.subject_names)),
+      ],
       slots: merged,
     };
   }

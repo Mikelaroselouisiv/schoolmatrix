@@ -11,7 +11,7 @@ import { formatDateJJMMAAAA } from "@/lib/format";
 import { formatPointsOnBareme, pointsToTen } from "@/lib/gradeScale";
 import type { PdfSection } from "@/lib/pdfExport";
 import { learnerNoun, learnerNounCap } from "@/lib/educationLevels";
-import { dutiesForStudent, dutyDisplayTitle, isListScheduleLevel } from "@/lib/morningOpening";
+import { dutiesForStudent, dutyDisplayTitle, isListScheduleLevel, namesJoin } from "@/lib/morningOpening";
 import {
   getStudentDossierPdfBlob,
   type StudentDossier,
@@ -155,6 +155,21 @@ type ExamScheduleItem = {
   end_time: string;
 };
 
+function parseDayLists(raw: unknown): { day_of_week: number; subject_names: string[]; materials: string[] }[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((row: {
+      day_of_week?: number;
+      subject_names?: string[];
+      materials?: string[];
+    }) => ({
+      day_of_week: Number(row.day_of_week),
+      subject_names: Array.isArray(row.subject_names) ? row.subject_names.filter(Boolean) : [],
+      materials: Array.isArray(row.materials) ? row.materials.filter(Boolean) : [],
+    }))
+    .filter((d) => d.day_of_week >= 1 && d.day_of_week <= 5);
+}
+
 function mergeClassSchedule(
   slots: ScheduleSlot[],
   moments: {
@@ -264,8 +279,9 @@ export function DashboardFicheElevePage() {
   const [scheduleSlots, setScheduleSlots] = useState<ScheduleSlot[]>([]);
   const [examSchedules, setExamSchedules] = useState<ExamScheduleItem[]>([]);
   const [extracurricularActivities, setExtracurricularActivities] = useState<ExtracurricularActivityItem[]>([]);
-  const [listSubjects, setListSubjects] = useState<string[]>([]);
-  const [bringLines, setBringLines] = useState<string[]>([]);
+  const [dayLists, setDayLists] = useState<
+    { day_of_week: number; subject_names: string[]; materials: string[] }[]
+  >([]);
   const [homework, setHomework] = useState<
     {
       id: string;
@@ -486,12 +502,7 @@ export function DashboardFicheElevePage() {
         const momentsData = await momentsRes.json();
         const dutiesData = await dutiesRes.json();
         const studentSchedData = studentSchedRes.ok ? await studentSchedRes.json() : {};
-        setListSubjects(Array.isArray(studentSchedData.list_subjects) ? studentSchedData.list_subjects : []);
-        setBringLines(
-          Array.isArray(studentSchedData.bring_items)
-            ? studentSchedData.bring_items.map((i: { label?: string }) => String(i.label ?? "").trim()).filter(Boolean)
-            : [],
-        );
+        setDayLists(parseDayLists(studentSchedData.day_lists));
         if (examRes.ok && examData.periods) setExamResults(examData);
         else setExamResults(null);
         const formationList = formationData.students ?? [];
@@ -529,12 +540,7 @@ export function DashboardFicheElevePage() {
           const momentsData = await momentsRes.json();
           const dutiesData = await dutiesRes.json();
           const studentSchedData = studentSchedRes.ok ? await studentSchedRes.json() : {};
-          setListSubjects(Array.isArray(studentSchedData.list_subjects) ? studentSchedData.list_subjects : []);
-          setBringLines(
-            Array.isArray(studentSchedData.bring_items)
-              ? studentSchedData.bring_items.map((i: { label?: string }) => String(i.label ?? "").trim()).filter(Boolean)
-              : [],
-          );
+          setDayLists(parseDayLists(studentSchedData.day_lists));
           setScheduleSlots(
             mergeClassSchedule(
               slotsRes.ok ? (slotsData.schedule_slots ?? []) : [],
@@ -551,8 +557,7 @@ export function DashboardFicheElevePage() {
           setScheduleSlots([]);
           setExamSchedules([]);
           setExtracurricularActivities([]);
-          setListSubjects([]);
-          setBringLines([]);
+          setDayLists([]);
         }
       }
     } catch (e) {
@@ -565,8 +570,7 @@ export function DashboardFicheElevePage() {
       setScheduleSlots([]);
       setExamSchedules([]);
       setExtracurricularActivities([]);
-      setListSubjects([]);
-      setBringLines([]);
+      setDayLists([]);
       setDossierYears([]);
     }
   }, [API_BASE, selectedYearId, academicYears, canDossier, rosterMode]);
@@ -681,17 +685,28 @@ export function DashboardFicheElevePage() {
         },
       });
     }
-    if (listSubjects.length > 0) {
-      sections.unshift({ title: "Matières", lines: listSubjects });
-    }
-    if (bringLines.length > 0) {
-      sections.splice(listSubjects.length > 0 ? 1 : 0, 0, {
-        title: "Matériel à apporter",
-        lines: bringLines,
+    if (dayLists.some((d) => d.subject_names.length || d.materials.length)) {
+      sections.unshift({
+        title: "Matières et matériel",
+        table: {
+          columns: [
+            { header: "Jour", key: "jour" },
+            { header: "Matières", key: "matieres" },
+            { header: "Matériel à apporter", key: "materiel" },
+          ],
+          rows: [1, 2, 3, 4, 5].map((day) => {
+            const slot = dayLists.find((d) => d.day_of_week === day);
+            return {
+              jour: DAYS[day],
+              matieres: namesJoin(slot?.subject_names ?? []),
+              materiel: namesJoin(slot?.materials ?? []),
+            };
+          }),
+        },
       });
     }
     return sections;
-  }, [scheduleSlots, examSchedules, extracurricularActivities, listSubjects, bringLines]);
+  }, [scheduleSlots, examSchedules, extracurricularActivities, dayLists]);
 
   const ficheLevel =
     student?.class_level || classes.find((c) => c.id === selectedClassId)?.level;
@@ -1161,33 +1176,33 @@ export function DashboardFicheElevePage() {
               </div>
               {scheduleTab === "cours" && (
                 <div className="space-y-4">
-                  {listSubjects.length > 0 ? (
-                    <div>
-                      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                        Matières
-                      </p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {listSubjects.map((name) => (
-                          <span
-                            key={name}
-                            className="rounded-full bg-teal-50 px-2.5 py-1 text-[11px] font-medium text-teal-900 ring-1 ring-teal-100"
-                          >
-                            {name}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                  {bringLines.length > 0 ? (
-                    <div>
-                      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                        Matériel à apporter
-                      </p>
-                      <ul className="list-decimal space-y-1 pl-5 text-sm text-slate-800">
-                        {bringLines.map((line) => (
-                          <li key={line}>{line}</li>
-                        ))}
-                      </ul>
+                  {dayLists.some((d) => d.subject_names.length || d.materials.length) ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-sm">
+                        <thead className="bg-slate-50 border-b border-[var(--app-border)]">
+                          <tr>
+                            <th className="px-4 py-2 font-medium text-slate-900">Jour</th>
+                            <th className="px-4 py-2 font-medium text-slate-900">Matières</th>
+                            <th className="px-4 py-2 font-medium text-slate-900">Matériel à apporter</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[1, 2, 3, 4, 5].map((day) => {
+                            const slot = dayLists.find((d) => d.day_of_week === day);
+                            return (
+                              <tr key={day} className="border-b border-[var(--app-border)]">
+                                <td className="px-4 py-2 text-slate-700">{DAYS[day]}</td>
+                                <td className="px-4 py-2 text-slate-800">
+                                  {namesJoin(slot?.subject_names ?? [])}
+                                </td>
+                                <td className="px-4 py-2 text-slate-800">
+                                  {namesJoin(slot?.materials ?? [])}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
                   ) : null}
                 <div className="overflow-x-auto">

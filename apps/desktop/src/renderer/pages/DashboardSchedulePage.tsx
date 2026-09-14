@@ -20,6 +20,8 @@ import {
   uniqueTeachersFromAssignments,
   dayHasPreschool,
   dayHasPrimary,
+  emptyClassDayLists,
+  classDayListsFromApi,
   type DayMorningProgram,
 } from "@/lib/morningOpening";
 import {
@@ -63,6 +65,12 @@ const PRIMARY_MORNING_COLUMNS: PdfColumn[] = [
   { header: "Drapeau", key: "drapeau" },
   { header: "Défi des 5 phrases", key: "defi" },
   { header: "Prière de midi", key: "priere" },
+];
+
+const LIST_DAY_COLUMNS: PdfColumn[] = [
+  { header: "Jour", key: "jour" },
+  { header: "Matières", key: "matieres" },
+  { header: "Matériel à apporter", key: "materiel" },
 ];
 
 const ACTIVITY_COLUMNS: PdfColumn[] = [
@@ -160,6 +168,10 @@ type SchoolDuty = {
 };
 
 function toggleId(ids: number[], id: number): number[] {
+  return ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
+}
+
+function toggleStr(ids: string[], id: string): string[] {
   return ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
 }
 
@@ -400,9 +412,11 @@ export function DashboardSchedulePage() {
   const [preschoolInstructions, setPreschoolInstructions] = useState<string[]>([]);
   const [primaryInstructions, setPrimaryInstructions] = useState<string[]>([]);
   const [staffPeople, setStaffPeople] = useState<{ id: number; name: string }[]>([]);
-  const [bringByClass, setBringByClass] = useState<Record<string, string[]>>({});
+  const [dayListsByClass, setDayListsByClass] = useState<
+    Record<string, Record<number, { subjectIds: string[]; materials: string[] }>>
+  >({});
   const [listClass, setListClass] = useState<ClassItem | null>(null);
-  const [bringDraft, setBringDraft] = useState("");
+  const [listDraft, setListDraft] = useState(emptyClassDayLists);
   const [savingBring, setSavingBring] = useState(false);
   const [savingMorning, setSavingMorning] = useState(false);
   const [savingMoment, setSavingMoment] = useState(false);
@@ -596,7 +610,7 @@ export function DashboardSchedulePage() {
   useEffect(() => {
     const list = classes.filter((c) => isListScheduleLevel(c.level));
     if (!list.length) return;
-    void Promise.all(list.map((c) => loadBringItems(c.id)));
+    void Promise.all(list.map((c) => loadDayLists(c.id)));
   }, [classes, academicYearFilter, defaultYearName]);
 
   async function openRoomGrid(room: Room) {
@@ -604,7 +618,8 @@ export function DashboardSchedulePage() {
     if (tab === "cours" && isListScheduleLevel(level) && room.class_id) {
       const cls = classes.find((c) => c.id === room.class_id) ?? { id: room.class_id, name: roomClassName(room), level };
       setListClass(cls);
-      await loadBringItems(room.class_id);
+      const lists = await loadDayLists(room.class_id);
+      setListDraft(lists);
       return;
     }
     setGridRoom(room);
@@ -629,33 +644,48 @@ export function DashboardSchedulePage() {
     }
   }
 
-  async function loadBringItems(classId: string) {
+  async function loadDayLists(classId: string) {
     const yearName = academicYears.find((ay) => ay.id === academicYearFilter)?.name || defaultYearName;
+    const empty = emptyClassDayLists();
     try {
       const params = new URLSearchParams({ class_id: classId });
       if (yearName) params.set("academic_year", yearName);
-      const res = await fetchWithAuth(`${API_BASE}/class-bring-items?${params}`);
+      const res = await fetchWithAuth(`${API_BASE}/class-day-lists?${params}`);
       const data = await res.json();
-      const lines = (data.items ?? []).map((i: { label: string }) => i.label);
-      setBringByClass((prev) => ({ ...prev, [classId]: lines }));
+      const next = classDayListsFromApi(data.days ?? []);
+      setDayListsByClass((prev) => ({ ...prev, [classId]: next }));
+      return next;
     } catch {
-      setBringByClass((prev) => ({ ...prev, [classId]: prev[classId] ?? [] }));
+      setDayListsByClass((prev) => ({ ...prev, [classId]: prev[classId] ?? empty }));
+      return empty;
     }
   }
 
-  async function saveBringItems(classId: string, lines: string[]) {
+  async function saveDayLists(
+    classId: string,
+    lists: Record<number, { subjectIds: string[]; materials: string[] }>,
+  ) {
     const yearName = academicYears.find((ay) => ay.id === academicYearFilter)?.name || defaultYearName;
     setSavingBring(true);
     setError("");
     try {
-      const res = await fetchWithAuth(`${API_BASE}/class-bring-items`, {
+      const res = await fetchWithAuth(`${API_BASE}/class-day-lists`, {
         method: "PUT",
-        body: JSON.stringify({ class_id: classId, academic_year: yearName || null, lines }),
+        body: JSON.stringify({
+          class_id: classId,
+          academic_year: yearName || null,
+          days: WEEKDAYS.map((d) => ({
+            day_of_week: d.index,
+            subject_ids: lists[d.index]?.subjectIds ?? [],
+            materials: lists[d.index]?.materials ?? [],
+          })),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Erreur");
-      const next = (data.items ?? []).map((i: { label: string }) => i.label);
-      setBringByClass((prev) => ({ ...prev, [classId]: next }));
+      const next = classDayListsFromApi(data.days ?? []);
+      setDayListsByClass((prev) => ({ ...prev, [classId]: next }));
+      setListDraft(next);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
     } finally {
@@ -1231,24 +1261,40 @@ export function DashboardSchedulePage() {
     return slots.filter((s) => s.room_id === room.id).length;
   }
 
-  function classSubjectNames(classId: string) {
-    const names = assignments
-      .filter((a) => a.class_id === classId)
-      .map((a) => a.subject_name)
-      .filter((n): n is string => !!n);
-    return [...new Set(names)].sort((a, b) => a.localeCompare(b, "fr"));
+  function classSubjectOptions(classId: string) {
+    const map = new Map<string, string>();
+    for (const a of assignments) {
+      if (a.class_id !== classId || !a.subject_id || !a.subject_name) continue;
+      if (!map.has(a.subject_id)) map.set(a.subject_id, a.subject_name);
+    }
+    return [...map.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, "fr"));
   }
 
   function listClassPdfSections(classId: string): PdfSection[] {
     const cls = classes.find((c) => c.id === classId);
     const cycle = morningCycleFromLevel(cls?.level);
-    const subjects = classSubjectNames(classId);
-    const materials = bringByClass[classId] ?? [];
+    const lists = dayListsByClass[classId] ?? emptyClassDayLists();
+    const options = classSubjectOptions(classId);
+    const nameOf = (id: string) => options.find((s) => s.id === id)?.name ?? id;
     const sections: PdfSection[] = [];
     if (cycle === "PRESCOLAIRE") sections.push(preschoolPdfSection);
     if (cycle === "PRIMAIRE") sections.push(primaryPdfSection);
-    if (subjects.length) sections.push({ title: "Matières", lines: subjects });
-    if (materials.length) sections.push({ title: "Matériel à apporter", lines: materials });
+    sections.push({
+      title: "Matières et matériel",
+      table: {
+        columns: LIST_DAY_COLUMNS,
+        rows: WEEKDAYS.map((d) => {
+          const slot = lists[d.index] ?? { subjectIds: [], materials: [] };
+          return {
+            jour: d.label,
+            matieres: namesJoin(slot.subjectIds.map(nameOf).filter(Boolean)),
+            materiel: namesJoin(slot.materials),
+          };
+        }),
+      },
+    });
     return sections;
   }
 
@@ -1258,8 +1304,12 @@ export function DashboardSchedulePage() {
     const klass = roomClassName(room);
     const level = classes.find((c) => c.id === room.class_id)?.level;
     const listMode = kind === "cours" && isListScheduleLevel(level);
+    const lists = room.class_id ? dayListsByClass[room.class_id] : undefined;
     const count = listMode
-      ? classSubjectNames(room.class_id || "").length
+      ? WEEKDAYS.filter((d) => {
+          const slot = lists?.[d.index];
+          return !!slot && (slot.subjectIds.length > 0 || slot.materials.length > 0);
+        }).length
       : kind === "cours"
         ? roomSlotCount(room)
         : roomExamCount(room);
@@ -1300,8 +1350,8 @@ export function DashboardSchedulePage() {
                 {kind === "cours"
                   ? listMode
                     ? count > 1
-                      ? "matières"
-                      : "matière"
+                      ? "jours"
+                      : "jour"
                     : count > 1
                       ? "créneaux"
                       : "créneau"
@@ -2136,7 +2186,7 @@ export function DashboardSchedulePage() {
 
       {listClass ? (
         <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4">
-          <div className="mt-8 w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
+          <div className="mt-8 w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-teal-700">Liste</p>
@@ -2147,77 +2197,73 @@ export function DashboardSchedulePage() {
               </button>
             </div>
             <div className="space-y-4">
-              <div>
-                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                  Matières
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {classSubjectNames(listClass.id).length === 0 ? (
-                    <p className="text-sm text-slate-500">Aucune matière dans Classes.</p>
-                  ) : (
-                    classSubjectNames(listClass.id).map((name) => (
-                      <span
-                        key={name}
-                        className="rounded-full bg-teal-50 px-2.5 py-1 text-[11px] font-medium text-teal-900 ring-1 ring-teal-100"
-                      >
-                        {name}
-                      </span>
-                    ))
-                  )}
-                </div>
-              </div>
-              <div>
-                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                  Matériel à apporter
-                </p>
-                <div className="flex gap-1.5">
-                  <input
-                    value={bringDraft}
-                    onChange={(e) => setBringDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key !== "Enter") return;
-                      e.preventDefault();
-                      const line = bringDraft.trim();
-                      if (!line) return;
-                      const next = [...(bringByClass[listClass.id] ?? []), line];
-                      setBringDraft("");
-                      void saveBringItems(listClass.id, next);
-                    }}
-                    className="class-input min-w-0 flex-1"
-                  />
-                  <button
-                    type="button"
-                    disabled={savingBring}
-                    onClick={() => {
-                      const line = bringDraft.trim();
-                      if (!line) return;
-                      const next = [...(bringByClass[listClass.id] ?? []), line];
-                      setBringDraft("");
-                      void saveBringItems(listClass.id, next);
-                    }}
-                    className="app-btn-primary text-sm disabled:opacity-60"
-                  >
-                    Ajouter
-                  </button>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {(bringByClass[listClass.id] ?? []).map((line) => (
-                    <button
-                      key={line}
-                      type="button"
-                      onClick={() =>
-                        void saveBringItems(
-                          listClass.id,
-                          (bringByClass[listClass.id] ?? []).filter((x) => x !== line),
-                        )
-                      }
-                      className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-800 ring-1 ring-slate-200 hover:bg-red-50 hover:text-red-700"
-                    >
-                      {line} ×
-                    </button>
-                  ))}
-                </div>
-              </div>
+              {WEEKDAYS.map((d) => {
+                const slot = listDraft[d.index] ?? { subjectIds: [] as string[], materials: [] as string[] };
+                const options = classSubjectOptions(listClass.id);
+                return (
+                  <div key={d.index} className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 space-y-3">
+                    <p className="text-sm font-semibold text-slate-900">{d.label}</p>
+                    <div>
+                      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                        Matières
+                      </p>
+                      {options.length === 0 ? (
+                        <p className="text-sm text-slate-500">Aucune matière dans Classes.</p>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">
+                          {options.map((s) => {
+                            const on = slot.subjectIds.includes(s.id);
+                            return (
+                              <button
+                                key={s.id}
+                                type="button"
+                                onClick={() =>
+                                  setListDraft((prev) => ({
+                                    ...prev,
+                                    [d.index]: {
+                                      ...slot,
+                                      subjectIds: toggleStr(slot.subjectIds, s.id),
+                                    },
+                                  }))
+                                }
+                                className={`rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ${
+                                  on
+                                    ? "bg-teal-700 text-white ring-teal-700"
+                                    : "bg-white text-slate-700 ring-slate-200"
+                                }`}
+                              >
+                                {s.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                        Matériel à apporter
+                      </p>
+                      <ManualNames
+                        values={slot.materials}
+                        onChange={(materials) =>
+                          setListDraft((prev) => ({
+                            ...prev,
+                            [d.index]: { ...slot, materials },
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+              <button
+                type="button"
+                disabled={savingBring}
+                onClick={() => void saveDayLists(listClass.id, listDraft)}
+                className="app-btn-primary text-sm disabled:opacity-60"
+              >
+                {savingBring ? "Enregistrement…" : "Enregistrer"}
+              </button>
             </div>
           </div>
         </div>

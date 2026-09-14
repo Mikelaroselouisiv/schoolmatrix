@@ -24,6 +24,7 @@ import { SchoolMaterialsCatalog1739000000021 } from './1739000000021-SchoolMater
 import { PreschoolEvalAndScale1739000000022 } from './1739000000022-PreschoolEvalAndScale';
 import { PaymentTransactionCancelled1739000000023 } from './1739000000023-PaymentTransactionCancelled';
 import { MorningOpeningRubrics1739000000024 } from './1739000000024-MorningOpeningRubrics';
+import { ClassDayLists1739000000025 } from './1739000000025-ClassDayLists';
 
 /** Liste des migrations (ordre d’exécution). Utilisée par l’app au démarrage (migrationsRun). */
 export const migrations = [
@@ -53,4 +54,5 @@ export const migrations = [
   PreschoolEvalAndScale1739000000022,
   PaymentTransactionCancelled1739000000023,
   MorningOpeningRubrics1739000000024,
+  ClassDayLists1739000000025,
 ];

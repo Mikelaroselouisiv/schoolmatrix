@@ -36,7 +36,22 @@ import {
 } from './schedule-day.constants';
 import { SchoolOpeningInstruction } from './school-opening-instruction.entity';
 import { ClassBringItem } from './class-bring-item.entity';
+import { ClassDaySubject } from './class-day-subject.entity';
+import { Subject } from '../subjects/subject.entity';
 import { isTeacherRoleName } from '../roles/roles.constants';
+
+export type ClassDayListDto = {
+  day_of_week: number;
+  subject_ids: string[];
+  subject_names: string[];
+  materials: string[];
+};
+
+export type ClassDayListDayBody = {
+  day_of_week: number;
+  subject_ids?: string[];
+  materials?: string[];
+};
 
 export type ClassDayMomentDto = {
   id: string;
@@ -104,6 +119,10 @@ export class ScheduleMomentsService {
     private readonly instructionRepo: Repository<SchoolOpeningInstruction>,
     @InjectRepository(ClassBringItem)
     private readonly bringRepo: Repository<ClassBringItem>,
+    @InjectRepository(ClassDaySubject)
+    private readonly daySubjectRepo: Repository<ClassDaySubject>,
+    @InjectRepository(Subject)
+    private readonly subjectRepo: Repository<Subject>,
     @InjectRepository(Class)
     private readonly classRepo: Repository<Class>,
     @InjectRepository(User)
@@ -518,57 +537,179 @@ export class ScheduleMomentsService {
       }));
   }
 
-  async listBringItems(classId: string, academicYear?: string): Promise<{ id: string; label: string }[]> {
+  async listDayLists(classId: string, academicYear?: string): Promise<ClassDayListDto[]> {
     if (!classId) throw new BadRequestException('class_id requis');
-    const qb = this.bringRepo
+    const days: ClassDayListDto[] = CLASS_WEEKDAYS.map((d) => ({
+      day_of_week: d,
+      subject_ids: [],
+      subject_names: [],
+      materials: [],
+    }));
+    const byDay = new Map(days.map((d) => [d.day_of_week, d]));
+
+    const subjQb = this.daySubjectRepo
+      .createQueryBuilder('s')
+      .leftJoinAndSelect('s.subject', 'subject')
+      .where('s.class_id = :classId', { classId })
+      .orderBy('s.sort_order', 'ASC')
+      .addOrderBy('s.created_at', 'ASC');
+    if (academicYear) subjQb.andWhere('s.academic_year = :y', { y: academicYear });
+    const subjects = await subjQb.getMany();
+    for (const row of subjects) {
+      const slot = byDay.get(row.day_of_week);
+      if (!slot) continue;
+      if (slot.subject_ids.includes(row.subject_id)) continue;
+      slot.subject_ids.push(row.subject_id);
+      const name = row.subject?.name?.trim();
+      if (name) slot.subject_names.push(name);
+    }
+
+    const bringQb = this.bringRepo
       .createQueryBuilder('b')
       .where('b.class_id = :classId', { classId })
       .orderBy('b.sort_order', 'ASC')
       .addOrderBy('b.created_at', 'ASC');
-    if (academicYear) qb.andWhere('b.academic_year = :y', { y: academicYear });
-    const rows = await qb.getMany();
-    return rows.map((r) => ({ id: r.id, label: r.label }));
+    if (academicYear) bringQb.andWhere('b.academic_year = :y', { y: academicYear });
+    const brings = await bringQb.getMany();
+    for (const row of brings) {
+      const slot = byDay.get(row.day_of_week);
+      if (!slot) continue;
+      const label = row.label?.trim();
+      if (!label) continue;
+      if (slot.materials.some((x) => x.toLowerCase() === label.toLowerCase())) continue;
+      slot.materials.push(label);
+    }
+    return days;
   }
 
-  async replaceBringItems(body: {
+  async replaceDayLists(body: {
     class_id: string;
     academic_year?: string | null;
-    lines: string[];
-  }): Promise<{ id: string; label: string }[]> {
+    days: ClassDayListDayBody[];
+  }): Promise<ClassDayListDto[]> {
     const classId = body.class_id?.trim();
     if (!classId) throw new BadRequestException('class_id requis');
     const cls = await this.classRepo.findOne({ where: { id: classId } });
     if (!cls) throw new BadRequestException('Classe introuvable');
     if (!isListScheduleLevel(cls.level)) {
       throw new BadRequestException(
-        'La liste de matériel concerne le préscolaire et le 1er / 2e cycle fondamental.',
+        'Les listes par jour concernent le préscolaire et le 1er / 2e cycle fondamental.',
       );
     }
     const year = body.academic_year?.trim() || null;
-    const lines = cleanInstructionLines(body.lines).map((s) => s.slice(0, 160));
+    const incoming = Array.isArray(body.days) ? body.days : [];
+    const allSubjectIds = [
+      ...new Set(incoming.flatMap((d) => d.subject_ids ?? []).filter(Boolean)),
+    ];
+    const subjects =
+      allSubjectIds.length > 0
+        ? await this.subjectRepo.find({ where: { id: In(allSubjectIds) } })
+        : [];
+    const subjectById = new Map(subjects.map((s) => [s.id, s]));
+    for (const id of allSubjectIds) {
+      if (!subjectById.has(id)) {
+        throw new BadRequestException(`Matière ${id} introuvable`);
+      }
+    }
+
     await this.dataSource.transaction(async (manager) => {
-      const qb = manager
+      const delSub = manager
+        .createQueryBuilder()
+        .delete()
+        .from(ClassDaySubject)
+        .where('class_id = :classId', { classId });
+      const delBring = manager
         .createQueryBuilder()
         .delete()
         .from(ClassBringItem)
         .where('class_id = :classId', { classId });
-      if (year) qb.andWhere('academic_year = :y', { y: year });
-      else qb.andWhere('academic_year IS NULL');
-      await qb.execute();
-      let order = 0;
-      for (const label of lines) {
-        await manager.save(
-          manager.create(ClassBringItem, {
-            class_id: classId,
-            class: cls,
-            academic_year: year,
-            sort_order: order++,
-            label,
-          }),
-        );
+      if (year) {
+        delSub.andWhere('academic_year = :y', { y: year });
+        delBring.andWhere('academic_year = :y', { y: year });
+      } else {
+        delSub.andWhere('academic_year IS NULL');
+        delBring.andWhere('academic_year IS NULL');
+      }
+      await delSub.execute();
+      await delBring.execute();
+
+      for (const dayBody of incoming) {
+        const day = parseWeekday(dayBody.day_of_week);
+        if (day < 1 || day > 5) continue;
+        let order = 0;
+        for (const sid of [...new Set(dayBody.subject_ids ?? [])]) {
+          const subject = subjectById.get(sid);
+          if (!subject) continue;
+          await manager.save(
+            manager.create(ClassDaySubject, {
+              class_id: classId,
+              class: cls,
+              academic_year: year,
+              day_of_week: day,
+              subject_id: subject.id,
+              subject,
+              sort_order: order++,
+            }),
+          );
+        }
+        order = 0;
+        for (const label of cleanInstructionLines(dayBody.materials).map((s) =>
+          s.slice(0, 160),
+        )) {
+          await manager.save(
+            manager.create(ClassBringItem, {
+              class_id: classId,
+              class: cls,
+              academic_year: year,
+              day_of_week: day,
+              sort_order: order++,
+              label,
+            }),
+          );
+        }
       }
     });
-    return this.listBringItems(classId, year ?? undefined);
+    return this.listDayLists(classId, year ?? undefined);
+  }
+
+  async listBringItems(classId: string, academicYear?: string): Promise<{ id: string; label: string }[]> {
+    const days = await this.listDayLists(classId, academicYear);
+    const seen = new Set<string>();
+    const out: { id: string; label: string }[] = [];
+    for (const d of days) {
+      for (const label of d.materials) {
+        const key = label.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ id: `${d.day_of_week}:${label}`, label });
+      }
+    }
+    return out;
+  }
+
+  async replaceBringItems(body: {
+    class_id: string;
+    academic_year?: string | null;
+    lines?: string[];
+    days?: ClassDayListDayBody[];
+  }): Promise<ClassDayListDto[]> {
+    if (Array.isArray(body.days) && body.days.length > 0) {
+      return this.replaceDayLists({
+        class_id: body.class_id,
+        academic_year: body.academic_year,
+        days: body.days,
+      });
+    }
+    const lines = body.lines ?? [];
+    return this.replaceDayLists({
+      class_id: body.class_id,
+      academic_year: body.academic_year,
+      days: CLASS_WEEKDAYS.map((day) => ({
+        day_of_week: day,
+        subject_ids: [],
+        materials: lines,
+      })),
+    });
   }
 
   async deleteDuty(id: string): Promise<void> {

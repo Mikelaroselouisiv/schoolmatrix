@@ -28,9 +28,9 @@ import {
   getTeacherClasses,
   getTeacherSubjectsInClass,
   listHomework,
-  listClassBringItems,
+  listClassDayLists,
   listSchoolWeekDuties,
-  replaceClassBringItems,
+  replaceClassDayLists,
   saveAttendanceBulk,
   saveHomeworkGrade,
   type AttendanceStatus,
@@ -40,7 +40,7 @@ import {
   type HomeworkKind,
   type SubjectItem,
 } from '../../services/api';
-import { dutiesForTeacher, dutyDisplayTitle, weekdayLabel } from '../../lib/morningOpening';
+import { dutiesForTeacher, dutyDisplayTitle, weekdayLabel, emptyClassDayLists, classDayListsFromApi, MORNING_WEEKDAYS } from '../../lib/morningOpening';
 import { saveAttendanceWithQueue } from '../../lib/mutationQueue';
 import { useNetwork } from '../../context/NetworkContext';
 import { colors } from '../../theme/tokens';
@@ -448,16 +448,22 @@ function MaterialsPanel({
   const yearName =
     context?.academic_year?.name || context?.current_academic_year_name || undefined;
   const activeId = classes.some((c) => c.id === classId) ? classId : classes[0]?.id || '';
-  const [lines, setLines] = useState<string[]>([]);
-  const [draft, setDraft] = useState('');
+  const [lists, setLists] = useState(emptyClassDayLists);
+  const [subjects, setSubjects] = useState<SubjectItem[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [draftByDay, setDraftByDay] = useState<Record<number, string>>({});
 
   useEffect(() => {
     if (!activeId) return;
     (async () => {
       try {
-        setLines(await listClassBringItems(activeId, yearName));
+        const [rows, subj] = await Promise.all([
+          listClassDayLists(activeId, yearName),
+          getTeacherSubjectsInClass(activeId).catch(() => []),
+        ]);
+        setLists(classDayListsFromApi(rows));
+        setSubjects(subj);
         setError('');
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Chargement impossible');
@@ -465,33 +471,26 @@ function MaterialsPanel({
     })();
   }, [activeId, yearName]);
 
-  async function save(next: string[]) {
+  async function save(next = lists) {
     if (!activeId) return;
     setSaving(true);
     try {
-      const saved = await replaceClassBringItems({
+      const rows = await replaceClassDayLists({
         class_id: activeId,
         academic_year: yearName || null,
-        lines: next,
+        days: MORNING_WEEKDAYS.map((d) => ({
+          day_of_week: d.index,
+          subject_ids: next[d.index]?.subjectIds ?? [],
+          materials: next[d.index]?.materials ?? [],
+        })),
       });
-      setLines(saved);
+      setLists(classDayListsFromApi(rows));
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Enregistrement impossible');
     } finally {
       setSaving(false);
     }
-  }
-
-  function add() {
-    const line = draft.trim();
-    if (!line) return;
-    if (lines.some((x) => x.toLowerCase() === line.toLowerCase())) {
-      setDraft('');
-      return;
-    }
-    setDraft('');
-    void save([...lines, line]);
   }
 
   if (classes.length === 0) {
@@ -502,28 +501,80 @@ function MaterialsPanel({
     <ScrollView contentContainerStyle={styles.pad}>
       <ClassChips classes={classes} classId={activeId} onClassId={onClassId} />
       {error ? <ErrorBanner message={error} /> : null}
-      <View style={styles.card}>
-        <Text style={styles.label}>Matériel à apporter</Text>
-        <TextInput
-          value={draft}
-          onChangeText={setDraft}
-          onSubmitEditing={add}
-          returnKeyType="done"
-          style={styles.input}
-        />
-        <Button title={saving ? '…' : 'Ajouter'} onPress={add} disabled={saving} />
-        <View style={styles.pills}>
-          {lines.map((line) => (
-            <Pressable
-              key={line}
-              onPress={() => void save(lines.filter((x) => x !== line))}
-              style={styles.pill}
-            >
-              <Text style={styles.pillText}>{line} ×</Text>
-            </Pressable>
-          ))}
-        </View>
-      </View>
+      {MORNING_WEEKDAYS.map((d) => {
+        const slot = lists[d.index] ?? { subjectIds: [], materials: [] };
+        const draft = draftByDay[d.index] ?? '';
+        return (
+          <View key={d.index} style={styles.card}>
+            <Text style={styles.cardTitle}>{d.label}</Text>
+            <Text style={styles.label}>Matières</Text>
+            <View style={styles.pills}>
+              {subjects.map((s) => {
+                const on = slot.subjectIds.includes(s.id);
+                return (
+                  <Pressable
+                    key={s.id}
+                    onPress={() =>
+                      setLists((prev) => ({
+                        ...prev,
+                        [d.index]: {
+                          ...slot,
+                          subjectIds: on
+                            ? slot.subjectIds.filter((x) => x !== s.id)
+                            : [...slot.subjectIds, s.id],
+                        },
+                      }))
+                    }
+                    style={[styles.pill, on ? styles.pillOn : null]}
+                  >
+                    <Text style={styles.pillText}>{s.name}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Text style={styles.label}>Matériel à apporter</Text>
+            <TextInput
+              value={draft}
+              onChangeText={(t) => setDraftByDay((p) => ({ ...p, [d.index]: t }))}
+              onSubmitEditing={() => {
+                const line = draft.trim();
+                if (!line) return;
+                if (slot.materials.some((x) => x.toLowerCase() === line.toLowerCase())) {
+                  setDraftByDay((p) => ({ ...p, [d.index]: '' }));
+                  return;
+                }
+                setLists((prev) => ({
+                  ...prev,
+                  [d.index]: { ...slot, materials: [...slot.materials, line] },
+                }));
+                setDraftByDay((p) => ({ ...p, [d.index]: '' }));
+              }}
+              returnKeyType="done"
+              style={styles.input}
+            />
+            <View style={styles.pills}>
+              {slot.materials.map((line) => (
+                <Pressable
+                  key={line}
+                  onPress={() =>
+                    setLists((prev) => ({
+                      ...prev,
+                      [d.index]: {
+                        ...slot,
+                        materials: slot.materials.filter((x) => x !== line),
+                      },
+                    }))
+                  }
+                  style={styles.pill}
+                >
+                  <Text style={styles.pillText}>{line} ×</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        );
+      })}
+      <Button title={saving ? '…' : 'Enregistrer'} onPress={() => void save()} disabled={saving} />
     </ScrollView>
   );
 }

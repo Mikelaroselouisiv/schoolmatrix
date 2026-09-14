@@ -762,31 +762,38 @@ export async function upsertSchoolWeekDuties(body: {
   await api.put('/school-week-duties', body);
 }
 
-export async function listClassBringItems(
+export type ClassDayList = {
+  day_of_week: number;
+  subject_ids: string[];
+  subject_names: string[];
+  materials: string[];
+};
+
+export async function listClassDayLists(
   classId: string,
   academicYear?: string,
-): Promise<string[]> {
+): Promise<ClassDayList[]> {
   try {
-    const { data } = await api.get('/class-bring-items', {
+    const { data } = await api.get('/class-day-lists', {
       params: { class_id: classId, academic_year: academicYear },
     });
-    return Array.isArray(data?.items)
-      ? data.items.map((i: { label?: string }) => String(i.label ?? '').trim()).filter(Boolean)
-      : [];
+    return Array.isArray(data?.days) ? data.days : [];
   } catch {
     return [];
   }
 }
 
-export async function replaceClassBringItems(body: {
+export async function replaceClassDayLists(body: {
   class_id: string;
   academic_year?: string | null;
-  lines: string[];
-}): Promise<string[]> {
-  const { data } = await api.put('/class-bring-items', body);
-  return Array.isArray(data?.items)
-    ? data.items.map((i: { label?: string }) => String(i.label ?? '').trim()).filter(Boolean)
-    : [];
+  days: {
+    day_of_week: number;
+    subject_ids?: string[];
+    materials?: string[];
+  }[];
+}): Promise<ClassDayList[]> {
+  const { data } = await api.put('/class-day-lists', body);
+  return Array.isArray(data?.days) ? data.days : [];
 }
 
 export async function getStudentSchedule(
@@ -795,6 +802,7 @@ export async function getStudentSchedule(
 ): Promise<{
   slots: ScheduleSlot[];
   schedule_mode?: string;
+  day_lists?: ClassDayList[];
   bring_items?: { id: string; label: string }[];
   list_subjects?: string[];
 }> {
@@ -804,6 +812,7 @@ export async function getStudentSchedule(
   return {
     slots: Array.isArray(data?.slots) ? data.slots : [],
     schedule_mode: data?.schedule_mode,
+    day_lists: Array.isArray(data?.day_lists) ? data.day_lists : [],
     bring_items: Array.isArray(data?.bring_items) ? data.bring_items : [],
     list_subjects: Array.isArray(data?.list_subjects) ? data.list_subjects : [],
   };

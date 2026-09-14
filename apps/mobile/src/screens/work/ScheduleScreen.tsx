@@ -32,6 +32,8 @@ import { toYYYYMMDD } from '../../lib/format';
 import {
   emptyWeekProgram,
   emptyDayProgram,
+  emptyClassDayLists,
+  classDayListsFromApi,
   isListScheduleLevel,
   MORNING_PRIMAIRE_LEVELS,
   MORNING_WEEKDAYS,
@@ -62,8 +64,8 @@ import {
   listSchoolWeekStaff,
   listTeacherAssignments,
   upsertSchoolWeekDuties,
-  listClassBringItems,
-  replaceClassBringItems,
+  listClassDayLists,
+  replaceClassDayLists,
   updateExtracurricularActivity,
   type AcademicYear,
   type ClassDayMoment,
@@ -135,6 +137,10 @@ function toggleNum(ids: number[], id: number): number[] {
   return ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
 }
 
+function toggleStr(ids: string[], id: string): string[] {
+  return ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
+}
+
 export function ScheduleScreen({}: Props) {
   const { roleName, rolePermissions } = useAuth();
   const { context } = useSchool();
@@ -176,7 +182,7 @@ export function ScheduleScreen({}: Props) {
   const [staffPeople, setStaffPeople] = useState<{ id: number; name: string }[]>([]);
   const [flagDayTarget, setFlagDayTarget] = useState(1);
   const [savingMorning, setSavingMorning] = useState(false);
-  const [bringLines, setBringLines] = useState<string[]>([]);
+  const [dayLists, setDayLists] = useState(emptyClassDayLists);
   const [savingBring, setSavingBring] = useState(false);
 
   const [formClassId, setFormClassId] = useState('');
@@ -197,16 +203,16 @@ export function ScheduleScreen({}: Props) {
   const classLabel = classes.find((c) => c.id === classId)?.name || 'Toutes';
   const selectedClass = classes.find((c) => c.id === classId);
   const listMode = isListScheduleLevel(selectedClass?.level);
-  const listSubjects = useMemo(() => {
+  const classSubjectOptions = useMemo(() => {
     if (!classId) return [];
-    return [
-      ...new Set(
-        assignments
-          .filter((a) => a.class_id === classId)
-          .map((a) => a.subject_name)
-          .filter((n): n is string => !!n),
-      ),
-    ].sort((a, b) => a.localeCompare(b, 'fr'));
+    const map = new Map<string, string>();
+    for (const a of assignments) {
+      if (a.class_id !== classId || !a.subject_id || !a.subject_name) continue;
+      if (!map.has(a.subject_id)) map.set(a.subject_id, a.subject_name);
+    }
+    return [...map.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'fr'));
   }, [assignments, classId]);
   const roomLabel = rooms.find((r) => r.id === roomId)?.name || 'Toutes';
   const preschoolTeachers = useMemo(
@@ -359,10 +365,12 @@ export function ScheduleScreen({}: Props) {
 
   useEffect(() => {
     if (!listMode || !classId) {
-      setBringLines([]);
+      setDayLists(emptyClassDayLists());
       return;
     }
-    void listClassBringItems(classId, yearName || undefined).then(setBringLines);
+    void listClassDayLists(classId, yearName || undefined).then((rows) =>
+      setDayLists(classDayListsFromApi(rows)),
+    );
   }, [listMode, classId, yearName]);
 
   useEffect(() => {
@@ -954,34 +962,63 @@ export function ScheduleScreen({}: Props) {
                 <View style={styles.panelTeal}>
                   <Text style={styles.kickerTeal}>Liste</Text>
                   <Text style={styles.panelTitle}>{classLabel}</Text>
-                  <Text style={styles.chipLabel}>Matières</Text>
-                  {listSubjects.length === 0 ? (
-                    <Muted>—</Muted>
-                  ) : (
-                    listSubjects.map((name) => (
-                      <Text key={name} style={styles.pillAmber}>
-                        {name}
-                      </Text>
-                    ))
-                  )}
-                  <Text style={[styles.chipLabel, { marginTop: 8 }]}>Matériel à apporter</Text>
-                  <NameLines
-                    values={bringLines}
-                    editable={canEdit}
-                    onChange={(next) => {
-                      setBringLines(next);
-                      if (!canEdit) return;
-                      setSavingBring(true);
-                      void replaceClassBringItems({
-                        class_id: classId,
-                        academic_year: yearName || null,
-                        lines: next,
-                      })
-                        .then(setBringLines)
-                        .finally(() => setSavingBring(false));
-                    }}
-                  />
-                  {savingBring ? <Muted>…</Muted> : null}
+                  {MORNING_WEEKDAYS.map((d) => {
+                    const slot = dayLists[d.index] ?? { subjectIds: [], materials: [] };
+                    return (
+                      <View key={d.index} style={{ marginTop: 8, gap: 6 }}>
+                        <Text style={styles.cardTitle}>{d.label}</Text>
+                        <Text style={styles.chipLabel}>Matières</Text>
+                        <OptionChips
+                          options={classSubjectOptions}
+                          selected={slot.subjectIds}
+                          editable={canEdit}
+                          onToggle={(id) =>
+                            setDayLists((prev) => {
+                              const cur = prev[d.index] ?? { subjectIds: [], materials: [] };
+                              return {
+                                ...prev,
+                                [d.index]: {
+                                  ...cur,
+                                  subjectIds: toggleStr(cur.subjectIds, id),
+                                },
+                              };
+                            })
+                          }
+                        />
+                        <Text style={styles.chipLabel}>Matériel à apporter</Text>
+                        <NameLines
+                          values={slot.materials}
+                          editable={canEdit}
+                          onChange={(materials) =>
+                            setDayLists((prev) => {
+                              const cur = prev[d.index] ?? { subjectIds: [], materials: [] };
+                              return { ...prev, [d.index]: { ...cur, materials } };
+                            })
+                          }
+                        />
+                      </View>
+                    );
+                  })}
+                  {canEdit ? (
+                    <Button
+                      title={savingBring ? 'Enregistrement…' : 'Enregistrer'}
+                      onPress={() => {
+                        setSavingBring(true);
+                        void replaceClassDayLists({
+                          class_id: classId,
+                          academic_year: yearName || null,
+                          days: MORNING_WEEKDAYS.map((d) => ({
+                            day_of_week: d.index,
+                            subject_ids: dayLists[d.index]?.subjectIds ?? [],
+                            materials: dayLists[d.index]?.materials ?? [],
+                          })),
+                        })
+                          .then((rows) => setDayLists(classDayListsFromApi(rows)))
+                          .finally(() => setSavingBring(false));
+                      }}
+                      disabled={savingBring || !yearName}
+                    />
+                  ) : null}
                 </View>
               ) : null}
               {moments.length > 0 ? (
@@ -1293,6 +1330,40 @@ function DutyChips({
   return (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
       {people.map((t) => {
+        const on = selected.includes(t.id);
+        return (
+          <Pressable
+            key={t.id}
+            onPress={() => onToggle(t.id)}
+            style={[styles.chip, on ? styles.chipOn : null, { minWidth: 0, flexGrow: 0 }]}
+          >
+            <Text style={styles.chipValue}>{t.name}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function OptionChips({
+  options,
+  selected,
+  onToggle,
+  editable,
+}: {
+  options: { id: string; name: string }[];
+  selected: string[];
+  onToggle: (id: string) => void;
+  editable: boolean;
+}) {
+  if (!options.length) return <Muted>—</Muted>;
+  if (!editable) {
+    const names = options.filter((p) => selected.includes(p.id)).map((p) => p.name);
+    return <Muted>{names.length ? names.join(', ') : '—'}</Muted>;
+  }
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+      {options.map((t) => {
         const on = selected.includes(t.id);
         return (
           <Pressable

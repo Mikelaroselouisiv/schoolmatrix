@@ -33,6 +33,7 @@ import {
   getStudent,
   getStudentHomework,
   getStudentSchedule,
+  type ClassDayList,
   type DisciplineSummary,
   type ExamResults,
   type HomeworkAssignment,
@@ -72,8 +73,7 @@ export function StudentFicheScreen({ navigation, route }: Props) {
   const [payment, setPayment] = useState<PaymentStatus | null>(null);
   const [grades, setGrades] = useState<ExamResults | null>(null);
   const [schedule, setSchedule] = useState<ScheduleSlot[]>([]);
-  const [listSubjects, setListSubjects] = useState<string[]>([]);
-  const [bringLines, setBringLines] = useState<string[]>([]);
+  const [dayLists, setDayLists] = useState<ClassDayList[]>([]);
   const [homework, setHomework] = useState<HomeworkAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -107,17 +107,14 @@ export function StudentFicheScreen({ navigation, route }: Props) {
         try {
           const data = await getStudentSchedule(studentId, yearName);
           setSchedule(data.slots ?? []);
-          setListSubjects(data.list_subjects ?? []);
-          setBringLines((data.bring_items ?? []).map((i) => i.label).filter(Boolean));
+          setDayLists(data.day_lists ?? []);
         } catch {
           setSchedule([]);
-          setListSubjects([]);
-          setBringLines([]);
+          setDayLists([]);
         }
       } else {
         setSchedule([]);
-        setListSubjects([]);
-        setBringLines([]);
+        setDayLists([]);
       }
       try {
         setHomework(await getStudentHomework(studentId));
@@ -279,27 +276,30 @@ export function StudentFicheScreen({ navigation, route }: Props) {
 
         <View style={styles.block}>
           <Text style={styles.blockTitle}>Emploi du temps</Text>
-          {listSubjects.length > 0 ? (
-            <View style={{ marginBottom: 8 }}>
-              <Text style={styles.scheduleMeta}>Matières</Text>
-              {listSubjects.map((name) => (
-                <Text key={name} style={styles.scheduleSubject}>
-                  {name}
-                </Text>
-              ))}
-            </View>
-          ) : null}
-          {bringLines.length > 0 ? (
-            <View style={{ marginBottom: 8 }}>
-              <Text style={styles.scheduleMeta}>Matériel à apporter</Text>
-              {bringLines.map((line) => (
-                <Text key={line} style={styles.scheduleSubject}>
-                  {line}
-                </Text>
-              ))}
-            </View>
-          ) : null}
-          {sortedSchedule.length === 0 && listSubjects.length === 0 && bringLines.length === 0 ? (
+          {dayLists.some((d) => (d.subject_names ?? []).length || (d.materials ?? []).length)
+            ? [1, 2, 3, 4, 5].map((day) => {
+                const slot = dayLists.find((d) => d.day_of_week === day);
+                return (
+                  <View key={day} style={styles.scheduleRow}>
+                    <View style={styles.scheduleDay}>
+                      <Text style={styles.scheduleDayText}>
+                        {(DAYS[day] || '—').slice(0, 3)}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.scheduleSubject}>
+                        {(slot?.subject_names ?? []).join(', ') || '—'}
+                      </Text>
+                      <Text style={styles.scheduleMeta}>
+                        {(slot?.materials ?? []).join(', ') || '—'}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })
+            : null}
+          {sortedSchedule.length === 0 &&
+          !dayLists.some((d) => (d.subject_names ?? []).length || (d.materials ?? []).length) ? (
             <Text style={styles.emptyLine}>—</Text>
           ) : (
             sortedSchedule.map((slot) => (

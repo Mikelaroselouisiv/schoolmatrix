@@ -2,9 +2,12 @@ import { Body, Controller, Get, Put, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ParentScopeGuard } from '../auth/parent-scope.guard';
 import { DenyParents } from '../auth/parent-scope.decorator';
-import { ScheduleMomentsService } from './schedule-moments.service';
+import {
+  ClassDayListDayBody,
+  ScheduleMomentsService,
+} from './schedule-moments.service';
 
-@Controller('class-bring-items')
+@Controller(['class-day-lists', 'class-bring-items'])
 @UseGuards(JwtAuthGuard, ParentScopeGuard)
 @DenyParents()
 export class ClassBringItemsController {
@@ -15,8 +18,8 @@ export class ClassBringItemsController {
     @Query('class_id') classId?: string,
     @Query('academic_year') academicYear?: string,
   ) {
-    const items = await this.moments.listBringItems(classId ?? '', academicYear);
-    return { ok: true, items };
+    const days = await this.moments.listDayLists(classId ?? '', academicYear);
+    return { ok: true, days };
   }
 
   @Put()
@@ -25,10 +28,11 @@ export class ClassBringItemsController {
     body: {
       class_id: string;
       academic_year?: string | null;
-      lines: string[];
+      days?: ClassDayListDayBody[];
+      lines?: string[];
     },
   ) {
-    const items = await this.moments.replaceBringItems(body);
-    return { ok: true, items };
+    const days = await this.moments.replaceBringItems(body);
+    return { ok: true, days };
   }
 }

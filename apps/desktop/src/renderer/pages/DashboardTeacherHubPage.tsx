@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { API_BASE, fetchWithAuth } from "@/services/api";
 import { useSchoolProfile } from "@/context/SchoolProfileContext";
 import { educationLevelLabel } from "@/lib/educationLevels";
-import { dutiesForTeacher, dutyDisplayTitle, weekdayLabel } from "@/lib/morningOpening";
+import { dutiesForTeacher, dutyDisplayTitle, weekdayLabel, emptyClassDayLists, classDayListsFromApi, MORNING_WEEKDAYS } from "@/lib/morningOpening";
 
 type HubTab = "appel" | "travaux" | "materiel";
 type HomeworkKind = "DEVOIR" | "LECON";
@@ -674,10 +674,10 @@ function MaterialsTab({
   onClassId: (id: string) => void;
   onError: (msg: string) => void;
 }) {
-  const [lines, setLines] = useState<string[]>([]);
-  const [draft, setDraft] = useState("");
-  const [saving, setSaving] = useState(false);
   const [yearName, setYearName] = useState("");
+  const [subjects, setSubjects] = useState<{ id: string; name: string }[]>([]);
+  const [lists, setLists] = useState(emptyClassDayLists);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -693,51 +693,54 @@ function MaterialsTab({
 
   useEffect(() => {
     if (!classId) {
-      setLines([]);
+      setLists(emptyClassDayLists());
+      setSubjects([]);
       return;
     }
     (async () => {
       try {
         const params = new URLSearchParams({ class_id: classId });
         if (yearName) params.set("academic_year", yearName);
-        const res = await fetchWithAuth(`${API_BASE}/class-bring-items?${params}`);
-        const data = await res.json();
-        setLines(res.ok ? (data.items ?? []).map((i: { label: string }) => i.label) : []);
+        const [listRes, subjRes] = await Promise.all([
+          fetchWithAuth(`${API_BASE}/class-day-lists?${params}`),
+          fetchWithAuth(`${API_BASE}/classes/${classId}/subjects`),
+        ]);
+        const listData = await listRes.json();
+        const subjData = await subjRes.json();
+        setLists(classDayListsFromApi(listRes.ok ? listData.days ?? [] : []));
+        setSubjects(subjRes.ok ? (subjData.subjects ?? []) : []);
         onError("");
       } catch {
-        onError("Impossible de charger le matériel.");
+        onError("Impossible de charger les listes.");
       }
     })();
   }, [classId, yearName, onError]);
 
-  async function save(next: string[]) {
+  async function save() {
     setSaving(true);
     try {
-      const res = await fetchWithAuth(`${API_BASE}/class-bring-items`, {
+      const res = await fetchWithAuth(`${API_BASE}/class-day-lists`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ class_id: classId, academic_year: yearName || null, lines: next }),
+        body: JSON.stringify({
+          class_id: classId,
+          academic_year: yearName || null,
+          days: MORNING_WEEKDAYS.map((d) => ({
+            day_of_week: d.index,
+            subject_ids: lists[d.index]?.subjectIds ?? [],
+            materials: lists[d.index]?.materials ?? [],
+          })),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Enregistrement refusé");
-      setLines((data.items ?? []).map((i: { label: string }) => i.label));
+      setLists(classDayListsFromApi(data.days ?? []));
       onError("");
     } catch (err) {
       onError(err instanceof Error ? err.message : "Enregistrement impossible.");
     } finally {
       setSaving(false);
     }
-  }
-
-  function add() {
-    const line = draft.trim();
-    if (!line) return;
-    if (lines.some((x) => x.toLowerCase() === line.toLowerCase())) {
-      setDraft("");
-      return;
-    }
-    setDraft("");
-    void save([...lines, line]);
   }
 
   if (classes.length === 0) {
@@ -747,43 +750,117 @@ function MaterialsTab({
   return (
     <div className="space-y-4">
       <ClassSelect classes={classes} classId={classId} onClassId={onClassId} />
-      <div>
-        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-          Matériel à apporter
-        </p>
-        <div className="flex gap-1.5">
-          <input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key !== "Enter") return;
-              e.preventDefault();
-              add();
-            }}
-            className="class-input min-w-0 flex-1"
-          />
+      {MORNING_WEEKDAYS.map((d) => {
+        const slot = lists[d.index] ?? { subjectIds: [] as string[], materials: [] as string[] };
+        return (
+          <div key={d.index} className="rounded-xl border border-[var(--app-border)] bg-white p-4 space-y-3">
+            <p className="font-medium text-slate-900">{d.label}</p>
+            <div>
+              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Matières
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {subjects.map((s) => {
+                  const on = slot.subjectIds.includes(s.id);
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() =>
+                        setLists((prev) => ({
+                          ...prev,
+                          [d.index]: {
+                            ...slot,
+                            subjectIds: on
+                              ? slot.subjectIds.filter((x) => x !== s.id)
+                              : [...slot.subjectIds, s.id],
+                          },
+                        }))
+                      }
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ${
+                        on
+                          ? "bg-teal-700 text-white ring-teal-700"
+                          : "bg-white text-slate-700 ring-slate-200"
+                      }`}
+                    >
+                      {s.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div>
+              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Matériel à apporter
+              </p>
+              <DayNameLines
+                values={slot.materials}
+                onChange={(materials) =>
+                  setLists((prev) => ({ ...prev, [d.index]: { ...slot, materials } }))
+                }
+              />
+            </div>
+          </div>
+        );
+      })}
+      <button
+        type="button"
+        disabled={saving}
+        onClick={() => void save()}
+        className="app-btn-primary text-sm disabled:opacity-60"
+      >
+        {saving ? "Enregistrement…" : "Enregistrer"}
+      </button>
+    </div>
+  );
+}
+
+function DayNameLines({
+  values,
+  onChange,
+}: {
+  values: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  function add() {
+    const line = draft.trim();
+    if (!line) return;
+    if (values.some((x) => x.toLowerCase() === line.toLowerCase())) {
+      setDraft("");
+      return;
+    }
+    onChange([...values, line]);
+    setDraft("");
+  }
+  return (
+    <div className="space-y-1.5">
+      <div className="flex gap-1.5">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter") return;
+            e.preventDefault();
+            add();
+          }}
+          className="class-input min-w-0 flex-1"
+        />
+        <button type="button" onClick={add} className="app-btn-secondary text-xs">
+          Ajouter
+        </button>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {values.map((line) => (
           <button
+            key={line}
             type="button"
-            disabled={saving}
-            onClick={add}
-            className="app-btn-primary text-sm disabled:opacity-60"
+            onClick={() => onChange(values.filter((x) => x !== line))}
+            className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-800 ring-1 ring-slate-200 hover:bg-red-50 hover:text-red-700"
           >
-            Ajouter
+            {line} ×
           </button>
-        </div>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {lines.map((line) => (
-            <button
-              key={line}
-              type="button"
-              disabled={saving}
-              onClick={() => void save(lines.filter((x) => x !== line))}
-              className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-800 ring-1 ring-slate-200 hover:bg-red-50 hover:text-red-700"
-            >
-              {line} ×
-            </button>
-          ))}
-        </div>
+        ))}
       </div>
     </div>
   );

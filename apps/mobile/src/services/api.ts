@@ -422,6 +422,7 @@ export type SchoolWeekDuty = {
   end_time: string;
   responsible_user_id: number | null;
   responsible_name: string | null;
+  manual_name?: string | null;
 };
 
 export type ExamScheduleItem = {
@@ -706,16 +707,106 @@ export async function listSchoolWeekDuties(params?: {
   }
 }
 
+export async function getSchoolOpeningProgram(academicYear?: string): Promise<{
+  school_week_duties: SchoolWeekDuty[];
+  preschool_instructions: string[];
+  primary_instructions: string[];
+}> {
+  const { data } = await api.get('/school-week-duties', {
+    params: academicYear ? { academic_year: academicYear } : undefined,
+  });
+  return {
+    school_week_duties: unwrapList<SchoolWeekDuty>(data),
+    preschool_instructions: Array.isArray(data?.preschool_instructions)
+      ? data.preschool_instructions
+      : [],
+    primary_instructions: Array.isArray(data?.primary_instructions)
+      ? data.primary_instructions
+      : [],
+  };
+}
+
+export async function listSchoolWeekStaff(): Promise<{ id: number; name: string; role: string }[]> {
+  try {
+    const { data } = await api.get('/school-week-duties/staff');
+    return Array.isArray(data?.staff) ? data.staff : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function upsertSchoolWeekDuties(body: {
   academic_year: string;
   days: {
     day_of_week: number;
+    preschool?: {
+      accueil_ids?: number[];
+      flag_ids?: number[];
+      animation_ids?: number[];
+      service_names?: string[];
+    };
+    primary?: {
+      accueil_ids?: number[];
+      devotion_ids?: number[];
+      flag_class_id?: string | null;
+      defi_ids?: number[];
+      prayer_names?: string[];
+    };
     flag_class_id?: string | null;
     preschool_teacher_ids?: number[];
     primary_teacher_ids?: number[];
   }[];
+  preschool_instructions?: string[];
+  primary_instructions?: string[];
 }): Promise<void> {
   await api.put('/school-week-duties', body);
+}
+
+export async function listClassBringItems(
+  classId: string,
+  academicYear?: string,
+): Promise<string[]> {
+  try {
+    const { data } = await api.get('/class-bring-items', {
+      params: { class_id: classId, academic_year: academicYear },
+    });
+    return Array.isArray(data?.items)
+      ? data.items.map((i: { label?: string }) => String(i.label ?? '').trim()).filter(Boolean)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function replaceClassBringItems(body: {
+  class_id: string;
+  academic_year?: string | null;
+  lines: string[];
+}): Promise<string[]> {
+  const { data } = await api.put('/class-bring-items', body);
+  return Array.isArray(data?.items)
+    ? data.items.map((i: { label?: string }) => String(i.label ?? '').trim()).filter(Boolean)
+    : [];
+}
+
+export async function getStudentSchedule(
+  studentId: string,
+  academicYear?: string,
+): Promise<{
+  slots: ScheduleSlot[];
+  schedule_mode?: string;
+  bring_items?: { id: string; label: string }[];
+  list_subjects?: string[];
+}> {
+  const { data } = await api.get(`/schedule/student/${studentId}`, {
+    params: academicYear ? { academic_year: academicYear } : undefined,
+  });
+  return {
+    slots: Array.isArray(data?.slots) ? data.slots : [],
+    schedule_mode: data?.schedule_mode,
+    bring_items: Array.isArray(data?.bring_items) ? data.bring_items : [],
+    list_subjects: Array.isArray(data?.list_subjects) ? data.list_subjects : [],
+  };
 }
 
 export type SchoolMaterialItem = {

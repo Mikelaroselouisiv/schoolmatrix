@@ -50,6 +50,10 @@ export function isTeacherRole(role?: string | null): boolean {
   return TEACHER_ROLE_NAMES.includes((role ?? '').toUpperCase().trim());
 }
 
+export function isParentRole(role?: string | null): boolean {
+  return (role ?? '').toUpperCase().trim() === 'PARENT';
+}
+
 const ROLES_HORAIRES_ET_NOTES = ['DIRECTEUR_PEDAGOGIQUE', 'CENSEUR'];
 const ROLES_HORAIRES_SEUL = [
   'ADMIN_PRESCOLAIRE',

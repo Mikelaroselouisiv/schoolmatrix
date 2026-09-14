@@ -25,26 +25,22 @@ import {
   createHomework,
   getAttendance,
   getHomework,
-  getScheduleSlots,
   getTeacherClasses,
   getTeacherSubjectsInClass,
   listHomework,
-  listSchoolMaterials,
+  listClassBringItems,
   listSchoolWeekDuties,
+  replaceClassBringItems,
   saveAttendanceBulk,
   saveHomeworkGrade,
-  saveSlotMaterials,
   type AttendanceStatus,
   type AttendanceStudent,
   type ClassItem,
   type HomeworkAssignment,
   type HomeworkKind,
-  type ScheduleSlot,
-  type SchoolMaterialItem,
   type SubjectItem,
 } from '../../services/api';
 import { dutiesForTeacher, dutyDisplayTitle, weekdayLabel } from '../../lib/morningOpening';
-import { parseMaterialLines, toggleMaterialLine } from '../../lib/schoolMaterials';
 import { saveAttendanceWithQueue } from '../../lib/mutationQueue';
 import { useNetwork } from '../../context/NetworkContext';
 import { colors } from '../../theme/tokens';
@@ -54,7 +50,6 @@ import { AccessDenied, useCanAccess } from '../../lib/access';
 type Props = NativeStackScreenProps<WorkStackParamList, 'TeacherHub'>;
 type HubTab = 'travaux' | 'appel' | 'materiel';
 
-const DAYS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
 const STATUSES: { value: AttendanceStatus; label: string }[] = [
   { value: 'PRESENT', label: 'Présent' },
   { value: 'ABSENT', label: 'Absent' },
@@ -449,91 +444,86 @@ function MaterialsPanel({
   classId: string;
   onClassId: (id: string) => void;
 }) {
+  const { context } = useSchool();
+  const yearName =
+    context?.academic_year?.name || context?.current_academic_year_name || undefined;
   const activeId = classes.some((c) => c.id === classId) ? classId : classes[0]?.id || '';
-  const [slots, setSlots] = useState<ScheduleSlot[]>([]);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [catalog, setCatalog] = useState<SchoolMaterialItem[]>([]);
+  const [lines, setLines] = useState<string[]>([]);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (!activeId) return;
     (async () => {
       try {
-        const [list, items] = await Promise.all([
-          getScheduleSlots(activeId),
-          listSchoolMaterials(),
-        ]);
-        setSlots(list);
-        const next: Record<string, string> = {};
-        for (const s of list) next[s.id] = s.materials || '';
-        setDrafts(next);
-        setCatalog(items);
+        setLines(await listClassBringItems(activeId, yearName));
+        setError('');
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Horaire indisponible');
+        setError(err instanceof Error ? err.message : 'Chargement impossible');
       }
     })();
-  }, [activeId]);
+  }, [activeId, yearName]);
+
+  async function save(next: string[]) {
+    if (!activeId) return;
+    setSaving(true);
+    try {
+      const saved = await replaceClassBringItems({
+        class_id: activeId,
+        academic_year: yearName || null,
+        lines: next,
+      });
+      setLines(saved);
+      setError('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Enregistrement impossible');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function add() {
+    const line = draft.trim();
+    if (!line) return;
+    if (lines.some((x) => x.toLowerCase() === line.toLowerCase())) {
+      setDraft('');
+      return;
+    }
+    setDraft('');
+    void save([...lines, line]);
+  }
 
   if (classes.length === 0) {
-    return <EmptyState title="Matériel : 1er et 2e cycles fondamentaux" />;
+    return <EmptyState title="Aucune classe" />;
   }
 
   return (
     <ScrollView contentContainerStyle={styles.pad}>
       <ClassChips classes={classes} classId={activeId} onClassId={onClassId} />
       {error ? <ErrorBanner message={error} /> : null}
-      {slots.map((s) => (
-        <View key={s.id} style={styles.card}>
-          <Text style={styles.cardTitle}>
-            {DAYS[s.day_of_week] ?? s.day_of_week} · {s.start_time}–{s.end_time} · {s.subject_name}
-          </Text>
-          {catalog.length > 0 ? (
-            <>
-              {(['LIVRE', 'CAHIER'] as const).map((kind) => {
-                const items = catalog.filter((m) => m.kind === kind);
-                if (!items.length) return null;
-                const selected = parseMaterialLines(drafts[s.id]);
-                return (
-                  <View key={kind} style={{ marginTop: 8 }}>
-                    <Text style={styles.label}>{kind === 'LIVRE' ? 'Livres' : 'Cahiers'}</Text>
-                    <View style={styles.pills}>
-                      {items.map((m) => {
-                        const on = selected.includes(m.label);
-                        return (
-                          <Pressable
-                            key={m.id}
-                            onPress={() =>
-                              setDrafts((d) => ({
-                                ...d,
-                                [s.id]: toggleMaterialLine(d[s.id], m.label),
-                              }))
-                            }
-                            style={[styles.pill, on ? styles.pillOn : null]}
-                          >
-                            <Text style={styles.pillText}>{m.name}</Text>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                  </View>
-                );
-              })}
-            </>
-          ) : (
-            <TextInput
-              value={drafts[s.id] ?? ''}
-              onChangeText={(t) => setDrafts((d) => ({ ...d, [s.id]: t }))}
-              placeholder="Matériel à apporter"
-              multiline
-              style={[styles.input, { minHeight: 72 }]}
-            />
-          )}
-          <Button
-            title="Enregistrer"
-            onPress={() => void saveSlotMaterials(s.id, drafts[s.id] || null)}
-          />
+      <View style={styles.card}>
+        <Text style={styles.label}>Matériel à apporter</Text>
+        <TextInput
+          value={draft}
+          onChangeText={setDraft}
+          onSubmitEditing={add}
+          returnKeyType="done"
+          style={styles.input}
+        />
+        <Button title={saving ? '…' : 'Ajouter'} onPress={add} disabled={saving} />
+        <View style={styles.pills}>
+          {lines.map((line) => (
+            <Pressable
+              key={line}
+              onPress={() => void save(lines.filter((x) => x !== line))}
+              style={styles.pill}
+            >
+              <Text style={styles.pillText}>{line} ×</Text>
+            </Pressable>
+          ))}
         </View>
-      ))}
+      </View>
     </ScrollView>
   );
 }

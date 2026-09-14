@@ -11,7 +11,7 @@ import { formatDateJJMMAAAA } from "@/lib/format";
 import { formatPointsOnBareme, pointsToTen } from "@/lib/gradeScale";
 import type { PdfSection } from "@/lib/pdfExport";
 import { learnerNoun, learnerNounCap } from "@/lib/educationLevels";
-import { dutiesForStudent, dutyDisplayTitle } from "@/lib/morningOpening";
+import { dutiesForStudent, dutyDisplayTitle, isListScheduleLevel } from "@/lib/morningOpening";
 import {
   getStudentDossierPdfBlob,
   type StudentDossier,
@@ -214,7 +214,7 @@ function mergeClassSchedule(
       end_time: m.end_time,
       kind: "MOMENT",
     })),
-    ...slots,
+    ...(isListScheduleLevel(classLevel) ? [] : slots),
   ];
   return extra.sort(
     (a, b) =>
@@ -264,6 +264,8 @@ export function DashboardFicheElevePage() {
   const [scheduleSlots, setScheduleSlots] = useState<ScheduleSlot[]>([]);
   const [examSchedules, setExamSchedules] = useState<ExamScheduleItem[]>([]);
   const [extracurricularActivities, setExtracurricularActivities] = useState<ExtracurricularActivityItem[]>([]);
+  const [listSubjects, setListSubjects] = useState<string[]>([]);
+  const [bringLines, setBringLines] = useState<string[]>([]);
   const [homework, setHomework] = useState<
     {
       id: string;
@@ -464,7 +466,7 @@ export function DashboardFicheElevePage() {
 
       if (yearClassId && selectedYearId) {
         const yearName = academicYears.find((y) => y.id === selectedYearId)?.name;
-        const [examRes, formationRes, slotsRes, examSchedRes, activitiesRes, hwRes, momentsRes, dutiesRes] = await Promise.all([
+        const [examRes, formationRes, slotsRes, examSchedRes, activitiesRes, hwRes, momentsRes, dutiesRes, studentSchedRes] = await Promise.all([
           fetchWithAuth(`${API_BASE}/grades/student-exam-results?student_id=${studentId}&academic_year_id=${selectedYearId}`),
           fetchWithAuth(`${API_BASE}/formation-classe/students?academic_year_id=${selectedYearId}&class_id=${yearClassId}`),
           fetchWithAuth(`${API_BASE}/schedule-slots?class_id=${yearClassId}${yearName ? `&academic_year=${encodeURIComponent(yearName)}` : ""}`),
@@ -473,6 +475,7 @@ export function DashboardFicheElevePage() {
           fetchWithAuth(`${API_BASE}/homework/student/${studentId}`),
           fetchWithAuth(`${API_BASE}/schedule-moments?class_id=${yearClassId}${yearName ? `&academic_year=${encodeURIComponent(yearName)}` : ""}`),
           fetchWithAuth(`${API_BASE}/school-week-duties?${yearName ? `academic_year=${encodeURIComponent(yearName)}` : ""}`),
+          fetchWithAuth(`${API_BASE}/schedule/student/${studentId}${yearName ? `?academic_year=${encodeURIComponent(yearName)}` : ""}`),
         ]);
         const examData = await examRes.json();
         const formationData = await formationRes.json();
@@ -482,6 +485,13 @@ export function DashboardFicheElevePage() {
         const hwData = await hwRes.json();
         const momentsData = await momentsRes.json();
         const dutiesData = await dutiesRes.json();
+        const studentSchedData = studentSchedRes.ok ? await studentSchedRes.json() : {};
+        setListSubjects(Array.isArray(studentSchedData.list_subjects) ? studentSchedData.list_subjects : []);
+        setBringLines(
+          Array.isArray(studentSchedData.bring_items)
+            ? studentSchedData.bring_items.map((i: { label?: string }) => String(i.label ?? "").trim()).filter(Boolean)
+            : [],
+        );
         if (examRes.ok && examData.periods) setExamResults(examData);
         else setExamResults(null);
         const formationList = formationData.students ?? [];
@@ -503,13 +513,14 @@ export function DashboardFicheElevePage() {
         setExamResults(null);
         setFormationDecision(null);
         if (yearClassId) {
-          const [slotsRes, examSchedRes, activitiesRes, hwRes, momentsRes, dutiesRes] = await Promise.all([
+          const [slotsRes, examSchedRes, activitiesRes, hwRes, momentsRes, dutiesRes, studentSchedRes] = await Promise.all([
             fetchWithAuth(`${API_BASE}/schedule-slots?class_id=${yearClassId}`),
             fetchWithAuth(`${API_BASE}/exam-schedules?class_id=${yearClassId}`),
             fetchWithAuth(`${API_BASE}/extracurricular-activities?class_id=${yearClassId}`),
             fetchWithAuth(`${API_BASE}/homework/student/${studentId}`),
             fetchWithAuth(`${API_BASE}/schedule-moments?class_id=${yearClassId}`),
             fetchWithAuth(`${API_BASE}/school-week-duties`),
+            fetchWithAuth(`${API_BASE}/schedule/student/${studentId}`),
           ]);
           const slotsData = await slotsRes.json();
           const examSchedData = await examSchedRes.json();
@@ -517,6 +528,13 @@ export function DashboardFicheElevePage() {
           const hwData = await hwRes.json();
           const momentsData = await momentsRes.json();
           const dutiesData = await dutiesRes.json();
+          const studentSchedData = studentSchedRes.ok ? await studentSchedRes.json() : {};
+          setListSubjects(Array.isArray(studentSchedData.list_subjects) ? studentSchedData.list_subjects : []);
+          setBringLines(
+            Array.isArray(studentSchedData.bring_items)
+              ? studentSchedData.bring_items.map((i: { label?: string }) => String(i.label ?? "").trim()).filter(Boolean)
+              : [],
+          );
           setScheduleSlots(
             mergeClassSchedule(
               slotsRes.ok ? (slotsData.schedule_slots ?? []) : [],
@@ -533,6 +551,8 @@ export function DashboardFicheElevePage() {
           setScheduleSlots([]);
           setExamSchedules([]);
           setExtracurricularActivities([]);
+          setListSubjects([]);
+          setBringLines([]);
         }
       }
     } catch (e) {
@@ -545,6 +565,8 @@ export function DashboardFicheElevePage() {
       setScheduleSlots([]);
       setExamSchedules([]);
       setExtracurricularActivities([]);
+      setListSubjects([]);
+      setBringLines([]);
       setDossierYears([]);
     }
   }, [API_BASE, selectedYearId, academicYears, canDossier, rosterMode]);
@@ -659,8 +681,17 @@ export function DashboardFicheElevePage() {
         },
       });
     }
+    if (listSubjects.length > 0) {
+      sections.unshift({ title: "Matières", lines: listSubjects });
+    }
+    if (bringLines.length > 0) {
+      sections.splice(listSubjects.length > 0 ? 1 : 0, 0, {
+        title: "Matériel à apporter",
+        lines: bringLines,
+      });
+    }
     return sections;
-  }, [scheduleSlots, examSchedules, extracurricularActivities]);
+  }, [scheduleSlots, examSchedules, extracurricularActivities, listSubjects, bringLines]);
 
   const ficheLevel =
     student?.class_level || classes.find((c) => c.id === selectedClassId)?.level;
@@ -1129,6 +1160,36 @@ export function DashboardFicheElevePage() {
                 ))}
               </div>
               {scheduleTab === "cours" && (
+                <div className="space-y-4">
+                  {listSubjects.length > 0 ? (
+                    <div>
+                      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                        Matières
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {listSubjects.map((name) => (
+                          <span
+                            key={name}
+                            className="rounded-full bg-teal-50 px-2.5 py-1 text-[11px] font-medium text-teal-900 ring-1 ring-teal-100"
+                          >
+                            {name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {bringLines.length > 0 ? (
+                    <div>
+                      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                        Matériel à apporter
+                      </p>
+                      <ul className="list-decimal space-y-1 pl-5 text-sm text-slate-800">
+                        {bringLines.map((line) => (
+                          <li key={line}>{line}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50 border-b border-[var(--app-border)]">
@@ -1158,6 +1219,7 @@ export function DashboardFicheElevePage() {
                       )}
                     </tbody>
                   </table>
+                </div>
                 </div>
               )}
               {scheduleTab === "examens" && (

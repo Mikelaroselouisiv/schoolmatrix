@@ -17,9 +17,14 @@ export const CLASS_MOMENT_LABELS: Record<ClassMomentKind, string> = {
 };
 
 export const SCHOOL_DUTY_LABELS: Record<SchoolDutyKind, string> = {
+  ACCUEIL: 'Accueil',
   FLAG: 'Montée du drapeau',
-  RENTREE: 'Rentrée',
+  ANIMATION: 'Animation',
+  SERVICE: 'Dames de service',
   DEVOTION: 'Dévotion',
+  DEFI: 'Défi des 5 phrases',
+  PRIERE: 'Prière de midi',
+  RENTREE: 'Rentrée',
 };
 
 export function morningDutyTitle(
@@ -27,9 +32,11 @@ export function morningDutyTitle(
   cycle?: string | null,
 ): string {
   const k = String(kind ?? '').toUpperCase();
-  if (k === 'FLAG') return SCHOOL_DUTY_LABELS.FLAG;
-  if (k === 'RENTREE' && cycle === 'PRESCOLAIRE') return 'Rentrée préscolaire';
-  if (k === 'RENTREE') return 'Rentrée primaire';
+  if (k === 'RENTREE' && cycle === 'PRESCOLAIRE') return 'Accueil préscolaire';
+  if (k === 'RENTREE') return 'Accueil primaire';
+  if (k === 'ACCUEIL' && cycle === 'PRESCOLAIRE') return 'Accueil préscolaire';
+  if (k === 'ACCUEIL') return 'Accueil primaire';
+  if (k === 'FLAG' && cycle === 'PRESCOLAIRE') return 'Montée du drapeau (préscolaire)';
   return SCHOOL_DUTY_LABELS[k as SchoolDutyKind] || k;
 }
 
@@ -72,11 +79,10 @@ export function parseClassMomentKind(kind: string | undefined): ClassMomentKind 
 }
 
 export function parseSchoolDutyKind(kind?: string | null): SchoolDutyKind {
-  const k = String(kind ?? 'RENTREE').trim().toUpperCase();
+  const k = String(kind ?? 'ACCUEIL').trim().toUpperCase();
+  if (k === 'RENTREE') return 'ACCUEIL';
   if (!(SCHOOL_DUTY_KINDS as readonly string[]).includes(k)) {
-    throw new BadRequestException(
-      'Type de responsabilité invalide (FLAG, RENTREE)',
-    );
+    throw new BadRequestException('Type de responsabilité invalide');
   }
   return k as SchoolDutyKind;
 }
@@ -95,4 +101,25 @@ export function personName(
   if (!u) return null;
   const name = [u.first_name, u.last_name].filter(Boolean).join(' ').trim();
   return name || null;
+}
+
+export function cleanManualNames(raw?: string[] | null): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of raw ?? []) {
+    const name = String(item ?? '').trim().replace(/\s+/g, ' ');
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(name.slice(0, 120));
+  }
+  return out;
+}
+
+export function cleanInstructionLines(raw?: string[] | null): string[] {
+  return (raw ?? [])
+    .map((s) => String(s ?? '').trim().replace(/\s+/g, ' '))
+    .filter(Boolean)
+    .map((s) => s.slice(0, 240));
 }

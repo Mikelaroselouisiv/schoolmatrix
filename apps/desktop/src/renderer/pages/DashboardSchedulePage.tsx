@@ -8,15 +8,18 @@ import { ScheduleGridModal } from "@/components/ScheduleGridModal";
 import { AppAccordion } from "@/components/AppAccordion";
 import { useRevealScroll } from "@/lib/useRevealScroll";
 import type { PdfColumn, PdfSection } from "@/lib/pdfExport";
-import type { SchoolMaterialItem } from "@/lib/schoolMaterials";
 import {
   emptyWeekProgram,
-  isMorningOpeningLevel,
+  emptyDayProgram,
+  isListScheduleLevel,
+  morningCycleFromLevel,
   MORNING_PRIMAIRE_LEVELS,
   MORNING_WEEKDAYS,
   namesJoin,
   programFromDuties,
   uniqueTeachersFromAssignments,
+  dayHasPreschool,
+  dayHasPrimary,
   type DayMorningProgram,
 } from "@/lib/morningOpening";
 import {
@@ -45,11 +48,21 @@ const EXAM_COLUMNS: PdfColumn[] = [
   { header: "Période", key: "periode" },
 ];
 
-const MORNING_COLUMNS: PdfColumn[] = [
+const PRESCHOOL_MORNING_COLUMNS: PdfColumn[] = [
   { header: "Jour", key: "jour" },
-  { header: "Montée du drapeau", key: "drapeau" },
-  { header: "Rentrée préscolaire", key: "presco" },
-  { header: "Rentrée primaire", key: "primaire" },
+  { header: "Accueil", key: "accueil" },
+  { header: "Drapeau", key: "drapeau" },
+  { header: "Animation", key: "animation" },
+  { header: "Dames de service", key: "service" },
+];
+
+const PRIMARY_MORNING_COLUMNS: PdfColumn[] = [
+  { header: "Jour", key: "jour" },
+  { header: "Accueil", key: "accueil" },
+  { header: "Dévotion", key: "devotion" },
+  { header: "Drapeau", key: "drapeau" },
+  { header: "Défi des 5 phrases", key: "defi" },
+  { header: "Prière de midi", key: "priere" },
 ];
 
 const ACTIVITY_COLUMNS: PdfColumn[] = [
@@ -118,7 +131,7 @@ type Room = { id: string; name: string; class_id?: string | null; active?: boole
 type AcademicYear = { id: string; name: string };
 type Period = { id: string; name: string };
 type RoomAssignment = { teacher_id: number; teacher_name: string; subject_id: string };
-type TeacherAssignment = { teacher_id: number; teacher_name: string; class_id: string };
+type TeacherAssignment = { teacher_id: number; teacher_name: string; class_id: string; subject_id?: string; subject_name?: string };
 type ClassMoment = {
   id: string;
   class_id: string;
@@ -143,6 +156,7 @@ type SchoolDuty = {
   end_time: string;
   responsible_user_id: number | null;
   responsible_name: string | null;
+  manual_name?: string | null;
 };
 
 function toggleId(ids: number[], id: number): number[] {
@@ -236,6 +250,115 @@ function TeacherChips({
   );
 }
 
+function ManualNames({
+  values,
+  onChange,
+}: {
+  values: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  function add() {
+    const name = draft.trim();
+    if (!name) return;
+    if (values.some((v) => v.toLowerCase() === name.toLowerCase())) {
+      setDraft("");
+      return;
+    }
+    onChange([...values, name]);
+    setDraft("");
+  }
+  return (
+    <div className="space-y-1.5">
+      <div className="flex gap-1.5">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add();
+            }
+          }}
+          className="class-input min-w-0 flex-1 bg-white"
+        />
+        <button type="button" onClick={add} className="app-btn-secondary shrink-0 text-xs">
+          Ajouter
+        </button>
+      </div>
+      {values.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {values.map((name) => (
+            <button
+              key={name}
+              type="button"
+              onClick={() => onChange(values.filter((v) => v !== name))}
+              className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-800 ring-1 ring-slate-200 hover:bg-red-50 hover:text-red-700"
+            >
+              {name} ×
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function InstructionLines({
+  values,
+  onChange,
+}: {
+  values: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  function add() {
+    const line = draft.trim();
+    if (!line) return;
+    onChange([...values, line]);
+    setDraft("");
+  }
+  return (
+    <div className="space-y-2">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Consignes</p>
+      <div className="flex gap-1.5">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add();
+            }
+          }}
+          className="class-input min-w-0 flex-1 bg-white"
+        />
+        <button type="button" onClick={add} className="app-btn-secondary shrink-0 text-xs">
+          Ajouter
+        </button>
+      </div>
+      {values.length > 0 ? (
+        <ol className="space-y-1">
+          {values.map((line, i) => (
+            <li key={`${i}-${line}`} className="flex items-start justify-between gap-2 text-sm text-slate-800">
+              <span>
+                {i + 1}. {line}
+              </span>
+              <button
+                type="button"
+                onClick={() => onChange(values.filter((_, idx) => idx !== i))}
+                className="text-xs text-red-600 hover:underline"
+              >
+                Retirer
+              </button>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </div>
+  );
+}
+
 const WEEKDAYS = MORNING_WEEKDAYS;
 
 export function DashboardSchedulePage() {
@@ -274,6 +397,13 @@ export function DashboardSchedulePage() {
   const [moments, setMoments] = useState<ClassMoment[]>([]);
   const [duties, setDuties] = useState<SchoolDuty[]>([]);
   const [morningByDay, setMorningByDay] = useState<Record<number, DayMorningProgram>>(emptyWeekProgram);
+  const [preschoolInstructions, setPreschoolInstructions] = useState<string[]>([]);
+  const [primaryInstructions, setPrimaryInstructions] = useState<string[]>([]);
+  const [staffPeople, setStaffPeople] = useState<{ id: number; name: string }[]>([]);
+  const [bringByClass, setBringByClass] = useState<Record<string, string[]>>({});
+  const [listClass, setListClass] = useState<ClassItem | null>(null);
+  const [bringDraft, setBringDraft] = useState("");
+  const [savingBring, setSavingBring] = useState(false);
   const [savingMorning, setSavingMorning] = useState(false);
   const [savingMoment, setSavingMoment] = useState(false);
   const [recessClassId, setRecessClassId] = useState("");
@@ -281,13 +411,7 @@ export function DashboardSchedulePage() {
   const [recessEnd, setRecessEnd] = useState("10:15");
   const [recessLabel, setRecessLabel] = useState("");
   const [recessDays, setRecessDays] = useState<number[]>([1, 2, 3, 4, 5]);
-  const [catalog, setCatalog] = useState<SchoolMaterialItem[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [materialKind, setMaterialKind] = useState<"LIVRE" | "CAHIER">("LIVRE");
-  const [materialName, setMaterialName] = useState("");
-  const [materialSubjectId, setMaterialSubjectId] = useState("");
-  const [savingMaterial, setSavingMaterial] = useState(false);
-  const [openCours, setOpenCours] = useState<"morning" | "recess" | "materials" | "rooms">("rooms");
+  const [openCours, setOpenCours] = useState<"preschool" | "primary" | "recess" | "rooms">("rooms");
 
   const [showActivityForm, setShowActivityForm] = useState(false);
   const activityFormRef = useRevealScroll<HTMLFormElement>(showActivityForm);
@@ -308,20 +432,18 @@ export function DashboardSchedulePage() {
 
   async function loadRefs() {
     try {
-      const [cRes, rRes, ayRes, aRes, sRes, matRes] = await Promise.all([
+      const [cRes, rRes, ayRes, aRes, staffRes] = await Promise.all([
         fetchWithAuth(`${API_BASE}/classes`),
         fetchWithAuth(`${API_BASE}/rooms`),
         fetchWithAuth(`${API_BASE}/academic-years`),
         fetchWithAuth(`${API_BASE}/teachers/assignments`),
-        fetchWithAuth(`${API_BASE}/subjects`),
-        fetchWithAuth(`${API_BASE}/school-materials`),
+        fetchWithAuth(`${API_BASE}/school-week-duties/staff`),
       ]);
       const cData = await cRes.json();
       const rData = await rRes.json();
       const ayData = await ayRes.json();
       const aData = await aRes.json();
-      const sData = await sRes.json();
-      const matData = await matRes.json();
+      const staffData = await staffRes.json().catch(() => ({}));
       if (!cRes.ok) throw new Error(cData.message || "Erreur classes");
       if (!rRes.ok) throw new Error(rData.message || "Erreur salles");
       if (!ayRes.ok) throw new Error(ayData.message || "Erreur années scolaires");
@@ -329,8 +451,12 @@ export function DashboardSchedulePage() {
       setRooms(rData.rooms ?? []);
       setAcademicYears(ayData.academic_years ?? []);
       setAssignments(aRes.ok ? (aData.assignments ?? []) : []);
-      setSubjects(sRes.ok ? (sData.subjects ?? []) : []);
-      setCatalog(matRes.ok ? (matData.school_materials ?? []) : []);
+      setStaffPeople(
+        (staffRes.ok ? staffData.staff ?? [] : []).map((u: { id: number; name: string }) => ({
+          id: u.id,
+          name: u.name,
+        })),
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
     }
@@ -385,6 +511,8 @@ export function DashboardSchedulePage() {
       const list: SchoolDuty[] = dRes.ok ? (dData.school_week_duties ?? []) : [];
       setDuties(list);
       setMorningByDay(programFromDuties(list));
+      setPreschoolInstructions(dRes.ok ? (dData.preschool_instructions ?? []) : []);
+      setPrimaryInstructions(dRes.ok ? (dData.primary_instructions ?? []) : []);
     } catch {
       setMoments([]);
       setDuties([]);
@@ -465,7 +593,20 @@ export function DashboardSchedulePage() {
     loadPeriods(academicYearFilter || defaultYearId);
   }, [academicYearFilter, defaultYearId]);
 
+  useEffect(() => {
+    const list = classes.filter((c) => isListScheduleLevel(c.level));
+    if (!list.length) return;
+    void Promise.all(list.map((c) => loadBringItems(c.id)));
+  }, [classes, academicYearFilter, defaultYearName]);
+
   async function openRoomGrid(room: Room) {
+    const level = classes.find((c) => c.id === room.class_id)?.level;
+    if (tab === "cours" && isListScheduleLevel(level) && room.class_id) {
+      const cls = classes.find((c) => c.id === room.class_id) ?? { id: room.class_id, name: roomClassName(room), level };
+      setListClass(cls);
+      await loadBringItems(room.class_id);
+      return;
+    }
     setGridRoom(room);
     setGridError("");
     setGridSubjects([]);
@@ -485,6 +626,40 @@ export function DashboardSchedulePage() {
       setGridAssignments(assignData.assignments ?? []);
     } catch (e) {
       setGridError(e instanceof Error ? e.message : "Erreur");
+    }
+  }
+
+  async function loadBringItems(classId: string) {
+    const yearName = academicYears.find((ay) => ay.id === academicYearFilter)?.name || defaultYearName;
+    try {
+      const params = new URLSearchParams({ class_id: classId });
+      if (yearName) params.set("academic_year", yearName);
+      const res = await fetchWithAuth(`${API_BASE}/class-bring-items?${params}`);
+      const data = await res.json();
+      const lines = (data.items ?? []).map((i: { label: string }) => i.label);
+      setBringByClass((prev) => ({ ...prev, [classId]: lines }));
+    } catch {
+      setBringByClass((prev) => ({ ...prev, [classId]: prev[classId] ?? [] }));
+    }
+  }
+
+  async function saveBringItems(classId: string, lines: string[]) {
+    const yearName = academicYears.find((ay) => ay.id === academicYearFilter)?.name || defaultYearName;
+    setSavingBring(true);
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/class-bring-items`, {
+        method: "PUT",
+        body: JSON.stringify({ class_id: classId, academic_year: yearName || null, lines }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Erreur");
+      const next = (data.items ?? []).map((i: { label: string }) => i.label);
+      setBringByClass((prev) => ({ ...prev, [classId]: next }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setSavingBring(false);
     }
   }
 
@@ -557,11 +732,23 @@ export function DashboardSchedulePage() {
             const slot = morningByDay[d.index] ?? emptyWeekProgram()[d.index];
             return {
               day_of_week: d.index,
-              flag_class_id: slot.flagClassId || null,
-              preschool_teacher_ids: slot.preschoolIds,
-              primary_teacher_ids: slot.primaryIds,
+              preschool: {
+                accueil_ids: slot.preschoolAccueilIds,
+                flag_ids: slot.preschoolFlagIds,
+                animation_ids: slot.preschoolAnimationIds,
+                service_names: slot.preschoolServiceNames,
+              },
+              primary: {
+                accueil_ids: slot.primaryAccueilIds,
+                devotion_ids: slot.primaryDevotionIds,
+                flag_class_id: slot.primaryFlagClassId || null,
+                defi_ids: slot.primaryDefiIds,
+                prayer_names: slot.primaryPrayerNames,
+              },
             };
           }),
+          preschool_instructions: preschoolInstructions,
+          primary_instructions: primaryInstructions,
         }),
       });
       const data = await res.json();
@@ -569,6 +756,8 @@ export function DashboardSchedulePage() {
       const list: SchoolDuty[] = data.school_week_duties ?? [];
       setDuties(list);
       setMorningByDay(programFromDuties(list));
+      setPreschoolInstructions(data.preschool_instructions ?? preschoolInstructions);
+      setPrimaryInstructions(data.primary_instructions ?? primaryInstructions);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
     } finally {
@@ -658,50 +847,6 @@ export function DashboardSchedulePage() {
       setError(e instanceof Error ? e.message : "Erreur");
     } finally {
       setSavingMoment(false);
-    }
-  }
-
-  async function handleAddMaterial() {
-    const name = materialName.trim() || subjects.find((s) => s.id === materialSubjectId)?.name || "";
-    if (!name) {
-      setError("Nom du livre ou du cahier requis.");
-      return;
-    }
-    setSavingMaterial(true);
-    setError("");
-    try {
-      const res = await fetchWithAuth(`${API_BASE}/school-materials`, {
-        method: "POST",
-        body: JSON.stringify({
-          kind: materialKind,
-          name,
-          subject_id: materialSubjectId || null,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Erreur");
-      setCatalog((prev) =>
-        [...prev, data.school_material].sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name, "fr")),
-      );
-      setMaterialName("");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Erreur");
-    } finally {
-      setSavingMaterial(false);
-    }
-  }
-
-  async function handleDeleteMaterial(id: string) {
-    setSavingMaterial(true);
-    setError("");
-    try {
-      const res = await fetchWithAuth(`${API_BASE}/school-materials/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error((await res.json()).message || "Erreur");
-      setCatalog((prev) => prev.filter((m) => m.id !== id));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Erreur");
-    } finally {
-      setSavingMaterial(false);
     }
   }
 
@@ -907,7 +1052,7 @@ export function DashboardSchedulePage() {
   );
 
   const flagClasses = useMemo(
-    () => classes.filter((c) => isMorningOpeningLevel(c.level)),
+    () => classes.filter((c) => (MORNING_PRIMAIRE_LEVELS as readonly string[]).includes(c.level ?? "")),
     [classes],
   );
   const preschoolClassIds = useMemo(
@@ -933,56 +1078,74 @@ export function DashboardSchedulePage() {
     () => moments.filter((m) => m.kind === "RECESS"),
     [moments],
   );
-  const livres = useMemo(() => catalog.filter((m) => m.kind === "LIVRE"), [catalog]);
-  const cahiers = useMemo(() => catalog.filter((m) => m.kind === "CAHIER"), [catalog]);
-  const morningProgrammedDays = useMemo(
-    () =>
-      WEEKDAYS.filter((d) => {
-        const s = morningByDay[d.index];
-        return !!(s && (s.flagClassId || s.preschoolIds.length || s.primaryIds.length));
-      }).length,
+  const preschoolDaysCount = useMemo(
+    () => WEEKDAYS.filter((d) => dayHasPreschool(morningByDay[d.index])).length,
+    [morningByDay],
+  );
+  const primaryDaysCount = useMemo(
+    () => WEEKDAYS.filter((d) => dayHasPrimary(morningByDay[d.index])).length,
     [morningByDay],
   );
 
-  const morningPdfRows = useMemo(
+  function dutyNames(day: number, kind: string, cycle: string) {
+    return namesJoin(
+      duties
+        .filter((x) => x.kind === kind && x.cycle === cycle && x.day_of_week === day)
+        .map((x) => x.responsible_name || x.manual_name)
+        .filter((n): n is string => !!n),
+    );
+  }
+
+  const preschoolPdfRows = useMemo(
+    () =>
+      WEEKDAYS.map((d) => ({
+        jour: d.label,
+        accueil: dutyNames(d.index, "ACCUEIL", "PRESCOLAIRE"),
+        drapeau: dutyNames(d.index, "FLAG", "PRESCOLAIRE"),
+        animation: dutyNames(d.index, "ANIMATION", "PRESCOLAIRE"),
+        service: dutyNames(d.index, "SERVICE", "PRESCOLAIRE"),
+      })),
+    [duties],
+  );
+  const primaryPdfRows = useMemo(
     () =>
       WEEKDAYS.map((d) => {
-        const flag = duties.find((x) => x.kind === "FLAG" && x.day_of_week === d.index);
-        const presco = duties
-          .filter((x) => x.kind === "RENTREE" && x.cycle === "PRESCOLAIRE" && x.day_of_week === d.index)
-          .map((x) => x.responsible_name)
-          .filter((n): n is string => !!n);
-        const primaire = duties
-          .filter(
-            (x) =>
-              x.day_of_week === d.index &&
-              ((x.kind === "RENTREE" && x.cycle === "PRIMAIRE") || x.kind === "DEVOTION"),
-          )
-          .map((x) => x.responsible_name)
-          .filter((n): n is string => !!n);
+        const flag = duties.find(
+          (x) => x.kind === "FLAG" && x.cycle === "PRIMAIRE" && x.day_of_week === d.index,
+        );
         return {
           jour: d.label,
+          accueil: dutyNames(d.index, "ACCUEIL", "PRIMAIRE"),
+          devotion: dutyNames(d.index, "DEVOTION", "PRIMAIRE"),
           drapeau: flag?.class_name ?? "—",
-          presco: namesJoin(presco),
-          primaire: namesJoin(primaire),
+          defi: dutyNames(d.index, "DEFI", "PRIMAIRE"),
+          priere: dutyNames(d.index, "PRIERE", "PRIMAIRE"),
         };
       }),
     [duties],
   );
 
-  const morningPdfSection = useMemo<PdfSection>(
+  const preschoolPdfSection = useMemo<PdfSection>(
     () => ({
-      title: "Début de journée",
-      table: { columns: MORNING_COLUMNS, rows: morningPdfRows },
+      title: "Rentrée préscolaire",
+      lines: preschoolInstructions.length ? preschoolInstructions.map((l, i) => `${i + 1}. ${l}`) : undefined,
+      table: { columns: PRESCHOOL_MORNING_COLUMNS, rows: preschoolPdfRows },
     }),
-    [morningPdfRows],
+    [preschoolPdfRows, preschoolInstructions],
+  );
+  const primaryPdfSection = useMemo<PdfSection>(
+    () => ({
+      title: "Rentrée primaire",
+      lines: primaryInstructions.length ? primaryInstructions.map((l, i) => `${i + 1}. ${l}`) : undefined,
+      table: { columns: PRIMARY_MORNING_COLUMNS, rows: primaryPdfRows },
+    }),
+    [primaryPdfRows, primaryInstructions],
   );
 
   const allSchedulesSections = useMemo<PdfSection[]>(() => {
     const sections: PdfSection[] = [{ lines: [pdfSubtitle] }];
-    if (duties.length > 0) {
-      sections.push(morningPdfSection);
-    }
+    if (duties.length > 0 || preschoolInstructions.length) sections.push(preschoolPdfSection);
+    if (duties.length > 0 || primaryInstructions.length) sections.push(primaryPdfSection);
     if (slotSectionsByDay.length > 0) {
       sections.push({ title: "Horaire des cours" }, ...slotSectionsByDay);
     }
@@ -999,10 +1162,21 @@ export function DashboardSchedulePage() {
       });
     }
     return sections;
-  }, [pdfSubtitle, slotSectionsByDay, examRows, activityRows, duties.length, morningPdfSection]);
+  }, [
+    pdfSubtitle,
+    slotSectionsByDay,
+    examRows,
+    activityRows,
+    duties.length,
+    preschoolPdfSection,
+    primaryPdfSection,
+    preschoolInstructions.length,
+    primaryInstructions.length,
+  ]);
 
   const hasAnySchedule =
-    duties.length > 0 || slotSectionsByDay.length > 0 || examRows.length > 0 || activityRows.length > 0;
+    duties.length > 0 || slotSectionsByDay.length > 0 || examRows.length > 0 || activityRows.length > 0
+    || preschoolInstructions.length > 0 || primaryInstructions.length > 0;
 
   const roomsToShow = rooms.filter(
     (r) =>
@@ -1057,15 +1231,38 @@ export function DashboardSchedulePage() {
     return slots.filter((s) => s.room_id === room.id).length;
   }
 
-  function roomExamCount(room: Room) {
-    return exams.filter((e) => e.class_id === room.class_id).length;
+  function classSubjectNames(classId: string) {
+    const names = assignments
+      .filter((a) => a.class_id === classId)
+      .map((a) => a.subject_name)
+      .filter((n): n is string => !!n);
+    return [...new Set(names)].sort((a, b) => a.localeCompare(b, "fr"));
+  }
+
+  function listClassPdfSections(classId: string): PdfSection[] {
+    const cls = classes.find((c) => c.id === classId);
+    const cycle = morningCycleFromLevel(cls?.level);
+    const subjects = classSubjectNames(classId);
+    const materials = bringByClass[classId] ?? [];
+    const sections: PdfSection[] = [];
+    if (cycle === "PRESCOLAIRE") sections.push(preschoolPdfSection);
+    if (cycle === "PRIMAIRE") sections.push(primaryPdfSection);
+    if (subjects.length) sections.push({ title: "Matières", lines: subjects });
+    if (materials.length) sections.push({ title: "Matériel à apporter", lines: materials });
+    return sections;
   }
 
   if (loading) return <div className="animate-pulse text-slate-500">Chargement...</div>;
 
   const roomCard = (room: Room, kind: "cours" | "examens") => {
-    const count = kind === "cours" ? roomSlotCount(room) : roomExamCount(room);
     const klass = roomClassName(room);
+    const level = classes.find((c) => c.id === room.class_id)?.level;
+    const listMode = kind === "cours" && isListScheduleLevel(level);
+    const count = listMode
+      ? classSubjectNames(room.class_id || "").length
+      : kind === "cours"
+        ? roomSlotCount(room)
+        : roomExamCount(room);
     const subtitle = [
       `Année : ${filterLabels.year ?? "toutes"}`,
       klass ? `Classe : ${klass}` : null,
@@ -1073,6 +1270,7 @@ export function DashboardSchedulePage() {
     ]
       .filter((v): v is string => !!v)
       .join("  ·  ");
+    const listSections = room.class_id && listMode ? listClassPdfSections(room.class_id) : [];
     const courseSections = coursePdfSections(
       slots.filter((s) => s.room_id === room.id),
       room.class_id ? moments.filter((m) => m.class_id === room.class_id) : [],
@@ -1100,9 +1298,13 @@ export function DashboardSchedulePage() {
               <span className="text-lg font-semibold leading-none">{count}</span>
               <span className="ml-2 text-[11px] font-medium opacity-80">
                 {kind === "cours"
-                  ? count > 1
-                    ? "créneaux"
-                    : "créneau"
+                  ? listMode
+                    ? count > 1
+                      ? "matières"
+                      : "matière"
+                    : count > 1
+                      ? "créneaux"
+                      : "créneau"
                   : count > 1
                     ? "examens"
                     : "examen"}
@@ -1116,14 +1318,14 @@ export function DashboardSchedulePage() {
             onClick={() => openRoomGrid(room)}
             className="text-xs font-medium text-teal-800 hover:underline"
           >
-            Ouvrir la grille
+            Ouvrir {listMode ? "la liste" : "la grille"}
           </button>
           {kind === "cours" ? (
             <ExportPdfButton
-              sections={[{ lines: [subtitle] }, ...courseSections]}
+              sections={[{ lines: [subtitle] }, ...(listMode ? listSections : courseSections)]}
               mainTitle={`Horaire des cours — Salle ${room.name}`}
               filename={`horaire-cours-salle-${slugify(room.name)}${pdfFileSuffix}`}
-              disabled={courseSections.length === 0}
+              disabled={listMode ? listSections.length === 0 : courseSections.length === 0}
               label="PDF"
               className={PDF_BTN_CLASS}
             />
@@ -1149,6 +1351,20 @@ export function DashboardSchedulePage() {
   const classPdfButton = (kind: "cours" | "examens", classId: string, className: string) => {
     const subtitle = [`Année : ${filterLabels.year ?? "toutes"}`, `Classe : ${className}`].join("  ·  ");
     if (kind === "cours") {
+      const cls = classes.find((c) => c.id === classId);
+      if (isListScheduleLevel(cls?.level)) {
+        const sections = listClassPdfSections(classId);
+        return (
+          <ExportPdfButton
+            sections={[{ lines: [subtitle] }, ...sections]}
+            mainTitle={`Horaire — ${className}`}
+            filename={`horaire-${slugify(className)}${pdfFileSuffix}`}
+            disabled={sections.length === 0}
+            label="PDF"
+            className={PDF_BTN_CLASS}
+          />
+        );
+      }
       const sections = coursePdfSections(
         slots.filter((s) => s.class_id === classId),
         moments.filter((m) => m.class_id === classId),
@@ -1275,21 +1491,21 @@ export function DashboardSchedulePage() {
         <section className="space-y-3">
           <AppAccordion
             tone="amber"
-            kicker="Préscolaire & primaire"
-            title="Début de journée"
+            kicker="Préscolaire"
+            title="Rentrée préscolaire"
             summary={
-              morningProgrammedDays === 0
+              preschoolDaysCount === 0
                 ? "Aucun jour programmé"
-                : `${morningProgrammedDays} jour${morningProgrammedDays > 1 ? "s" : ""} programmé${morningProgrammedDays > 1 ? "s" : ""}`
+                : `${preschoolDaysCount} jour${preschoolDaysCount > 1 ? "s" : ""}`
             }
-            open={openCours === "morning"}
-            onToggle={() => setOpenCours("morning")}
+            open={openCours === "preschool"}
+            onToggle={() => setOpenCours("preschool")}
             headerRight={
               <ExportPdfButton
-                sections={[{ lines: [pdfSubtitle] }, morningPdfSection]}
-                mainTitle="Début de journée"
-                filename={`debut-de-journee${pdfFileSuffix}`}
-                disabled={duties.length === 0}
+                sections={[{ lines: [pdfSubtitle] }, preschoolPdfSection]}
+                mainTitle="Rentrée préscolaire"
+                filename={`rentree-prescolaire${pdfFileSuffix}`}
+                disabled={preschoolDaysCount === 0 && preschoolInstructions.length === 0}
               />
             }
           >
@@ -1299,21 +1515,142 @@ export function DashboardSchedulePage() {
               <>
                 <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
                   {WEEKDAYS.map((d) => {
-                    const slot = morningByDay[d.index] ?? { flagClassId: "", preschoolIds: [], primaryIds: [] };
+                    const slot = morningByDay[d.index] ?? emptyDayProgram();
                     return (
                       <div key={d.index} className="rounded-xl bg-white/90 p-3 ring-1 ring-amber-100">
                         <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-800">
                           {d.label}
                         </p>
-                        <label className="mb-1 block text-[11px] font-medium text-slate-600">
+                        <p className="mb-1 text-[11px] font-medium text-slate-600">Accueil</p>
+                        <TeacherChips
+                          teachers={preschoolTeachers}
+                          selected={slot.preschoolAccueilIds}
+                          empty="Aucun professeur préscolaire."
+                          onToggle={(id) =>
+                            setMorningByDay((prev) => ({
+                              ...prev,
+                              [d.index]: { ...slot, preschoolAccueilIds: toggleId(slot.preschoolAccueilIds, id) },
+                            }))
+                          }
+                        />
+                        <p className="mb-1 mt-3 text-[11px] font-medium text-slate-600">Montée du drapeau</p>
+                        <TeacherChips
+                          teachers={preschoolTeachers}
+                          selected={slot.preschoolFlagIds}
+                          empty="Aucun professeur préscolaire."
+                          onToggle={(id) =>
+                            setMorningByDay((prev) => ({
+                              ...prev,
+                              [d.index]: { ...slot, preschoolFlagIds: toggleId(slot.preschoolFlagIds, id) },
+                            }))
+                          }
+                        />
+                        <p className="mb-1 mt-3 text-[11px] font-medium text-slate-600">Animation</p>
+                        <TeacherChips
+                          teachers={preschoolTeachers}
+                          selected={slot.preschoolAnimationIds}
+                          empty="Aucun professeur préscolaire."
+                          onToggle={(id) =>
+                            setMorningByDay((prev) => ({
+                              ...prev,
+                              [d.index]: { ...slot, preschoolAnimationIds: toggleId(slot.preschoolAnimationIds, id) },
+                            }))
+                          }
+                        />
+                        <p className="mb-1 mt-3 text-[11px] font-medium text-slate-600">Dames de service</p>
+                        <ManualNames
+                          values={slot.preschoolServiceNames}
+                          onChange={(preschoolServiceNames) =>
+                            setMorningByDay((prev) => ({
+                              ...prev,
+                              [d.index]: { ...slot, preschoolServiceNames },
+                            }))
+                          }
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-4 rounded-xl bg-white/90 p-3 ring-1 ring-amber-100">
+                  <InstructionLines values={preschoolInstructions} onChange={setPreschoolInstructions} />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleSaveMorning()}
+                  disabled={savingMorning}
+                  className="mt-3 app-btn-primary text-sm py-2 disabled:opacity-60"
+                >
+                  {savingMorning ? "Enregistrement…" : "Enregistrer"}
+                </button>
+              </>
+            )}
+          </AppAccordion>
+
+          <AppAccordion
+            tone="teal"
+            kicker="Primaire"
+            title="Rentrée primaire"
+            summary={
+              primaryDaysCount === 0
+                ? "Aucun jour programmé"
+                : `${primaryDaysCount} jour${primaryDaysCount > 1 ? "s" : ""}`
+            }
+            open={openCours === "primary"}
+            onToggle={() => setOpenCours("primary")}
+            headerRight={
+              <ExportPdfButton
+                sections={[{ lines: [pdfSubtitle] }, primaryPdfSection]}
+                mainTitle="Rentrée primaire"
+                filename={`rentree-primaire${pdfFileSuffix}`}
+                disabled={primaryDaysCount === 0 && primaryInstructions.length === 0}
+              />
+            }
+          >
+            {!(academicYearFilter || defaultYearId) ? (
+              <p className="text-sm text-teal-800">Choisissez une année scolaire.</p>
+            ) : (
+              <>
+                <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+                  {WEEKDAYS.map((d) => {
+                    const slot = morningByDay[d.index] ?? emptyDayProgram();
+                    return (
+                      <div key={d.index} className="rounded-xl bg-white/90 p-3 ring-1 ring-teal-100">
+                        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-700">
+                          {d.label}
+                        </p>
+                        <p className="mb-1 text-[11px] font-medium text-slate-600">Accueil</p>
+                        <TeacherChips
+                          teachers={primaryTeachers}
+                          selected={slot.primaryAccueilIds}
+                          empty="Aucun professeur primaire."
+                          onToggle={(id) =>
+                            setMorningByDay((prev) => ({
+                              ...prev,
+                              [d.index]: { ...slot, primaryAccueilIds: toggleId(slot.primaryAccueilIds, id) },
+                            }))
+                          }
+                        />
+                        <p className="mb-1 mt-3 text-[11px] font-medium text-slate-600">Dévotion</p>
+                        <TeacherChips
+                          teachers={primaryTeachers}
+                          selected={slot.primaryDevotionIds}
+                          empty="Aucun professeur primaire."
+                          onToggle={(id) =>
+                            setMorningByDay((prev) => ({
+                              ...prev,
+                              [d.index]: { ...slot, primaryDevotionIds: toggleId(slot.primaryDevotionIds, id) },
+                            }))
+                          }
+                        />
+                        <label className="mb-1 mt-3 block text-[11px] font-medium text-slate-600">
                           Montée du drapeau
                         </label>
                         <select
-                          value={slot.flagClassId}
+                          value={slot.primaryFlagClassId}
                           onChange={(e) =>
                             setMorningByDay((prev) => ({
                               ...prev,
-                              [d.index]: { ...slot, flagClassId: e.target.value },
+                              [d.index]: { ...slot, primaryFlagClassId: e.target.value },
                             }))
                           }
                           className="class-input mb-3 w-full bg-white"
@@ -1325,33 +1662,34 @@ export function DashboardSchedulePage() {
                             </option>
                           ))}
                         </select>
-                        <p className="mb-1 text-[11px] font-medium text-slate-600">Rentrée préscolaire</p>
+                        <p className="mb-1 text-[11px] font-medium text-slate-600">Défi des 5 phrases</p>
                         <TeacherChips
-                          teachers={preschoolTeachers}
-                          selected={slot.preschoolIds}
-                          empty="Aucun professeur affecté au préscolaire."
+                          teachers={staffPeople}
+                          selected={slot.primaryDefiIds}
+                          empty="Aucun responsable (hors parent et professeur)."
                           onToggle={(id) =>
                             setMorningByDay((prev) => ({
                               ...prev,
-                              [d.index]: { ...slot, preschoolIds: toggleId(slot.preschoolIds, id) },
+                              [d.index]: { ...slot, primaryDefiIds: toggleId(slot.primaryDefiIds, id) },
                             }))
                           }
                         />
-                        <p className="mb-1 mt-3 text-[11px] font-medium text-slate-600">Rentrée primaire</p>
-                        <TeacherChips
-                          teachers={primaryTeachers}
-                          selected={slot.primaryIds}
-                          empty="Aucun professeur affecté au primaire."
-                          onToggle={(id) =>
+                        <p className="mb-1 mt-3 text-[11px] font-medium text-slate-600">Prière de midi</p>
+                        <ManualNames
+                          values={slot.primaryPrayerNames}
+                          onChange={(primaryPrayerNames) =>
                             setMorningByDay((prev) => ({
                               ...prev,
-                              [d.index]: { ...slot, primaryIds: toggleId(slot.primaryIds, id) },
+                              [d.index]: { ...slot, primaryPrayerNames },
                             }))
                           }
                         />
                       </div>
                     );
                   })}
+                </div>
+                <div className="mt-4 rounded-xl bg-white/90 p-3 ring-1 ring-teal-100">
+                  <InstructionLines values={primaryInstructions} onChange={setPrimaryInstructions} />
                 </div>
                 <button
                   type="button"
@@ -1487,106 +1825,6 @@ export function DashboardSchedulePage() {
             )}
           </AppAccordion>
 
-          <AppAccordion
-            tone="slate"
-            kicker="Primaire"
-            title="Livres et cahiers"
-            summary={`${livres.length} livre${livres.length > 1 ? "s" : ""} · ${cahiers.length} cahier${cahiers.length > 1 ? "s" : ""}`}
-            open={openCours === "materials"}
-            onToggle={() => setOpenCours("materials")}
-          >
-            <div className="flex flex-wrap items-end gap-2">
-              <div>
-                <label className="mb-1 block text-[11px] font-medium text-slate-600">Type</label>
-                <select
-                  value={materialKind}
-                  onChange={(e) => setMaterialKind(e.target.value as "LIVRE" | "CAHIER")}
-                  className="class-input bg-white"
-                >
-                  <option value="LIVRE">Livre</option>
-                  <option value="CAHIER">Cahier</option>
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-[11px] font-medium text-slate-600">Matière</label>
-                <select
-                  value={materialSubjectId}
-                  onChange={(e) => {
-                    setMaterialSubjectId(e.target.value);
-                    const subj = subjects.find((s) => s.id === e.target.value);
-                    if (subj && !materialName.trim()) setMaterialName(subj.name);
-                  }}
-                  className="class-input min-w-[10rem] bg-white"
-                >
-                  <option value="">—</option>
-                  {subjects.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-[11px] font-medium text-slate-600">Nom</label>
-                <input
-                  value={materialName}
-                  onChange={(e) => setMaterialName(e.target.value)}
-                  placeholder="Français"
-                  className="class-input class-input-name"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={() => void handleAddMaterial()}
-                disabled={savingMaterial}
-                className="app-btn-primary text-sm py-2 disabled:opacity-60"
-              >
-                {savingMaterial ? "…" : "Ajouter"}
-              </button>
-            </div>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <div>
-                <p className="mb-1.5 text-[11px] font-medium text-slate-600">Livres</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {livres.length === 0 ? (
-                    <p className="text-xs text-slate-500">Aucun livre.</p>
-                  ) : (
-                    livres.map((m) => (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => void handleDeleteMaterial(m.id)}
-                        className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-800 ring-1 ring-slate-200 hover:bg-red-50 hover:text-red-700"
-                        title="Supprimer"
-                      >
-                        {m.name} ×
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
-              <div>
-                <p className="mb-1.5 text-[11px] font-medium text-slate-600">Cahiers</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {cahiers.length === 0 ? (
-                    <p className="text-xs text-slate-500">Aucun cahier.</p>
-                  ) : (
-                    cahiers.map((m) => (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => void handleDeleteMaterial(m.id)}
-                        className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-800 ring-1 ring-slate-200 hover:bg-red-50 hover:text-red-700"
-                        title="Supprimer"
-                      >
-                        {m.name} ×
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-          </AppAccordion>
 
           <AppAccordion
             tone="slate"
@@ -1894,6 +2132,95 @@ export function DashboardSchedulePage() {
             </div>
           )}
         </section>
+      ) : null}
+
+      {listClass ? (
+        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4">
+          <div className="mt-8 w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-teal-700">Liste</p>
+                <h3 className="text-lg font-bold text-slate-900">{listClass.name}</h3>
+              </div>
+              <button type="button" onClick={() => setListClass(null)} className="app-btn-secondary text-sm">
+                Fermer
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Matières
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {classSubjectNames(listClass.id).length === 0 ? (
+                    <p className="text-sm text-slate-500">Aucune matière dans Classes.</p>
+                  ) : (
+                    classSubjectNames(listClass.id).map((name) => (
+                      <span
+                        key={name}
+                        className="rounded-full bg-teal-50 px-2.5 py-1 text-[11px] font-medium text-teal-900 ring-1 ring-teal-100"
+                      >
+                        {name}
+                      </span>
+                    ))
+                  )}
+                </div>
+              </div>
+              <div>
+                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Matériel à apporter
+                </p>
+                <div className="flex gap-1.5">
+                  <input
+                    value={bringDraft}
+                    onChange={(e) => setBringDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      e.preventDefault();
+                      const line = bringDraft.trim();
+                      if (!line) return;
+                      const next = [...(bringByClass[listClass.id] ?? []), line];
+                      setBringDraft("");
+                      void saveBringItems(listClass.id, next);
+                    }}
+                    className="class-input min-w-0 flex-1"
+                  />
+                  <button
+                    type="button"
+                    disabled={savingBring}
+                    onClick={() => {
+                      const line = bringDraft.trim();
+                      if (!line) return;
+                      const next = [...(bringByClass[listClass.id] ?? []), line];
+                      setBringDraft("");
+                      void saveBringItems(listClass.id, next);
+                    }}
+                    className="app-btn-primary text-sm disabled:opacity-60"
+                  >
+                    Ajouter
+                  </button>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {(bringByClass[listClass.id] ?? []).map((line) => (
+                    <button
+                      key={line}
+                      type="button"
+                      onClick={() =>
+                        void saveBringItems(
+                          listClass.id,
+                          (bringByClass[listClass.id] ?? []).filter((x) => x !== line),
+                        )
+                      }
+                      className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-800 ring-1 ring-slate-200 hover:bg-red-50 hover:text-red-700"
+                    >
+                      {line} ×
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {gridRoom ? (

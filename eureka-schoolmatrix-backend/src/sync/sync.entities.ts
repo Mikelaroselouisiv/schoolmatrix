@@ -18,6 +18,8 @@ import { ExamSchedule } from '../exam-schedule/exam-schedule.entity';
 import { ScheduleSlot } from '../teachers/schedule-slot.entity';
 import { ClassDayMoment } from '../teachers/class-day-moment.entity';
 import { SchoolWeekDuty } from '../teachers/school-week-duty.entity';
+import { SchoolOpeningInstruction } from '../teachers/school-opening-instruction.entity';
+import { ClassBringItem } from '../teachers/class-bring-item.entity';
 import { SchoolMaterial } from '../teachers/school-material.entity';
 import { ExtracurricularActivity } from '../extracurricular-activity/extracurricular-activity.entity';
 import { Expense } from '../finance/expense.entity';
@@ -59,6 +61,8 @@ export type SyncEntityName =
   | 'ScheduleSlot'
   | 'ClassDayMoment'
   | 'SchoolWeekDuty'
+  | 'SchoolOpeningInstruction'
+  | 'ClassBringItem'
   | 'SchoolMaterial'
   | 'ExtracurricularActivity'
   | 'Expense'
@@ -106,6 +110,8 @@ export const SYNC_ENTITY_DEFS: SyncEntityDef[] = [
   { name: 'ScheduleSlot', target: ScheduleSlot, timeField: 'updated_at' },
   { name: 'ClassDayMoment', target: ClassDayMoment, timeField: 'updated_at' },
   { name: 'SchoolWeekDuty', target: SchoolWeekDuty, timeField: 'updated_at' },
+  { name: 'SchoolOpeningInstruction', target: SchoolOpeningInstruction, timeField: 'updated_at' },
+  { name: 'ClassBringItem', target: ClassBringItem, timeField: 'updated_at' },
   { name: 'SchoolMaterial', target: SchoolMaterial, timeField: 'updated_at' },
   { name: 'ExtracurricularActivity', target: ExtracurricularActivity, timeField: 'updated_at' },
   { name: 'StudentClassAssignment', target: StudentClassAssignment, timeField: 'updated_at' },

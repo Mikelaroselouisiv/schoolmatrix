@@ -22,11 +22,21 @@ import {
 export class SchoolWeekDutiesController {
   constructor(private readonly moments: ScheduleMomentsService) {}
 
+  @Get('staff')
+  async staff() {
+    const staff = await this.moments.listStaffOptions();
+    return { ok: true, staff };
+  }
+
   @Get()
   async list(
     @Query('academic_year') academicYear?: string,
     @Query('kind') kind?: string,
   ) {
+    if (academicYear && !kind) {
+      const opening = await this.moments.getOpeningProgram(academicYear);
+      return { ok: true, ...opening };
+    }
     const duties = await this.moments.listDuties({
       academic_year: academicYear,
       kind,
@@ -34,17 +44,18 @@ export class SchoolWeekDutiesController {
     return { ok: true, school_week_duties: duties };
   }
 
-  /** Programmation du début de journée (drapeau + rentrée préscolaire / primaire). */
   @Put()
   async upsert(
     @Body()
     body: {
       academic_year: string;
       days: MorningOpeningDayBody[];
+      preschool_instructions?: string[];
+      primary_instructions?: string[];
     },
   ) {
-    const school_week_duties = await this.moments.upsertWeekDuties(body);
-    return { ok: true, school_week_duties };
+    const opening = await this.moments.upsertWeekDuties(body);
+    return { ok: true, ...opening };
   }
 
   @Delete(':id')

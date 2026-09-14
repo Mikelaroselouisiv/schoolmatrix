@@ -3,11 +3,6 @@ import { API_BASE, fetchWithAuth } from "@/services/api";
 import { useSchoolProfile } from "@/context/SchoolProfileContext";
 import { educationLevelLabel } from "@/lib/educationLevels";
 import { dutiesForTeacher, dutyDisplayTitle, weekdayLabel } from "@/lib/morningOpening";
-import {
-  parseMaterialLines,
-  toggleMaterialLine,
-  type SchoolMaterialItem,
-} from "@/lib/schoolMaterials";
 
 type HubTab = "appel" | "travaux" | "materiel";
 type HomeworkKind = "DEVOIR" | "LECON";
@@ -48,18 +43,6 @@ type AssignmentCard = {
   }[];
 };
 
-type ScheduleSlot = {
-  id: string;
-  class_id?: string;
-  class_name?: string;
-  subject_name?: string | null;
-  day_of_week: number;
-  start_time: string;
-  end_time: string;
-  materials?: string | null;
-};
-
-const DAYS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
 const STATUSES = [
   { value: "PRESENT", label: "Présent" },
   { value: "ABSENT", label: "Absent" },
@@ -691,139 +674,117 @@ function MaterialsTab({
   onClassId: (id: string) => void;
   onError: (msg: string) => void;
 }) {
-  const [slots, setSlots] = useState<ScheduleSlot[]>([]);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [catalog, setCatalog] = useState<SchoolMaterialItem[]>([]);
-  const [savingId, setSavingId] = useState<string | null>(null);
+  const [lines, setLines] = useState<string[]>([]);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [yearName, setYearName] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const ctxRes = await fetchWithAuth(`${API_BASE}/school/current-context`);
+        const ctx = await ctxRes.json();
+        setYearName(ctxRes.ok ? (ctx.current_academic_year_name ?? "") : "");
+      } catch {
+        setYearName("");
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     if (!classId) {
-      setSlots([]);
+      setLines([]);
       return;
     }
     (async () => {
       try {
-        const [res, catRes] = await Promise.all([
-          fetchWithAuth(`${API_BASE}/schedule-slots?class_id=${classId}`),
-          fetchWithAuth(`${API_BASE}/school-materials`),
-        ]);
+        const params = new URLSearchParams({ class_id: classId });
+        if (yearName) params.set("academic_year", yearName);
+        const res = await fetchWithAuth(`${API_BASE}/class-bring-items?${params}`);
         const data = await res.json();
-        const cat = await catRes.json();
-        const list: ScheduleSlot[] = data.schedule_slots || [];
-        setSlots(list);
-        const next: Record<string, string> = {};
-        for (const s of list) next[s.id] = s.materials || "";
-        setDrafts(next);
-        setCatalog(catRes.ok ? (cat.school_materials ?? []) : []);
+        setLines(res.ok ? (data.items ?? []).map((i: { label: string }) => i.label) : []);
         onError("");
       } catch {
-        onError("Impossible de charger l’horaire.");
+        onError("Impossible de charger le matériel.");
       }
     })();
-  }, [classId, onError]);
+  }, [classId, yearName, onError]);
 
-  async function save(id: string) {
-    setSavingId(id);
+  async function save(next: string[]) {
+    setSaving(true);
     try {
-      const res = await fetchWithAuth(`${API_BASE}/teachers/me/schedule-slots/${id}/materials`, {
-        method: "PATCH",
+      const res = await fetchWithAuth(`${API_BASE}/class-bring-items`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ materials: drafts[id] || null }),
+        body: JSON.stringify({ class_id: classId, academic_year: yearName || null, lines: next }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Enregistrement refusé");
+      setLines((data.items ?? []).map((i: { label: string }) => i.label));
       onError("");
     } catch (err) {
       onError(err instanceof Error ? err.message : "Enregistrement impossible.");
     } finally {
-      setSavingId(null);
+      setSaving(false);
     }
   }
 
+  function add() {
+    const line = draft.trim();
+    if (!line) return;
+    if (lines.some((x) => x.toLowerCase() === line.toLowerCase())) {
+      setDraft("");
+      return;
+    }
+    setDraft("");
+    void save([...lines, line]);
+  }
+
   if (classes.length === 0) {
-    return (
-      <p className="text-sm text-slate-500">
-        La liste de matériel accompagne l’horaire du 1er et 2e cycle fondamental.
-      </p>
-    );
+    return <p className="text-sm text-slate-500">Aucune classe.</p>;
   }
 
   return (
     <div className="space-y-4">
       <ClassSelect classes={classes} classId={classId} onClassId={onClassId} />
-      {slots.length === 0 ? (
-        <p className="text-sm text-slate-500">Aucun créneau d’horaire pour cette classe.</p>
-      ) : (
-        <div className="space-y-3">
-          {slots.map((s) => (
-            <div
-              key={s.id}
-              className="rounded-xl border border-[var(--app-border)] bg-white p-4 space-y-2"
+      <div>
+        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+          Matériel à apporter
+        </p>
+        <div className="flex gap-1.5">
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              e.preventDefault();
+              add();
+            }}
+            className="class-input min-w-0 flex-1"
+          />
+          <button
+            type="button"
+            disabled={saving}
+            onClick={add}
+            className="app-btn-primary text-sm disabled:opacity-60"
+          >
+            Ajouter
+          </button>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {lines.map((line) => (
+            <button
+              key={line}
+              type="button"
+              disabled={saving}
+              onClick={() => void save(lines.filter((x) => x !== line))}
+              className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-800 ring-1 ring-slate-200 hover:bg-red-50 hover:text-red-700"
             >
-              <div className="font-medium text-slate-900">
-                {DAYS[s.day_of_week] ?? s.day_of_week} · {s.start_time}–{s.end_time} ·{" "}
-                {s.subject_name || "Cours"}
-              </div>
-              <label className="block text-sm text-slate-600">Matériel à apporter</label>
-              {catalog.length > 0 ? (
-                <div className="space-y-2">
-                  {(["LIVRE", "CAHIER"] as const).map((kind) => {
-                    const items = catalog.filter((m) => m.kind === kind);
-                    if (items.length === 0) return null;
-                    const selected = parseMaterialLines(drafts[s.id]);
-                    return (
-                      <div key={kind}>
-                        <p className="mb-1 text-[11px] font-medium text-slate-500">
-                          {kind === "LIVRE" ? "Livres" : "Cahiers"}
-                        </p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {items.map((m) => {
-                            const on = selected.includes(m.label);
-                            return (
-                              <button
-                                key={m.id}
-                                type="button"
-                                onClick={() =>
-                                  setDrafts((d) => ({
-                                    ...d,
-                                    [s.id]: toggleMaterialLine(d[s.id], m.label),
-                                  }))
-                                }
-                                className={`rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ${
-                                  on
-                                    ? "bg-teal-700 text-white ring-teal-700"
-                                    : "bg-white text-slate-700 ring-slate-200"
-                                }`}
-                              >
-                                {m.name}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <textarea
-                  value={drafts[s.id] ?? ""}
-                  onChange={(e) => setDrafts((d) => ({ ...d, [s.id]: e.target.value }))}
-                  rows={3}
-                  className="w-full text-sm border border-[var(--app-border)] rounded-lg px-3 py-2"
-                />
-              )}
-              <button
-                type="button"
-                disabled={savingId === s.id}
-                onClick={() => void save(s.id)}
-                className="app-btn-primary disabled:opacity-60"
-              >
-                {savingId === s.id ? "Enregistrement..." : "Enregistrer"}
-              </button>
-            </div>
+              {line} ×
+            </button>
           ))}
         </div>
-      )}
+      </div>
     </div>
   );
 }

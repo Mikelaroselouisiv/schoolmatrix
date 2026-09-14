@@ -6,6 +6,8 @@ import { TeacherClassSubject } from './teacher-class-subject.entity';
 import { ScheduleSlot } from './schedule-slot.entity';
 import { ClassDayMoment } from './class-day-moment.entity';
 import { SchoolWeekDuty } from './school-week-duty.entity';
+import { SchoolOpeningInstruction } from './school-opening-instruction.entity';
+import { ClassBringItem } from './class-bring-item.entity';
 import { SchoolMaterial } from './school-material.entity';
 import { User } from '../users/user.entity';
 import { Role } from '../roles/role.entity';
@@ -21,6 +23,7 @@ import { ScheduleSlotsController } from './schedule-slots.controller';
 import { StudentScheduleController } from './student-schedule.controller';
 import { ScheduleMomentsController } from './schedule-moments.controller';
 import { SchoolWeekDutiesController } from './school-week-duties.controller';
+import { ClassBringItemsController } from './class-bring-items.controller';
 import { SchoolMaterialsController } from './school-materials.controller';
 import { ParentScopeModule } from '../auth/parent-scope.module';
 import { UsersModule } from '../users/users.module';
@@ -36,6 +39,8 @@ import { UsersModule } from '../users/users.module';
       ScheduleSlot,
       ClassDayMoment,
       SchoolWeekDuty,
+      SchoolOpeningInstruction,
+      ClassBringItem,
       SchoolMaterial,
       User,
       Role,
@@ -51,6 +56,7 @@ import { UsersModule } from '../users/users.module';
     StudentScheduleController,
     ScheduleMomentsController,
     SchoolWeekDutiesController,
+    ClassBringItemsController,
     SchoolMaterialsController,
   ],
   providers: [TeachersService, ScheduleMomentsService, SchoolMaterialsService],

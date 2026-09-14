@@ -407,24 +407,21 @@ export function ScheduleGridModal({
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {SCHEDULE_DAYS.map((day) => {
                       const cycle = morningCycleFromLevel(classLevel);
-                      const flag = schoolDuties.find(
-                        (x) =>
-                          x.kind === "FLAG" &&
-                          x.day_of_week === day.index &&
-                          x.class_id === classId,
-                      );
-                      const rentree = schoolDuties.filter(
-                        (x) =>
-                          x.kind === "RENTREE" &&
-                          x.day_of_week === day.index &&
-                          x.cycle === cycle,
-                      );
+                      const ofDay = schoolDuties.filter((x) => x.day_of_week === day.index);
+                      const flagClass = ofDay.find((x) => x.kind === "FLAG" && x.class_id === classId);
                       const parts: string[] = [];
-                      if (flag) parts.push("Montée du drapeau");
-                      if (rentree.length > 0) {
+                      if (flagClass) parts.push("Montée du drapeau");
+                      for (const kind of ["ACCUEIL", "FLAG", "ANIMATION", "DEVOTION", "DEFI", "SERVICE", "PRIERE", "RENTREE"]) {
+                        const rows = ofDay.filter(
+                          (x) =>
+                            x.kind === kind &&
+                            x.cycle === cycle &&
+                            !(kind === "FLAG" && x.class_id),
+                        );
+                        if (rows.length === 0) continue;
                         parts.push(
-                          `${dutyDisplayTitle(rentree[0])} · ${namesJoin(
-                            rentree.map((r) => r.responsible_name ?? "").filter(Boolean),
+                          `${dutyDisplayTitle(rows[0])} · ${namesJoin(
+                            rows.map((r) => r.responsible_name ?? "").filter(Boolean),
                           )}`,
                         );
                       }

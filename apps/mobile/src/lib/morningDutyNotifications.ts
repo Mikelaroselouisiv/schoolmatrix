@@ -1,12 +1,12 @@
 /**
- * Notification locale la veille d’une affectation (rentrée / drapeau).
+ * Notification locale la veille d’une affectation (accueil, drapeau, défi…).
  * Même mécanisme que les anniversaires : au login ou au retour au premier plan.
  */
 
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
-import { isTeacherRole } from './permissions';
+import { isParentRole, isTeacherRole } from './permissions';
 import {
   getCurrentContext,
   getTeacherClasses,
@@ -66,17 +66,15 @@ export async function syncMorningDutyNotifications(
   roleName: string,
   userId?: number | null,
 ): Promise<void> {
-  if (!isTeacherRole(roleName) || userId == null) return;
+  if (isParentRole(roleName) || userId == null) return;
   const tomorrow = tomorrowWeekdayIndex();
   if (tomorrow < 1 || tomorrow > 5) return;
 
   try {
     const ctx = await getCurrentContext();
     const yearName = ctx?.academic_year?.name || ctx?.current_academic_year_name || undefined;
-    const [classes, duties] = await Promise.all([
-      getTeacherClasses(),
-      listSchoolWeekDuties({ academic_year: yearName }),
-    ]);
+    const classes = isTeacherRole(roleName) ? await getTeacherClasses() : [];
+    const duties = await listSchoolWeekDuties({ academic_year: yearName });
     const mine = dutiesForTeacher(
       duties,
       userId,
@@ -91,12 +89,16 @@ export async function syncMorningDutyNotifications(
     if (!allowed) return;
 
     const lines = mine.map((d) => {
-      if (d.kind === 'FLAG') {
+      const kind = (d.kind || '').toUpperCase();
+      if (kind === 'FLAG' && d.class_id) {
         return d.class_name
           ? `votre classe ${d.class_name} est responsable de la montée du drapeau`
           : 'votre classe est responsable de la montée du drapeau';
       }
-      return `vous êtes responsable de la ${dutyDisplayTitle(d).toLowerCase()}`;
+      const title = dutyDisplayTitle(d).toLowerCase();
+      if (kind === 'DEFI') return `vous êtes responsable du ${title}`;
+      if (kind === 'ACCUEIL' || kind === 'ANIMATION') return `vous êtes responsable de l’${title}`;
+      return `vous êtes responsable de la ${title}`;
     });
     const unique = [...new Set(lines)];
     const body =

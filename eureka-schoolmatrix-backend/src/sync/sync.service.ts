@@ -1211,15 +1211,23 @@ export class SyncService implements OnModuleInit {
       );
     }
     const where =
-      kind === 'FLAG'
-        ? { academic_year, kind: 'FLAG', day_of_week }
-        : {
-            academic_year,
-            kind,
-            day_of_week,
-            cycle: data.cycle ?? null,
-            responsible_user_id: data.responsible_user_id ?? null,
-          };
+      kind === 'FLAG' && String(data.cycle ?? '') === 'PRIMAIRE'
+        ? { academic_year, kind: 'FLAG', cycle: 'PRIMAIRE', day_of_week }
+        : data.manual_name
+          ? {
+              academic_year,
+              kind,
+              day_of_week,
+              cycle: data.cycle ?? null,
+              manual_name: data.manual_name,
+            }
+          : {
+              academic_year,
+              kind,
+              day_of_week,
+              cycle: data.cycle ?? null,
+              responsible_user_id: data.responsible_user_id ?? null,
+            };
     const other = await repo.findOne({
       where: where as any,
     });

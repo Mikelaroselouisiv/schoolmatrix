@@ -12,23 +12,42 @@ import { User } from '../users/user.entity';
 import { Class } from '../classes/class.entity';
 import type { MorningDutyCycle } from '../roles/education-levels';
 
-/** Programmation du début de journée (montée du drapeau, rentrée). */
-export const SCHOOL_DUTY_KINDS = ['FLAG', 'RENTREE', 'DEVOTION'] as const;
+export const SCHOOL_DUTY_KINDS = [
+  'ACCUEIL',
+  'FLAG',
+  'ANIMATION',
+  'SERVICE',
+  'DEVOTION',
+  'DEFI',
+  'PRIERE',
+  'RENTREE',
+] as const;
 export type SchoolDutyKind = (typeof SCHOOL_DUTY_KINDS)[number];
 
 @Entity('school_week_duty')
-@Index('UQ_school_week_duty_flag_year_day', ['academic_year', 'day_of_week'], {
-  unique: true,
-  where: `kind = 'FLAG'`,
-})
-@Index('UQ_school_week_duty_rentree_year_cycle_day_user', [
+@Index('UQ_school_week_duty_user_slot', [
   'academic_year',
+  'kind',
   'cycle',
   'day_of_week',
   'responsible_user_id',
 ], {
   unique: true,
-  where: `kind = 'RENTREE'`,
+  where: `"responsible_user_id" IS NOT NULL`,
+})
+@Index('UQ_school_week_duty_primary_flag', ['academic_year', 'day_of_week'], {
+  unique: true,
+  where: `kind = 'FLAG' AND cycle = 'PRIMAIRE'`,
+})
+@Index('UQ_school_week_duty_manual_slot', [
+  'academic_year',
+  'kind',
+  'cycle',
+  'day_of_week',
+  'manual_name',
+], {
+  unique: true,
+  where: `"manual_name" IS NOT NULL`,
 })
 export class SchoolWeekDuty {
   @PrimaryGeneratedColumn('uuid')
@@ -37,11 +56,11 @@ export class SchoolWeekDuty {
   @Column({ type: 'varchar', length: 20 })
   academic_year: string;
 
-  /** FLAG | RENTREE | DEVOTION (ancien) */
+  /** ACCUEIL | FLAG | ANIMATION | SERVICE | DEVOTION | DEFI | PRIERE */
   @Column({ type: 'varchar', length: 20 })
   kind: SchoolDutyKind;
 
-  /** PRESCOLAIRE | PRIMAIRE — rentrée seulement. */
+  /** PRESCOLAIRE | PRIMAIRE */
   @Column({ type: 'varchar', length: 20, nullable: true })
   cycle: MorningDutyCycle | null;
 
@@ -67,6 +86,10 @@ export class SchoolWeekDuty {
   @ManyToOne(() => Class, { onDelete: 'SET NULL', nullable: true })
   @JoinColumn({ name: 'class_id' })
   class: Class | null;
+
+  /** Dames de service / prière midi : saisi à la main, PDF seulement. */
+  @Column({ type: 'varchar', length: 120, nullable: true })
+  manual_name: string | null;
 
   @CreateDateColumn()
   created_at: Date;

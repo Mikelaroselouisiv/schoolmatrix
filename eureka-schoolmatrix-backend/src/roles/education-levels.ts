@@ -73,11 +73,30 @@ export const ATTENDANCE_LEVELS: EducationLevelKey[] = [
   'FONDAMENTAL_2',
 ];
 
-/** Liste de matériel accompagnant l’horaire : 1er et 2e cycles seulement. */
-export const MATERIALS_LEVELS: EducationLevelKey[] = [
+/** Horaire chiffré (créneaux horaires) : 3e cycle, secondaire, formation supérieure. */
+export const TIMED_SCHEDULE_LEVELS: EducationLevelKey[] = [
+  'FONDAMENTAL_3',
+  'SECONDAIRE',
+  'FORMATION_SUPERIEURE',
+];
+
+/** Matières en liste, sans heure : préscolaire + 1er / 2e cycles. */
+export const LIST_SCHEDULE_LEVELS: EducationLevelKey[] = [
+  'PRESCOLAIRE',
   'FONDAMENTAL_1',
   'FONDAMENTAL_2',
 ];
+
+export function isTimedScheduleLevel(level?: string | null): boolean {
+  return !!level && (TIMED_SCHEDULE_LEVELS as string[]).includes(level);
+}
+
+export function isListScheduleLevel(level?: string | null): boolean {
+  return !!level && (LIST_SCHEDULE_LEVELS as string[]).includes(level);
+}
+
+/** Liste de matériel accompagnant l’horaire : préscolaire + 1er / 2e cycles. */
+export const MATERIALS_LEVELS: EducationLevelKey[] = [...LIST_SCHEDULE_LEVELS];
 
 export function isAttendanceLevel(level?: string | null): boolean {
   return !!level && (ATTENDANCE_LEVELS as string[]).includes(level);

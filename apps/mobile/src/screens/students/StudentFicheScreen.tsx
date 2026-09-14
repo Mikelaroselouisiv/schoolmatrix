@@ -30,11 +30,9 @@ import {
   getExamResults,
   getImageUrl,
   getPaymentStatus,
-  getScheduleSlots,
   getStudent,
   getStudentHomework,
-  listScheduleMoments,
-  listSchoolWeekDuties,
+  getStudentSchedule,
   type DisciplineSummary,
   type ExamResults,
   type HomeworkAssignment,
@@ -48,7 +46,6 @@ import {
 } from '../../lib/offlineCache';
 import { colors } from '../../theme/tokens';
 import { isHigherEducationLevel, learnerNoun } from '../../lib/educationLevels';
-import { dutiesForStudent, dutyDisplayTitle } from '../../lib/morningOpening';
 import type { StudentsStackParamList } from '../../navigation/types';
 
 const DAYS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
@@ -75,6 +72,8 @@ export function StudentFicheScreen({ navigation, route }: Props) {
   const [payment, setPayment] = useState<PaymentStatus | null>(null);
   const [grades, setGrades] = useState<ExamResults | null>(null);
   const [schedule, setSchedule] = useState<ScheduleSlot[]>([]);
+  const [listSubjects, setListSubjects] = useState<string[]>([]);
+  const [bringLines, setBringLines] = useState<string[]>([]);
   const [homework, setHomework] = useState<HomeworkAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -105,47 +104,20 @@ export function StudentFicheScreen({ navigation, route }: Props) {
       setPayment(p);
       setGrades(g);
       if (s?.class_id) {
-        const [slots, moments, duties] = await Promise.all([
-          getScheduleSlots(s.class_id),
-          listScheduleMoments({
-            class_id: s.class_id,
-            academic_year: yearName || undefined,
-          }),
-          listSchoolWeekDuties({
-            academic_year: yearName || undefined,
-          }),
-        ]);
-        const relevant = dutiesForStudent(duties, s.class_id, s.class_level);
-        const extra: ScheduleSlot[] = [
-          ...relevant.map((d) => ({
-            id: `duty:${d.id}`,
-            subject_name: dutyDisplayTitle(d),
-            teacher_name: d.responsible_name,
-            class_name: d.class_name ?? undefined,
-            day_of_week: d.day_of_week,
-            start_time: d.start_time,
-            end_time: d.end_time,
-            kind: d.kind,
-          })),
-          ...moments.map((m) => ({
-            id: `moment:${m.id}`,
-            subject_name: m.title,
-            day_of_week: m.day_of_week,
-            start_time: m.start_time,
-            end_time: m.end_time,
-            class_name: m.class_name ?? undefined,
-            kind: m.kind,
-          })),
-          ...slots,
-        ];
-        extra.sort(
-          (a, b) =>
-            (a.day_of_week ?? 0) - (b.day_of_week ?? 0) ||
-            String(a.start_time).localeCompare(String(b.start_time)),
-        );
-        setSchedule(extra);
+        try {
+          const data = await getStudentSchedule(studentId, yearName);
+          setSchedule(data.slots ?? []);
+          setListSubjects(data.list_subjects ?? []);
+          setBringLines((data.bring_items ?? []).map((i) => i.label).filter(Boolean));
+        } catch {
+          setSchedule([]);
+          setListSubjects([]);
+          setBringLines([]);
+        }
       } else {
         setSchedule([]);
+        setListSubjects([]);
+        setBringLines([]);
       }
       try {
         setHomework(await getStudentHomework(studentId));
@@ -307,7 +279,27 @@ export function StudentFicheScreen({ navigation, route }: Props) {
 
         <View style={styles.block}>
           <Text style={styles.blockTitle}>Emploi du temps</Text>
-          {sortedSchedule.length === 0 ? (
+          {listSubjects.length > 0 ? (
+            <View style={{ marginBottom: 8 }}>
+              <Text style={styles.scheduleMeta}>Matières</Text>
+              {listSubjects.map((name) => (
+                <Text key={name} style={styles.scheduleSubject}>
+                  {name}
+                </Text>
+              ))}
+            </View>
+          ) : null}
+          {bringLines.length > 0 ? (
+            <View style={{ marginBottom: 8 }}>
+              <Text style={styles.scheduleMeta}>Matériel à apporter</Text>
+              {bringLines.map((line) => (
+                <Text key={line} style={styles.scheduleSubject}>
+                  {line}
+                </Text>
+              ))}
+            </View>
+          ) : null}
+          {sortedSchedule.length === 0 && listSubjects.length === 0 && bringLines.length === 0 ? (
             <Text style={styles.emptyLine}>—</Text>
           ) : (
             sortedSchedule.map((slot) => (

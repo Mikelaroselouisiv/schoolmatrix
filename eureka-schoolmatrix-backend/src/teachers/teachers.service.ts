@@ -18,6 +18,7 @@ import {
 } from '../roles/roles.constants';
 import {
   isAttendanceLevel,
+  isListScheduleLevel,
   isMaterialsLevel,
   morningCycleFromLevel,
 } from '../roles/education-levels';
@@ -150,8 +151,14 @@ export class TeachersService {
 
     const cycle = morningCycleFromLevel(student.class?.level);
     const relevantDuties = duties.filter((d) => {
-      if (d.kind === 'FLAG') return d.class_id === classId;
-      if (d.kind === 'RENTREE') return !!cycle && d.cycle === cycle;
+      const kind = (d.kind || '').toUpperCase();
+      const cycleMatch = !!cycle && d.cycle === cycle;
+      if (kind === 'FLAG' && d.class_id) return d.class_id === classId;
+      if (kind === 'SERVICE' || kind === 'PRIERE') return cycleMatch;
+      if (['ACCUEIL', 'ANIMATION', 'DEVOTION', 'DEFI', 'RENTREE'].includes(kind)) {
+        return cycleMatch;
+      }
+      if (kind === 'FLAG') return cycleMatch;
       return false;
     });
 
@@ -190,28 +197,51 @@ export class TeachersService {
         materials: null as string | null,
         is_school_wide: false,
       })),
-      ...slots.map((s) => ({
-        id: s.id,
-        kind: 'COURSE' as const,
-        title: s.subject_name ?? 'Cours',
-        day_of_week: s.day_of_week,
-        start_time: s.start_time,
-        end_time: s.end_time,
-        subject_id: s.subject_id ?? null,
-        subject_name: s.subject_name ?? null,
-        room_id: s.room_id ?? null,
-        room_name: s.room_name ?? null,
-        teacher_id: s.teacher_id ?? null,
-        teacher_name: s.teacher_name ?? null,
-        academic_year: s.academic_year,
-        materials: s.materials ?? null,
-        is_school_wide: false,
-      })),
+      ...(isListScheduleLevel(student.class?.level)
+        ? []
+        : slots.map((s) => ({
+            id: s.id,
+            kind: 'COURSE' as const,
+            title: s.subject_name ?? 'Cours',
+            day_of_week: s.day_of_week,
+            start_time: s.start_time,
+            end_time: s.end_time,
+            subject_id: s.subject_id ?? null,
+            subject_name: s.subject_name ?? null,
+            room_id: s.room_id ?? null,
+            room_name: s.room_name ?? null,
+            teacher_id: s.teacher_id ?? null,
+            teacher_name: s.teacher_name ?? null,
+            academic_year: s.academic_year,
+            materials: s.materials ?? null,
+            is_school_wide: false,
+          }))),
     ].sort(
       (a, b) =>
         a.day_of_week - b.day_of_week ||
         a.start_time.localeCompare(b.start_time),
     );
+
+    const listMode = isListScheduleLevel(student.class?.level);
+    let bring_items: { id: string; label: string }[] = [];
+    let list_subjects: string[] = [];
+    if (listMode && classId) {
+      bring_items = await this.scheduleMoments.listBringItems(
+        classId,
+        academicYear,
+      );
+      const assigns = await this.teacherClassSubjectRepo.find({
+        where: { class_id: classId },
+        relations: ['subject'],
+      });
+      list_subjects = [
+        ...new Set(
+          assigns
+            .map((a) => a.subject?.name?.trim())
+            .filter((n): n is string => !!n),
+        ),
+      ].sort((a, b) => a.localeCompare(b, 'fr'));
+    }
 
     return {
       student_id: student.id,
@@ -219,6 +249,9 @@ export class TeachersService {
       class_id: classId,
       class_name: student.class?.name ?? null,
       academic_year: academicYear ?? null,
+      schedule_mode: listMode ? 'list' : 'timed',
+      bring_items,
+      list_subjects,
       slots: merged,
     };
   }

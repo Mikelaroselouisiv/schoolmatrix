@@ -31,10 +31,10 @@ import { AccessDenied } from '../../lib/access';
 import { toYYYYMMDD } from '../../lib/format';
 import {
   emptyWeekProgram,
-  isMorningOpeningLevel,
+  emptyDayProgram,
+  isListScheduleLevel,
   MORNING_PRIMAIRE_LEVELS,
   MORNING_WEEKDAYS,
-  namesJoin,
   programFromDuties,
   uniqueTeachersFromAssignments,
   type DayMorningProgram,
@@ -58,9 +58,12 @@ import {
   listExtracurricularActivities,
   listScheduleSlots,
   listScheduleMoments,
-  listSchoolWeekDuties,
+  getSchoolOpeningProgram,
+  listSchoolWeekStaff,
   listTeacherAssignments,
   upsertSchoolWeekDuties,
+  listClassBringItems,
+  replaceClassBringItems,
   updateExtracurricularActivity,
   type AcademicYear,
   type ClassDayMoment,
@@ -128,6 +131,10 @@ function teacherLabel(t: TeacherItem): string {
   return [t.first_name, t.last_name].filter(Boolean).join(' ') || t.email || `#${t.id}`;
 }
 
+function toggleNum(ids: number[], id: number): number[] {
+  return ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
+}
+
 export function ScheduleScreen({}: Props) {
   const { roleName, rolePermissions } = useAuth();
   const { context } = useSchool();
@@ -164,8 +171,13 @@ export function ScheduleScreen({}: Props) {
   const [formMomentDays, setFormMomentDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [formMomentLabel, setFormMomentLabel] = useState('');
   const [morningByDay, setMorningByDay] = useState<Record<number, DayMorningProgram>>(emptyWeekProgram);
+  const [preschoolInstructions, setPreschoolInstructions] = useState<string[]>([]);
+  const [primaryInstructions, setPrimaryInstructions] = useState<string[]>([]);
+  const [staffPeople, setStaffPeople] = useState<{ id: number; name: string }[]>([]);
   const [flagDayTarget, setFlagDayTarget] = useState(1);
   const [savingMorning, setSavingMorning] = useState(false);
+  const [bringLines, setBringLines] = useState<string[]>([]);
+  const [savingBring, setSavingBring] = useState(false);
 
   const [formClassId, setFormClassId] = useState('');
   const [formSubjectId, setFormSubjectId] = useState('');
@@ -183,6 +195,19 @@ export function ScheduleScreen({}: Props) {
 
   const yearName = years.find((y) => y.id === yearId)?.name || '';
   const classLabel = classes.find((c) => c.id === classId)?.name || 'Toutes';
+  const selectedClass = classes.find((c) => c.id === classId);
+  const listMode = isListScheduleLevel(selectedClass?.level);
+  const listSubjects = useMemo(() => {
+    if (!classId) return [];
+    return [
+      ...new Set(
+        assignments
+          .filter((a) => a.class_id === classId)
+          .map((a) => a.subject_name)
+          .filter((n): n is string => !!n),
+      ),
+    ].sort((a, b) => a.localeCompare(b, 'fr'));
+  }, [assignments, classId]);
   const roomLabel = rooms.find((r) => r.id === roomId)?.name || 'Toutes';
   const preschoolTeachers = useMemo(
     () =>
@@ -213,7 +238,7 @@ export function ScheduleScreen({}: Props) {
     setError('');
     try {
       if (tab === 'cours') {
-        const [list, momentList, dutyList] = await Promise.all([
+        const [list, momentList] = await Promise.all([
           listScheduleSlots({
             academic_year: yearName || undefined,
             class_id: classId || undefined,
@@ -224,13 +249,13 @@ export function ScheduleScreen({}: Props) {
             academic_year: yearName || undefined,
             class_id: classId || undefined,
           }),
-          listSchoolWeekDuties({
-            academic_year: yearName || undefined,
-          }),
         ]);
-        setSlots(list);
-        setMoments(momentList);
-        setMorningByDay(programFromDuties(dutyList));
+          const opening = await getSchoolOpeningProgram(yearName || undefined);
+          setSlots(list);
+          setMoments(momentList);
+          setMorningByDay(programFromDuties(opening.school_week_duties));
+          setPreschoolInstructions(opening.preschool_instructions);
+          setPrimaryInstructions(opening.primary_instructions);
       } else if (tab === 'examens') {
         setExams(await listExamSchedules({ class_id: classId || undefined }));
       } else {
@@ -263,11 +288,23 @@ export function ScheduleScreen({}: Props) {
           const slot = morningByDay[d.index] ?? emptyWeekProgram()[d.index];
           return {
             day_of_week: d.index,
-            flag_class_id: slot.flagClassId || null,
-            preschool_teacher_ids: slot.preschoolIds,
-            primary_teacher_ids: slot.primaryIds,
+            preschool: {
+              accueil_ids: slot.preschoolAccueilIds,
+              flag_ids: slot.preschoolFlagIds,
+              animation_ids: slot.preschoolAnimationIds,
+              service_names: slot.preschoolServiceNames,
+            },
+            primary: {
+              accueil_ids: slot.primaryAccueilIds,
+              devotion_ids: slot.primaryDevotionIds,
+              flag_class_id: slot.primaryFlagClassId || null,
+              defi_ids: slot.primaryDefiIds,
+              prayer_names: slot.primaryPrayerNames,
+            },
           };
         }),
+        preschool_instructions: preschoolInstructions,
+        primary_instructions: primaryInstructions,
       });
       setSuccess('Début de journée enregistré.');
       await loadLists();
@@ -282,12 +319,13 @@ export function ScheduleScreen({}: Props) {
     let cancelled = false;
     (async () => {
       try {
-        const [y, c, r, t, a] = await Promise.all([
+        const [y, c, r, t, a, staff] = await Promise.all([
           getAcademicYears(),
           getClasses(),
           getRooms(),
           getTeachers(),
           listTeacherAssignments(),
+          listSchoolWeekStaff(),
         ]);
         if (cancelled) return;
         setYears(y);
@@ -295,6 +333,7 @@ export function ScheduleScreen({}: Props) {
         setRooms(r);
         setTeachers(t);
         setAssignments(a);
+        setStaffPeople(staff.map((s) => ({ id: s.id, name: s.name })));
         const defaultYear =
           context?.academic_year?.id ||
           context?.current_academic_year_id ||
@@ -317,6 +356,14 @@ export function ScheduleScreen({}: Props) {
   useEffect(() => {
     if (!boot) void loadLists();
   }, [boot, loadLists]);
+
+  useEffect(() => {
+    if (!listMode || !classId) {
+      setBringLines([]);
+      return;
+    }
+    void listClassBringItems(classId, yearName || undefined).then(setBringLines);
+  }, [listMode, classId, yearName]);
 
   useEffect(() => {
     if (!formClassId) {
@@ -351,6 +398,7 @@ export function ScheduleScreen({}: Props) {
   }, [slots]);
 
   const slotSections = useMemo(() => {
+    if (listMode) return [];
     const by = new Map<number, ScheduleSlot[]>();
     for (const s of sortedSlots) {
       const k = s.day_of_week ?? 0;
@@ -361,7 +409,7 @@ export function ScheduleScreen({}: Props) {
     return [1, 2, 3, 4, 5]
       .filter((d) => by.has(d))
       .map((d) => ({ title: dayLabel(d), data: by.get(d)! }));
-  }, [sortedSlots]);
+  }, [sortedSlots, listMode]);
 
   function openCreate(kind: FormKind = 'slot') {
     setSuccess('');
@@ -572,7 +620,7 @@ export function ScheduleScreen({}: Props) {
       return [
         { id: '', label: '— Classe —' },
         ...classes
-          .filter((c) => isMorningOpeningLevel(c.level))
+          .filter((c) => (MORNING_PRIMAIRE_LEVELS as readonly string[]).includes(c.level ?? ''))
           .map((c) => ({ id: c.id, label: c.name })),
       ];
     }
@@ -609,7 +657,7 @@ export function ScheduleScreen({}: Props) {
       case 'flagClass':
         setMorningByDay((prev) => {
           const slot = prev[flagDayTarget] ?? emptyWeekProgram()[flagDayTarget];
-          return { ...prev, [flagDayTarget]: { ...slot, flagClassId: id } };
+          return { ...prev, [flagDayTarget]: { ...slot, primaryFlagClassId: id } };
         });
         break;
       case 'formMomentKind':
@@ -675,7 +723,9 @@ export function ScheduleScreen({}: Props) {
         {canEdit ? (
           tab === 'cours' ? (
             <View style={{ gap: 8 }}>
-              <Button title="Ajouter un cours" onPress={() => openCreate('slot')} />
+              {listMode ? null : (
+                <Button title="Ajouter un cours" onPress={() => openCreate('slot')} />
+              )}
               <Button
                 title="Moment spécial (récré, rentrée…)"
                 variant="ghost"
@@ -707,98 +757,87 @@ export function ScheduleScreen({}: Props) {
           ListHeaderComponent={
             <View style={{ marginBottom: 8, gap: 10 }}>
               <View style={styles.panelAmber}>
-                <Text style={styles.kickerAmber}>Préscolaire & primaire</Text>
-                <Text style={styles.panelTitle}>Début de journée</Text>
+                <Text style={styles.kickerAmber}>Préscolaire</Text>
+                <Text style={styles.panelTitle}>Rentrée</Text>
                 {MORNING_WEEKDAYS.map((d) => {
-                  const slot = morningByDay[d.index] ?? emptyWeekProgram()[d.index];
-                  const flagName =
-                    classes.find((c) => c.id === slot.flagClassId)?.name || '— Classe —';
-                  const prescoNames = namesJoin(
-                    preschoolTeachers
-                      .filter((t) => slot.preschoolIds.includes(t.id))
-                      .map((t) => t.name),
-                  );
-                  const primNames = namesJoin(
-                    primaryTeachers
-                      .filter((t) => slot.primaryIds.includes(t.id))
-                      .map((t) => t.name),
-                  );
+                  const slot = morningByDay[d.index] ?? emptyDayProgram();
                   return (
-                    <View key={d.index} style={{ marginTop: 8, gap: 6 }}>
+                    <View key={`pre-${d.index}`} style={{ marginTop: 8, gap: 6 }}>
                       <Text style={styles.cardTitle}>{d.label}</Text>
-                      {canEdit ? (
-                        <>
-                          <SelectChip
-                            label="Montée du drapeau"
-                            value={flagName}
-                            onPress={() => {
-                              setFlagDayTarget(d.index);
-                              setPicker('flagClass');
-                            }}
-                          />
-                          <Text style={styles.chipLabel}>Rentrée préscolaire</Text>
-                          <View style={styles.filters}>
-                            {preschoolTeachers.length === 0 ? (
-                              <Muted>Aucun professeur affecté.</Muted>
-                            ) : (
-                              preschoolTeachers.map((t) => {
-                                const on = slot.preschoolIds.includes(t.id);
-                                return (
-                                  <Pressable
-                                    key={t.id}
-                                    onPress={() =>
-                                      setMorningByDay((prev) => {
-                                        const cur = prev[d.index] ?? emptyWeekProgram()[d.index];
-                                        const ids = cur.preschoolIds.includes(t.id)
-                                          ? cur.preschoolIds.filter((x) => x !== t.id)
-                                          : [...cur.preschoolIds, t.id];
-                                        return { ...prev, [d.index]: { ...cur, preschoolIds: ids } };
-                                      })
-                                    }
-                                    style={[styles.chip, on ? styles.chipOn : null]}
-                                  >
-                                    <Text style={styles.chipValue}>{t.name}</Text>
-                                  </Pressable>
-                                );
-                              })
-                            )}
-                          </View>
-                          <Text style={styles.chipLabel}>Rentrée primaire</Text>
-                          <View style={styles.filters}>
-                            {primaryTeachers.length === 0 ? (
-                              <Muted>Aucun professeur affecté.</Muted>
-                            ) : (
-                              primaryTeachers.map((t) => {
-                                const on = slot.primaryIds.includes(t.id);
-                                return (
-                                  <Pressable
-                                    key={t.id}
-                                    onPress={() =>
-                                      setMorningByDay((prev) => {
-                                        const cur = prev[d.index] ?? emptyWeekProgram()[d.index];
-                                        const ids = cur.primaryIds.includes(t.id)
-                                          ? cur.primaryIds.filter((x) => x !== t.id)
-                                          : [...cur.primaryIds, t.id];
-                                        return { ...prev, [d.index]: { ...cur, primaryIds: ids } };
-                                      })
-                                    }
-                                    style={[styles.chip, on ? styles.chipOn : null]}
-                                  >
-                                    <Text style={styles.chipValue}>{t.name}</Text>
-                                  </Pressable>
-                                );
-                              })
-                            )}
-                          </View>
-                        </>
-                      ) : (
-                        <Muted>
-                          {`Drapeau · ${flagName}\nPréscolaire · ${prescoNames}\nPrimaire · ${primNames}`}
-                        </Muted>
-                      )}
+                      <Text style={styles.chipLabel}>Accueil</Text>
+                      <DutyChips
+                        people={preschoolTeachers}
+                        selected={slot.preschoolAccueilIds}
+                        editable={canEdit}
+                        onToggle={(id) =>
+                          setMorningByDay((prev) => {
+                            const cur = prev[d.index] ?? emptyDayProgram();
+                            return {
+                              ...prev,
+                              [d.index]: {
+                                ...cur,
+                                preschoolAccueilIds: toggleNum(cur.preschoolAccueilIds, id),
+                              },
+                            };
+                          })
+                        }
+                      />
+                      <Text style={styles.chipLabel}>Montée du drapeau</Text>
+                      <DutyChips
+                        people={preschoolTeachers}
+                        selected={slot.preschoolFlagIds}
+                        editable={canEdit}
+                        onToggle={(id) =>
+                          setMorningByDay((prev) => {
+                            const cur = prev[d.index] ?? emptyDayProgram();
+                            return {
+                              ...prev,
+                              [d.index]: {
+                                ...cur,
+                                preschoolFlagIds: toggleNum(cur.preschoolFlagIds, id),
+                              },
+                            };
+                          })
+                        }
+                      />
+                      <Text style={styles.chipLabel}>Animation</Text>
+                      <DutyChips
+                        people={preschoolTeachers}
+                        selected={slot.preschoolAnimationIds}
+                        editable={canEdit}
+                        onToggle={(id) =>
+                          setMorningByDay((prev) => {
+                            const cur = prev[d.index] ?? emptyDayProgram();
+                            return {
+                              ...prev,
+                              [d.index]: {
+                                ...cur,
+                                preschoolAnimationIds: toggleNum(cur.preschoolAnimationIds, id),
+                              },
+                            };
+                          })
+                        }
+                      />
+                      <Text style={styles.chipLabel}>Dames de service</Text>
+                      <NameLines
+                        values={slot.preschoolServiceNames}
+                        editable={canEdit}
+                        onChange={(names) =>
+                          setMorningByDay((prev) => {
+                            const cur = prev[d.index] ?? emptyDayProgram();
+                            return { ...prev, [d.index]: { ...cur, preschoolServiceNames: names } };
+                          })
+                        }
+                      />
                     </View>
                   );
                 })}
+                <Text style={[styles.chipLabel, { marginTop: 8 }]}>Consignes</Text>
+                <NameLines
+                  values={preschoolInstructions}
+                  editable={canEdit}
+                  onChange={setPreschoolInstructions}
+                />
                 {canEdit ? (
                   <Button
                     title={savingMorning ? 'Enregistrement…' : 'Enregistrer'}
@@ -807,6 +846,144 @@ export function ScheduleScreen({}: Props) {
                   />
                 ) : null}
               </View>
+              <View style={styles.panelAmber}>
+                <Text style={styles.kickerAmber}>Primaire</Text>
+                <Text style={styles.panelTitle}>Rentrée</Text>
+                {MORNING_WEEKDAYS.map((d) => {
+                  const slot = morningByDay[d.index] ?? emptyDayProgram();
+                  const flagName =
+                    classes.find((c) => c.id === slot.primaryFlagClassId)?.name || '— Classe —';
+                  return (
+                    <View key={`pri-${d.index}`} style={{ marginTop: 8, gap: 6 }}>
+                      <Text style={styles.cardTitle}>{d.label}</Text>
+                      <Text style={styles.chipLabel}>Accueil</Text>
+                      <DutyChips
+                        people={primaryTeachers}
+                        selected={slot.primaryAccueilIds}
+                        editable={canEdit}
+                        onToggle={(id) =>
+                          setMorningByDay((prev) => {
+                            const cur = prev[d.index] ?? emptyDayProgram();
+                            return {
+                              ...prev,
+                              [d.index]: {
+                                ...cur,
+                                primaryAccueilIds: toggleNum(cur.primaryAccueilIds, id),
+                              },
+                            };
+                          })
+                        }
+                      />
+                      <Text style={styles.chipLabel}>Dévotion</Text>
+                      <DutyChips
+                        people={primaryTeachers}
+                        selected={slot.primaryDevotionIds}
+                        editable={canEdit}
+                        onToggle={(id) =>
+                          setMorningByDay((prev) => {
+                            const cur = prev[d.index] ?? emptyDayProgram();
+                            return {
+                              ...prev,
+                              [d.index]: {
+                                ...cur,
+                                primaryDevotionIds: toggleNum(cur.primaryDevotionIds, id),
+                              },
+                            };
+                          })
+                        }
+                      />
+                      {canEdit ? (
+                        <SelectChip
+                          label="Montée du drapeau"
+                          value={flagName}
+                          onPress={() => {
+                            setFlagDayTarget(d.index);
+                            setPicker('flagClass');
+                          }}
+                        />
+                      ) : (
+                        <Muted>Drapeau · {flagName}</Muted>
+                      )}
+                      <Text style={styles.chipLabel}>Défi des 5 phrases</Text>
+                      <DutyChips
+                        people={staffPeople}
+                        selected={slot.primaryDefiIds}
+                        editable={canEdit}
+                        onToggle={(id) =>
+                          setMorningByDay((prev) => {
+                            const cur = prev[d.index] ?? emptyDayProgram();
+                            return {
+                              ...prev,
+                              [d.index]: {
+                                ...cur,
+                                primaryDefiIds: toggleNum(cur.primaryDefiIds, id),
+                              },
+                            };
+                          })
+                        }
+                      />
+                      <Text style={styles.chipLabel}>Prière de midi</Text>
+                      <NameLines
+                        values={slot.primaryPrayerNames}
+                        editable={canEdit}
+                        onChange={(names) =>
+                          setMorningByDay((prev) => {
+                            const cur = prev[d.index] ?? emptyDayProgram();
+                            return { ...prev, [d.index]: { ...cur, primaryPrayerNames: names } };
+                          })
+                        }
+                      />
+                    </View>
+                  );
+                })}
+                <Text style={[styles.chipLabel, { marginTop: 8 }]}>Consignes</Text>
+                <NameLines
+                  values={primaryInstructions}
+                  editable={canEdit}
+                  onChange={setPrimaryInstructions}
+                />
+                {canEdit ? (
+                  <Button
+                    title={savingMorning ? 'Enregistrement…' : 'Enregistrer'}
+                    onPress={() => void handleSaveMorning()}
+                    disabled={savingMorning || !yearName}
+                  />
+                ) : null}
+              </View>
+              {listMode && classId ? (
+                <View style={styles.panelTeal}>
+                  <Text style={styles.kickerTeal}>Liste</Text>
+                  <Text style={styles.panelTitle}>{classLabel}</Text>
+                  <Text style={styles.chipLabel}>Matières</Text>
+                  {listSubjects.length === 0 ? (
+                    <Muted>—</Muted>
+                  ) : (
+                    listSubjects.map((name) => (
+                      <Text key={name} style={styles.pillAmber}>
+                        {name}
+                      </Text>
+                    ))
+                  )}
+                  <Text style={[styles.chipLabel, { marginTop: 8 }]}>Matériel à apporter</Text>
+                  <NameLines
+                    values={bringLines}
+                    editable={canEdit}
+                    onChange={(next) => {
+                      setBringLines(next);
+                      if (!canEdit) return;
+                      setSavingBring(true);
+                      void replaceClassBringItems({
+                        class_id: classId,
+                        academic_year: yearName || null,
+                        lines: next,
+                      })
+                        .then(setBringLines)
+                        .finally(() => setSavingBring(false));
+                    }}
+                  />
+                  {savingBring ? <Muted>…</Muted> : null}
+                </View>
+              ) : null}
               {moments.length > 0 ? (
                 <View style={styles.panelTeal}>
                   <Text style={styles.kickerTeal}>Classe</Text>
@@ -1094,6 +1271,95 @@ export function ScheduleScreen({}: Props) {
         </Pressable>
       </Modal>
     </Screen>
+  );
+}
+
+function DutyChips({
+  people,
+  selected,
+  onToggle,
+  editable,
+}: {
+  people: { id: number; name: string }[];
+  selected: number[];
+  onToggle: (id: number) => void;
+  editable: boolean;
+}) {
+  if (!people.length) return <Muted>—</Muted>;
+  if (!editable) {
+    const names = people.filter((p) => selected.includes(p.id)).map((p) => p.name);
+    return <Muted>{names.length ? names.join(', ') : '—'}</Muted>;
+  }
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+      {people.map((t) => {
+        const on = selected.includes(t.id);
+        return (
+          <Pressable
+            key={t.id}
+            onPress={() => onToggle(t.id)}
+            style={[styles.chip, on ? styles.chipOn : null, { minWidth: 0, flexGrow: 0 }]}
+          >
+            <Text style={styles.chipValue}>{t.name}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function NameLines({
+  values,
+  onChange,
+  editable,
+}: {
+  values: string[];
+  onChange: (next: string[]) => void;
+  editable: boolean;
+}) {
+  const [draft, setDraft] = useState('');
+  function add() {
+    const name = draft.trim();
+    if (!name) return;
+    if (values.some((v) => v.toLowerCase() === name.toLowerCase())) {
+      setDraft('');
+      return;
+    }
+    onChange([...values, name]);
+    setDraft('');
+  }
+  return (
+    <View style={{ gap: 6 }}>
+      {editable ? (
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <TextInput
+            value={draft}
+            onChangeText={setDraft}
+            onSubmitEditing={add}
+            returnKeyType="done"
+            style={[styles.timeInput, { flex: 1 }]}
+          />
+          <Button title="Ajouter" onPress={add} />
+        </View>
+      ) : null}
+      {values.length === 0 ? (
+        <Muted>—</Muted>
+      ) : (
+        values.map((name) => (
+          <Pressable
+            key={name}
+            onPress={() => {
+              if (!editable) return;
+              onChange(values.filter((v) => v !== name));
+            }}
+            style={styles.momentRow}
+          >
+            <Text style={styles.cardTitle}>{name}</Text>
+            {editable ? <Text style={styles.deleteLink}>Retirer</Text> : null}
+          </Pressable>
+        ))
+      )}
+    </View>
   );
 }
 

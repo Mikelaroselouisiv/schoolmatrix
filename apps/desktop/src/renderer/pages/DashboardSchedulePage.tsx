@@ -32,6 +32,7 @@ import {
   examCellKey,
   defaultExamRange,
 } from "@/lib/scheduleGrid";
+import { isMaterialsCycle, periodScopeFromLevel } from "@/lib/educationLevels";
 
 const DAYS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
 /** Semaine de classe : lundi → vendredi. */
@@ -74,6 +75,11 @@ const LIST_DAY_COLUMNS: PdfColumn[] = [
   { header: "Jour", key: "jour" },
   { header: "Matières", key: "matieres" },
   { header: "Matériel à apporter", key: "materiel" },
+];
+
+const LIST_DAY_COLUMNS_NO_MAT: PdfColumn[] = [
+  { header: "Jour", key: "jour" },
+  { header: "Matières", key: "matieres" },
 ];
 
 const ACTIVITY_COLUMNS: PdfColumn[] = [
@@ -140,7 +146,7 @@ type ClassItem = { id: string; name: string; level?: string | null };
 type Subject = { id: string; name: string };
 type Room = { id: string; name: string; class_id?: string | null; active?: boolean };
 type AcademicYear = { id: string; name: string };
-type Period = { id: string; name: string };
+type Period = { id: string; name: string; scope?: string };
 type RoomAssignment = { teacher_id: number; teacher_name: string; subject_id: string };
 type TeacherAssignment = { teacher_id: number; teacher_name: string; class_id: string; subject_id?: string; subject_name?: string };
 type ClassMoment = {
@@ -396,8 +402,8 @@ export function DashboardSchedulePage() {
 
   const [defaultYearId, setDefaultYearId] = useState("");
   const [defaultYearName, setDefaultYearName] = useState("");
-  const [defaultPeriodId, setDefaultPeriodId] = useState("");
   const [defaultPeriodName, setDefaultPeriodName] = useState("");
+  const [defaultPreschoolPeriodName, setDefaultPreschoolPeriodName] = useState("");
 
   const [gridRoom, setGridRoom] = useState<Room | null>(null);
   const [gridSubjects, setGridSubjects] = useState<Subject[]>([]);
@@ -579,8 +585,8 @@ export function DashboardSchedulePage() {
         defaultYearId = ctxData.current_academic_year_id;
         setDefaultYearId(ctxData.current_academic_year_id);
         setDefaultYearName(ctxData.current_academic_year_name ?? "");
-        setDefaultPeriodId(ctxData.current_period_id ?? "");
         setDefaultPeriodName(ctxData.current_period_name ?? "");
+        setDefaultPreschoolPeriodName(ctxData.current_preschool_period_name ?? "");
         setAcademicYearFilter((prev) => (prev === "" ? defaultYearId! : prev));
       }
     } catch {
@@ -656,7 +662,15 @@ export function DashboardSchedulePage() {
     setGridSubjects([]);
     setGridAssignments([]);
     if (tab === "examens") {
-      setExamGridPeriod((prev) => prev || defaultPeriodName);
+      const scope = periodScopeFromLevel(level);
+      const scoped = periods.filter((p) => (p.scope || "ECOLE") === scope);
+      const preferred =
+        scope === "PRESCOLAIRE" ? defaultPreschoolPeriodName : defaultPeriodName;
+      setExamGridPeriod((prev) => {
+        if (prev && scoped.some((p) => p.name === prev)) return prev;
+        if (preferred && scoped.some((p) => p.name === preferred)) return preferred;
+        return scoped[0]?.name ?? "";
+      });
     }
     if (!room.class_id) return;
     try {
@@ -1319,11 +1333,13 @@ export function DashboardSchedulePage() {
     const lists = dayListsByClass[classId] ?? emptyClassDayLists();
     const options = classSubjectOptions(classId);
     const nameOf = (id: string) => options.find((s) => s.id === id)?.name ?? id;
+    const level = classes.find((c) => c.id === classId)?.level;
+    const withMaterials = isMaterialsCycle(level);
     const sections: PdfSection[] = [
       {
         title: "Emploi du temps",
         table: {
-          columns: LIST_DAY_COLUMNS,
+          columns: withMaterials ? LIST_DAY_COLUMNS : LIST_DAY_COLUMNS_NO_MAT,
           rows: WEEKDAYS.map((d) => {
             const slot = lists[d.index] ?? { subjectIds: [], materials: [] };
             return {
@@ -2301,6 +2317,7 @@ export function DashboardSchedulePage() {
                         </div>
                       )}
                     </div>
+                    {isMaterialsCycle(listClass.level) ? (
                     <div>
                       <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                         Matériel à apporter
@@ -2326,6 +2343,7 @@ export function DashboardSchedulePage() {
                         }}
                       />
                     </div>
+                    ) : null}
                   </div>
                 );
               })}
@@ -2355,7 +2373,11 @@ export function DashboardSchedulePage() {
           onExamRangeEnd={setExamRangeEnd}
           examPeriod={examGridPeriod}
           onExamPeriod={setExamGridPeriod}
-          periods={periods}
+          periods={periods.filter(
+            (p) =>
+              (p.scope || "ECOLE") ===
+              periodScopeFromLevel(classes.find((c) => c.id === gridRoom?.class_id)?.level),
+          )}
           savingKey={savingCell}
           error={gridError}
           onClose={() => {

@@ -4,7 +4,7 @@
   "description": "Application desktop SchoolMatrix (Server / Remote)",
   "author": "Eureka SchoolMatrix",
   "private": true,
-  "version": "4.0.7",
+  "version": "4.0.8",
   "main": "src/main/main.cjs",
   "scripts": {
     "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:electron\"",

@@ -13,7 +13,6 @@ import {
   emptyWeekProgram,
   emptyDayProgram,
   isListScheduleLevel,
-  morningCycleFromLevel,
   MORNING_PRIMAIRE_LEVELS,
   MORNING_WEEKDAYS,
   namesJoin,
@@ -1187,27 +1186,44 @@ export function DashboardSchedulePage() {
     [duties],
   );
 
-  const preschoolPdfSection = useMemo<PdfSection>(
-    () => ({
-      title: "Rentrée préscolaire",
-      lines: preschoolInstructions.length ? preschoolInstructions.map((l, i) => `${i + 1}. ${l}`) : undefined,
+  const preschoolPdfSections = useMemo<PdfSection[]>(() => {
+    const sections: PdfSection[] = [];
+    if (filterLabels.year) {
+      sections.push({ lines: [`Année scolaire : ${filterLabels.year}`] });
+    }
+    if (preschoolInstructions.length) {
+      sections.push({
+        title: "Consignes",
+        lines: preschoolInstructions.map((l, i) => `${i + 1}. ${l}`),
+      });
+    }
+    sections.push({
+      title: "Organisation de la semaine",
       table: { columns: PRESCHOOL_MORNING_COLUMNS, rows: preschoolPdfRows },
-    }),
-    [preschoolPdfRows, preschoolInstructions],
-  );
-  const primaryPdfSection = useMemo<PdfSection>(
-    () => ({
-      title: "Rentrée primaire",
-      lines: primaryInstructions.length ? primaryInstructions.map((l, i) => `${i + 1}. ${l}`) : undefined,
+    });
+    return sections;
+  }, [filterLabels.year, preschoolPdfRows, preschoolInstructions]);
+  const primaryPdfSections = useMemo<PdfSection[]>(() => {
+    const sections: PdfSection[] = [];
+    if (filterLabels.year) {
+      sections.push({ lines: [`Année scolaire : ${filterLabels.year}`] });
+    }
+    if (primaryInstructions.length) {
+      sections.push({
+        title: "Consignes",
+        lines: primaryInstructions.map((l, i) => `${i + 1}. ${l}`),
+      });
+    }
+    sections.push({
+      title: "Organisation de la semaine",
       table: { columns: PRIMARY_MORNING_COLUMNS, rows: primaryPdfRows },
-    }),
-    [primaryPdfRows, primaryInstructions],
-  );
+    });
+    return sections;
+  }, [filterLabels.year, primaryPdfRows, primaryInstructions]);
 
   const allSchedulesSections = useMemo<PdfSection[]>(() => {
-    const sections: PdfSection[] = [{ lines: [pdfSubtitle] }];
-    if (duties.length > 0 || preschoolInstructions.length) sections.push(preschoolPdfSection);
-    if (duties.length > 0 || primaryInstructions.length) sections.push(primaryPdfSection);
+    const sections: PdfSection[] = [];
+    if (pdfSubtitle) sections.push({ lines: [pdfSubtitle] });
     if (slotSectionsByDay.length > 0) {
       sections.push({ title: "Horaire des cours" }, ...slotSectionsByDay);
     }
@@ -1224,21 +1240,10 @@ export function DashboardSchedulePage() {
       });
     }
     return sections;
-  }, [
-    pdfSubtitle,
-    slotSectionsByDay,
-    examRows,
-    activityRows,
-    duties.length,
-    preschoolPdfSection,
-    primaryPdfSection,
-    preschoolInstructions.length,
-    primaryInstructions.length,
-  ]);
+  }, [pdfSubtitle, slotSectionsByDay, examRows, activityRows]);
 
   const hasAnySchedule =
-    duties.length > 0 || slotSectionsByDay.length > 0 || examRows.length > 0 || activityRows.length > 0
-    || preschoolInstructions.length > 0 || primaryInstructions.length > 0;
+    slotSectionsByDay.length > 0 || examRows.length > 0 || activityRows.length > 0;
 
   const roomsToShow = rooms.filter(
     (r) =>
@@ -1311,28 +1316,45 @@ export function DashboardSchedulePage() {
   }
 
   function listClassPdfSections(classId: string): PdfSection[] {
-    const cls = classes.find((c) => c.id === classId);
-    const cycle = morningCycleFromLevel(cls?.level);
     const lists = dayListsByClass[classId] ?? emptyClassDayLists();
     const options = classSubjectOptions(classId);
     const nameOf = (id: string) => options.find((s) => s.id === id)?.name ?? id;
-    const sections: PdfSection[] = [];
-    if (cycle === "PRESCOLAIRE") sections.push(preschoolPdfSection);
-    if (cycle === "PRIMAIRE") sections.push(primaryPdfSection);
-    sections.push({
-      title: "Matières et matériel",
-      table: {
-        columns: LIST_DAY_COLUMNS,
-        rows: WEEKDAYS.map((d) => {
-          const slot = lists[d.index] ?? { subjectIds: [], materials: [] };
-          return {
-            jour: d.label,
-            matieres: namesJoin(slot.subjectIds.map(nameOf).filter(Boolean)),
-            materiel: namesJoin(slot.materials),
-          };
-        }),
+    const sections: PdfSection[] = [
+      {
+        title: "Emploi du temps",
+        table: {
+          columns: LIST_DAY_COLUMNS,
+          rows: WEEKDAYS.map((d) => {
+            const slot = lists[d.index] ?? { subjectIds: [], materials: [] };
+            return {
+              jour: d.label,
+              matieres: namesJoin(slot.subjectIds.map(nameOf).filter(Boolean)),
+              materiel: namesJoin(slot.materials),
+            };
+          }),
+        },
       },
-    });
+    ];
+    const recess = moments
+      .filter((m) => m.class_id === classId && m.kind === "RECESS")
+      .sort((a, b) => a.day_of_week - b.day_of_week || a.start_time.localeCompare(b.start_time));
+    if (recess.length) {
+      sections.push({
+        title: "Récréations",
+        table: {
+          columns: [
+            { header: "Jour", key: "jour" },
+            { header: "Horaire", key: "horaire" },
+            { header: "Libellé", key: "label" },
+          ],
+          rows: recess.map((m) => ({
+            jour: DAYS[m.day_of_week] ?? String(m.day_of_week),
+            horaire: `${m.start_time} - ${m.end_time}`,
+            label: m.label || m.title || "Récréation",
+          })),
+        },
+      });
+    }
     return sections;
   }
 
@@ -1590,10 +1612,11 @@ export function DashboardSchedulePage() {
             onToggle={() => setOpenCours("preschool")}
             headerRight={
               <ExportPdfButton
-                sections={[{ lines: [pdfSubtitle] }, preschoolPdfSection]}
-                mainTitle="Rentrée préscolaire"
+                sections={preschoolPdfSections}
+                mainTitle="Programme de rentrée — Préscolaire"
                 filename={`rentree-prescolaire${pdfFileSuffix}`}
                 disabled={preschoolDaysCount === 0 && preschoolInstructions.length === 0}
+                orientation="landscape"
               />
             }
           >
@@ -1687,10 +1710,11 @@ export function DashboardSchedulePage() {
             onToggle={() => setOpenCours("primary")}
             headerRight={
               <ExportPdfButton
-                sections={[{ lines: [pdfSubtitle] }, primaryPdfSection]}
-                mainTitle="Rentrée primaire"
+                sections={primaryPdfSections}
+                mainTitle="Programme de rentrée — Primaire"
                 filename={`rentree-primaire${pdfFileSuffix}`}
                 disabled={primaryDaysCount === 0 && primaryInstructions.length === 0}
+                orientation="landscape"
               />
             }
           >

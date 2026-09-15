@@ -136,6 +136,21 @@ export async function replicateDirection({
         errorSamples.push(...failed);
       }
 
+      // Tout le lot a échoué (ex. FK teacher_id) : ne pas avancer le
+      // curseur, sinon les 909 assignations sont perdues pour de bon.
+      if (batchApplied === 0 && batchErrors > 0) {
+        summary.entities[entity] = {
+          pulled,
+          applied,
+          skipped,
+          errors,
+          blocked: true,
+          cursor: cursors[entity],
+          ...(errorSamples.length ? { errorSamples } : {}),
+        };
+        break;
+      }
+
       cursor = {
         t:
           data.nextCursor ||

@@ -32,6 +32,16 @@ import {
 } from '../roles/roles.constants';
 import { Account } from '../finance/account.entity';
 import { Exercice } from '../finance/exercice.entity';
+import { User } from '../users/user.entity';
+
+/** Entités dont la FK prof est un id serial User (pas un UUID). */
+const TEACHER_USER_FK_ENTITIES = new Set<SyncEntityName>([
+  'TeacherClassSubject',
+  'ClassTeacher',
+  'TeacherSubject',
+  'ScheduleSlot',
+  'HomeworkAssignment',
+]);
 
 export type SyncWireRecord = {
   uuid: string;
@@ -50,6 +60,8 @@ export class SyncService implements OnModuleInit {
   private fkMissCache = new Map<string, Set<string>>();
   /** role.name → id local (les ids ne voyagent pas : seed / renommage TEACHER). */
   private roleByNameCache = new Map<string, number | null>();
+  /** User serial GCP → serial local (même e-mail, ids différents). */
+  private userIdAlias = new Map<number, number>();
 
   constructor(
     private readonly configService: ConfigService,
@@ -277,6 +289,9 @@ export class SyncService implements OnModuleInit {
     });
     if (entityName === 'User') {
       await this.attachUserRoleNames(records);
+    }
+    if (TEACHER_USER_FK_ENTITIES.has(entityName as SyncEntityName)) {
+      await this.attachTeacherEmails(records);
     }
     if (entityName === 'JournalEntry') {
       await this.attachJournalEntryExerciceKeys(records);
@@ -835,14 +850,25 @@ export class SyncService implements OnModuleInit {
     },
     sourceNodeId?: string,
   ): Promise<'created' | 'updated' | 'skipped' | 'deleted'> {
-    const primaryId = this.coercePrimaryId(meta, record.uuid);
-    const existing = await repo.findOne({
+    let primaryId = this.coercePrimaryId(meta, record.uuid);
+    let existing = await repo.findOne({
       where: { id: primaryId } as any,
       loadRelationIds: true,
     });
     let data = record.data;
     if (entityName === 'User') {
       data = await this.mapUserRoleForLocal(data);
+      const localId = await this.redirectUserToLocalEmail(primaryId, data);
+      if (localId != null) {
+        primaryId = localId;
+        existing = await repo.findOne({
+          where: { id: primaryId } as any,
+          loadRelationIds: true,
+        });
+      }
+    }
+    if (TEACHER_USER_FK_ENTITIES.has(entityName)) {
+      data = await this.mapTeacherUserFkForLocal(entityName, data);
     }
     if (entityName === 'JournalEntry') {
       data = await this.mapJournalEntryExerciceForLocal(data);
@@ -1225,7 +1251,8 @@ export class SyncService implements OnModuleInit {
         return 'skipped';
       }
       if (entityName === 'User' && this.isUniqueViolation(err)) {
-        await this.healUserRoleId(primaryId, data);
+        const localId = await this.redirectUserToLocalEmail(primaryId, data);
+        await this.healUserRoleId(localId ?? primaryId, data);
         return 'skipped';
       }
       throw err;
@@ -1280,11 +1307,114 @@ export class SyncService implements OnModuleInit {
     const roleId = await this.resolveSyncedRoleId(name);
     if (roleId == null) return;
     const id = typeof userId === 'number' ? userId : Number(userId);
-    if (!Number.isFinite(id)) return;
-    await this.dataSource.query(
-      `UPDATE users SET role_id = $1 WHERE id = $2 AND role_id IS DISTINCT FROM $1`,
-      [roleId, id],
+    const email =
+      typeof data.email === 'string' ? data.email.trim() : '';
+    if (Number.isFinite(id) && email) {
+      await this.dataSource.query(
+        `UPDATE users SET role_id = $1
+         WHERE role_id IS DISTINCT FROM $1
+           AND (id = $2 OR LOWER(email) = LOWER($3))`,
+        [roleId, id, email],
+      );
+      return;
+    }
+    if (Number.isFinite(id)) {
+      await this.dataSource.query(
+        `UPDATE users SET role_id = $1 WHERE id = $2 AND role_id IS DISTINCT FROM $1`,
+        [roleId, id],
+      );
+      return;
+    }
+    if (email) {
+      await this.dataSource.query(
+        `UPDATE users SET role_id = $1
+         WHERE LOWER(email) = LOWER($2) AND role_id IS DISTINCT FROM $1`,
+        [roleId, email],
+      );
+    }
+  }
+
+  /**
+   * Même personne, ids serial différents (compte créé des deux côtés).
+   * Sans ça, teacher_class_subject.teacher_id pointe vers un id GCP
+   * absent du Server → FK, curseur avance, classes vides.
+   */
+  private async redirectUserToLocalEmail(
+    incomingId: string | number,
+    data: Record<string, unknown>,
+  ): Promise<number | null> {
+    const email =
+      typeof data.email === 'string' ? data.email.trim() : '';
+    const n = typeof incomingId === 'number' ? incomingId : Number(incomingId);
+    if (!email || !Number.isFinite(n)) return null;
+    const aliased = this.userIdAlias.get(n);
+    if (aliased != null) return aliased;
+    const local = await this.dataSource.getRepository(User).findOne({
+      where: { email },
+    });
+    if (!local || local.id === n) return null;
+    this.userIdAlias.set(n, local.id);
+    return local.id;
+  }
+
+  private async attachTeacherEmails(records: SyncWireRecord[]): Promise<void> {
+    const ids = new Set<number>();
+    for (const rec of records) {
+      const id = this.coerceRelationId(
+        rec.data.teacher ?? rec.data.teacher_id ?? rec.data.user_id,
+      );
+      if (typeof id === 'number') ids.add(id);
+    }
+    if (ids.size === 0) return;
+    const rows: Array<{ id: number; email: string | null }> =
+      await this.dataSource.query(
+        `SELECT id, email FROM users WHERE id = ANY($1::int[])`,
+        [Array.from(ids)],
+      );
+    const byId = new Map(rows.map((r) => [Number(r.id), r.email]));
+    for (const rec of records) {
+      const id = this.coerceRelationId(
+        rec.data.teacher ?? rec.data.teacher_id ?? rec.data.user_id,
+      );
+      if (typeof id !== 'number') continue;
+      const email = byId.get(id);
+      if (email) rec.data.teacher_email = email;
+    }
+  }
+
+  private async mapTeacherUserFkForLocal(
+    entityName: SyncEntityName,
+    data: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const colKey = entityName === 'ClassTeacher' ? 'user_id' : 'teacher_id';
+    let incoming = this.coerceRelationId(
+      data.teacher ?? data[colKey],
     );
+    if (typeof incoming === 'number' && this.userIdAlias.has(incoming)) {
+      incoming = this.userIdAlias.get(incoming) ?? incoming;
+    }
+    const email =
+      typeof data.teacher_email === 'string' ? data.teacher_email.trim() : '';
+
+    let localId: number | null = null;
+    if (typeof incoming === 'number') {
+      const hit: Array<{ id: number }> = await this.dataSource.query(
+        `SELECT id FROM users WHERE id = $1 LIMIT 1`,
+        [incoming],
+      );
+      if (hit.length) localId = incoming;
+    }
+    if (localId == null && email) {
+      const local = await this.dataSource.getRepository(User).findOne({
+        where: { email },
+      });
+      if (local) {
+        localId = local.id;
+        if (typeof incoming === 'number') this.userIdAlias.set(incoming, localId);
+      }
+    }
+    if (localId == null) return data;
+    return { ...data, teacher: localId, [colKey]: localId };
   }
 
   private async resolveSyncedRoleId(name: string): Promise<number | null> {

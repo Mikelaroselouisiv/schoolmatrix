@@ -25,6 +25,13 @@ import {
   listSyncEntityNames,
 } from './sync.entities';
 import { normalizeMediaFieldsInPlace } from '../uploads/media-url';
+import { Role } from '../roles/role.entity';
+import {
+  TEACHER_ROLE_NAMES,
+  isTeacherRoleName,
+} from '../roles/roles.constants';
+import { Account } from '../finance/account.entity';
+import { Exercice } from '../finance/exercice.entity';
 
 export type SyncWireRecord = {
   uuid: string;
@@ -41,6 +48,8 @@ export class SyncService implements OnModuleInit {
   /** Cache existence FK pendant un push (salle absente ≠ bloquer l’élève). */
   private fkExistCache = new Map<string, Set<string>>();
   private fkMissCache = new Map<string, Set<string>>();
+  /** role.name → id local (les ids ne voyagent pas : seed / renommage TEACHER). */
+  private roleByNameCache = new Map<string, number | null>();
 
   constructor(
     private readonly configService: ConfigService,
@@ -266,6 +275,15 @@ export class SyncService implements OnModuleInit {
         data: this.toWireData(full, meta),
       };
     });
+    if (entityName === 'User') {
+      await this.attachUserRoleNames(records);
+    }
+    if (entityName === 'JournalEntry') {
+      await this.attachJournalEntryExerciceKeys(records);
+    }
+    if (entityName === 'JournalEntryLine') {
+      await this.attachJournalLineAccountCodes(records);
+    }
 
     // Curseur = dernier row lu (y compris deletes/lignes filtrés LWW).
     const lastRow: any = rows[rows.length - 1];
@@ -440,6 +458,7 @@ export class SyncService implements OnModuleInit {
     const meta = repo.metadata;
     this.fkExistCache.clear();
     this.fkMissCache.clear();
+    this.roleByNameCache.clear();
     const results: Array<{
       uuid: string;
       action: 'created' | 'updated' | 'skipped' | 'deleted' | 'error';
@@ -821,6 +840,16 @@ export class SyncService implements OnModuleInit {
       where: { id: primaryId } as any,
       loadRelationIds: true,
     });
+    let data = record.data;
+    if (entityName === 'User') {
+      data = await this.mapUserRoleForLocal(data);
+    }
+    if (entityName === 'JournalEntry') {
+      data = await this.mapJournalEntryExerciceForLocal(data);
+    }
+    if (entityName === 'JournalEntryLine') {
+      data = await this.mapJournalLineAccountForLocal(data);
+    }
     const incomingAt = this.parseTime(record.updatedAt);
     const tombAt = await this.loadTombstoneDeletedAt(
       entityName,
@@ -876,7 +905,7 @@ export class SyncService implements OnModuleInit {
         repo,
         meta,
         primaryId,
-        record.data,
+        data,
         record.updatedAt,
         timeField,
         sourceNodeId,
@@ -890,7 +919,7 @@ export class SyncService implements OnModuleInit {
         repo,
         meta,
         primaryId,
-        record.data,
+        data,
         record.updatedAt,
         timeField,
         sourceNodeId,
@@ -901,14 +930,16 @@ export class SyncService implements OnModuleInit {
     const existingAt = this.parseTime(existing[timeField]);
 
     if (!this.shouldApply(incomingAt, existingAt, sourceNodeId)) {
+      if (entityName === 'User') {
+        await this.healUserRoleId(primaryId, record.data);
+      }
       return 'skipped';
     }
 
-    let data = record.data;
     if (entityName === 'SchoolSignature') {
       data = this.mergeSchoolSignatureData(
         existing as Record<string, unknown>,
-        record.data,
+        data,
       );
     }
 
@@ -1108,7 +1139,7 @@ export class SyncService implements OnModuleInit {
 
     const entity = repo.create(payload as any);
     try {
-      await repo.save(entity);
+      await repo.save(entity, { listeners: false });
     } catch (err) {
       if (!this.isForeignKeyViolation(err)) throw err;
       let dropped = false;
@@ -1121,7 +1152,7 @@ export class SyncService implements OnModuleInit {
         }
       }
       if (!dropped) throw err;
-      await repo.save(repo.create(payload as any));
+      await repo.save(repo.create(payload as any), { listeners: false });
     }
 
     if (typeof primaryId === 'number') {
@@ -1190,6 +1221,13 @@ export class SyncService implements OnModuleInit {
       ) {
         return 'skipped';
       }
+      if (entityName === 'Account' && this.isUniqueViolation(err)) {
+        return 'skipped';
+      }
+      if (entityName === 'User' && this.isUniqueViolation(err)) {
+        await this.healUserRoleId(primaryId, data);
+        return 'skipped';
+      }
       throw err;
     }
   }
@@ -1197,6 +1235,155 @@ export class SyncService implements OnModuleInit {
   private isUniqueViolation(err: unknown): boolean {
     const e = err as { code?: string; driverError?: { code?: string } };
     return e?.code === '23505' || e?.driverError?.code === '23505';
+  }
+
+  /**
+   * `role_id` est local (seed / TEACHER renommé). Le filaire porte `role_name`.
+   * Sans ça, un Server frais voit les profs comme un autre rôle → annuaire vide,
+   * alors que Remote affiche les mêmes personnes sur les classes.
+   */
+  private async attachUserRoleNames(records: SyncWireRecord[]): Promise<void> {
+    if (records.length === 0) return;
+    const roles = await this.dataSource.getRepository(Role).find();
+    const byId = new Map(roles.map((r) => [Number(r.id), r.name]));
+    for (const rec of records) {
+      const raw = rec.data.role;
+      const id =
+        typeof raw === 'number'
+          ? raw
+          : typeof raw === 'string' && /^\d+$/.test(raw)
+            ? Number(raw)
+            : null;
+      const name = id != null ? byId.get(id) : undefined;
+      if (name) rec.data.role_name = name;
+    }
+  }
+
+  private async mapUserRoleForLocal(
+    data: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const name =
+      typeof data.role_name === 'string' ? data.role_name.trim() : '';
+    if (!name) return data;
+    const roleId = await this.resolveSyncedRoleId(name);
+    if (roleId == null) return data;
+    return { ...data, role: roleId };
+  }
+
+  private async healUserRoleId(
+    userId: string | number,
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    const name =
+      typeof data.role_name === 'string' ? data.role_name.trim() : '';
+    if (!name) return;
+    const roleId = await this.resolveSyncedRoleId(name);
+    if (roleId == null) return;
+    const id = typeof userId === 'number' ? userId : Number(userId);
+    if (!Number.isFinite(id)) return;
+    await this.dataSource.query(
+      `UPDATE users SET role_id = $1 WHERE id = $2 AND role_id IS DISTINCT FROM $1`,
+      [roleId, id],
+    );
+  }
+
+  private async resolveSyncedRoleId(name: string): Promise<number | null> {
+    const key = name.toUpperCase().trim();
+    if (!key) return null;
+    if (this.roleByNameCache.has(key)) {
+      return this.roleByNameCache.get(key) ?? null;
+    }
+    const repo = this.dataSource.getRepository(Role);
+    const exact = await repo.findOne({ where: { name: key } });
+    if (exact) {
+      this.roleByNameCache.set(key, exact.id);
+      return exact.id;
+    }
+    if (isTeacherRoleName(key)) {
+      const alias = await repo.findOne({
+        where: { name: In(TEACHER_ROLE_NAMES) },
+      });
+      const id = alias?.id ?? null;
+      this.roleByNameCache.set(key, id);
+      return id;
+    }
+    this.roleByNameCache.set(key, null);
+    return null;
+  }
+
+  private async attachJournalEntryExerciceKeys(
+    records: SyncWireRecord[],
+  ): Promise<void> {
+    if (records.length === 0) return;
+    const exercices = await this.dataSource.getRepository(Exercice).find();
+    const byId = new Map(exercices.map((e) => [e.id, e]));
+    for (const rec of records) {
+      const id = typeof rec.data.exercice === 'string' ? rec.data.exercice : null;
+      const ex = id ? byId.get(id) : undefined;
+      if (ex) {
+        rec.data.exercice_date_debut = ex.date_debut;
+        rec.data.exercice_date_fin = ex.date_fin;
+      }
+    }
+  }
+
+  private async mapJournalEntryExerciceForLocal(
+    data: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const incomingId =
+      typeof data.exercice === 'string' ? data.exercice.trim() : '';
+    if (incomingId) {
+      const hit = await this.dataSource.getRepository(Exercice).findOne({
+        where: { id: incomingId },
+      });
+      if (hit) return data;
+    }
+    const debut =
+      typeof data.exercice_date_debut === 'string'
+        ? data.exercice_date_debut
+        : '';
+    const fin =
+      typeof data.exercice_date_fin === 'string' ? data.exercice_date_fin : '';
+    if (!debut || !fin) return data;
+    const local = await this.dataSource.getRepository(Exercice).findOne({
+      where: { date_debut: debut, date_fin: fin },
+    });
+    if (!local) return data;
+    return { ...data, exercice: local.id };
+  }
+
+  private async attachJournalLineAccountCodes(
+    records: SyncWireRecord[],
+  ): Promise<void> {
+    if (records.length === 0) return;
+    const accounts = await this.dataSource.getRepository(Account).find();
+    const byId = new Map(accounts.map((a) => [a.id, a.code]));
+    for (const rec of records) {
+      const id = typeof rec.data.account === 'string' ? rec.data.account : null;
+      const code = id ? byId.get(id) : undefined;
+      if (code) rec.data.account_code = code;
+    }
+  }
+
+  private async mapJournalLineAccountForLocal(
+    data: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const incomingId =
+      typeof data.account === 'string' ? data.account.trim() : '';
+    if (incomingId) {
+      const hit = await this.dataSource.getRepository(Account).findOne({
+        where: { id: incomingId },
+      });
+      if (hit) return data;
+    }
+    const code =
+      typeof data.account_code === 'string' ? data.account_code.trim() : '';
+    if (!code) return data;
+    const local = await this.dataSource.getRepository(Account).findOne({
+      where: { code },
+    });
+    if (!local) return data;
+    return { ...data, account: local.id };
   }
 
   /**

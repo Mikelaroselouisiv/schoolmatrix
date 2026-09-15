@@ -41,9 +41,9 @@ export class HomeworkAssignment {
   @JoinColumn({ name: 'subject_id' })
   subject: Subject | null;
 
-  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @ManyToOne(() => User, { onDelete: 'SET NULL', nullable: true })
   @JoinColumn({ name: 'teacher_id' })
-  teacher: User;
+  teacher: User | null;
 
   @ManyToOne(() => AcademicYear, { onDelete: 'SET NULL', nullable: true })
   @JoinColumn({ name: 'academic_year_id' })

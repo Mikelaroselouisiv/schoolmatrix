@@ -155,6 +155,31 @@ function PeoplePreviewRow({
   );
 }
 
+function SubjectChip({
+  name,
+  on,
+  onToggle,
+}: {
+  name: string;
+  on: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={on}
+      className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 transition ${
+        on
+          ? "bg-teal-600 text-white ring-teal-600"
+          : "bg-white text-slate-600 ring-slate-200 hover:ring-teal-300"
+      }`}
+    >
+      {name}
+    </button>
+  );
+}
+
 function ConfigPanel({
   kicker,
   title,
@@ -788,19 +813,18 @@ export function ClassConfigModal({
                 title="Matières"
                 action={
                   subjects.length > 0 ? (
-                    <label className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-[11px] font-medium text-slate-600">
-                      <input
-                        type="checkbox"
-                        checked={subjects.length > 0 && subjectIds.length === subjects.length}
-                        onChange={() => {
-                          const next =
-                            subjectIds.length === subjects.length ? [] : subjects.map((s) => s.id);
-                          setSubjectIds(next);
-                          if (classId) void persistSubjects(next);
-                        }}
-                      />
-                      Tout
-                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next =
+                          subjectIds.length === subjects.length ? [] : subjects.map((s) => s.id);
+                        setSubjectIds(next);
+                        if (classId) void persistSubjects(next);
+                      }}
+                      className="whitespace-nowrap text-[11px] font-medium text-slate-600 hover:text-teal-800"
+                    >
+                      {subjectIds.length === subjects.length ? "Aucun" : "Tout"}
+                    </button>
                   ) : null
                 }
               >
@@ -809,27 +833,14 @@ export function ClassConfigModal({
                     <p className="px-1 py-2 text-sm text-slate-500">Aucune matière. Ajoutez-en ci-dessous.</p>
                   ) : (
                     <div className="flex flex-wrap gap-1.5">
-                      {subjects.map((s) => {
-                        const on = subjectIds.includes(s.id);
-                        return (
-                          <label
-                            key={s.id}
-                            className={`cursor-pointer rounded-full px-2.5 py-1 text-xs font-medium ring-1 transition ${
-                              on
-                                ? "bg-teal-600 text-white ring-teal-600"
-                                : "bg-white text-slate-600 ring-slate-200 hover:ring-teal-300"
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              className="sr-only"
-                              checked={on}
-                              onChange={() => toggleSubject(s.id)}
-                            />
-                            {s.name}
-                          </label>
-                        );
-                      })}
+                      {subjects.map((s) => (
+                        <SubjectChip
+                          key={s.id}
+                          name={s.name}
+                          on={subjectIds.includes(s.id)}
+                          onToggle={() => toggleSubject(s.id)}
+                        />
+                      ))}
                     </div>
                   )}
                 </div>
@@ -1082,33 +1093,20 @@ export function ClassConfigModal({
                                       </p>
                                     ) : (
                                       <div className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto rounded-lg bg-slate-50 p-2">
-                                        {classSubjects.map((s) => {
-                                          const on = editSubjectIds.includes(s.id);
-                                          return (
-                                            <label
-                                              key={s.id}
-                                              className={`cursor-pointer rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${
-                                                on
-                                                  ? "bg-teal-600 text-white ring-teal-600"
-                                                  : "bg-white text-slate-600 ring-slate-200"
-                                              }`}
-                                            >
-                                              <input
-                                                type="checkbox"
-                                                className="sr-only"
-                                                checked={on}
-                                                onChange={() =>
-                                                  setEditSubjectIds((prev) =>
-                                                    prev.includes(s.id)
-                                                      ? prev.filter((x) => x !== s.id)
-                                                      : [...prev, s.id],
-                                                  )
-                                                }
-                                              />
-                                              {s.name}
-                                            </label>
-                                          );
-                                        })}
+                                        {classSubjects.map((s) => (
+                                          <SubjectChip
+                                            key={s.id}
+                                            name={s.name}
+                                            on={editSubjectIds.includes(s.id)}
+                                            onToggle={() =>
+                                              setEditSubjectIds((prev) =>
+                                                prev.includes(s.id)
+                                                  ? prev.filter((x) => x !== s.id)
+                                                  : [...prev, s.id],
+                                              )
+                                            }
+                                          />
+                                        ))}
                                       </div>
                                     )}
                                     <div className="flex flex-wrap gap-2">
@@ -1313,33 +1311,20 @@ export function ClassConfigModal({
                               <p className="text-xs text-amber-800">Cochez d’abord les matières de la classe, à gauche.</p>
                             ) : (
                               <div className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto rounded-lg bg-slate-50 p-2">
-                                {classSubjects.map((s) => {
-                                  const on = assignSubjectIds.includes(s.id);
-                                  return (
-                                    <label
-                                      key={s.id}
-                                      className={`cursor-pointer rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${
-                                        on
-                                          ? "bg-teal-600 text-white ring-teal-600"
-                                          : "bg-white text-slate-600 ring-slate-200"
-                                      }`}
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        className="sr-only"
-                                        checked={on}
-                                        onChange={() =>
-                                          setAssignSubjectIds((prev) =>
-                                            prev.includes(s.id)
-                                              ? prev.filter((x) => x !== s.id)
-                                              : [...prev, s.id],
-                                          )
-                                        }
-                                      />
-                                      {s.name}
-                                    </label>
-                                  );
-                                })}
+                                {classSubjects.map((s) => (
+                                  <SubjectChip
+                                    key={s.id}
+                                    name={s.name}
+                                    on={assignSubjectIds.includes(s.id)}
+                                    onToggle={() =>
+                                      setAssignSubjectIds((prev) =>
+                                        prev.includes(s.id)
+                                          ? prev.filter((x) => x !== s.id)
+                                          : [...prev, s.id],
+                                      )
+                                    }
+                                  />
+                                ))}
                               </div>
                             )}
                           </div>

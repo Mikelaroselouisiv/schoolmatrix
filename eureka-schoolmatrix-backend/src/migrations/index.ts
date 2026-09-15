@@ -27,6 +27,7 @@ import { MorningOpeningRubrics1739000000024 } from './1739000000024-MorningOpeni
 import { ClassDayLists1739000000025 } from './1739000000025-ClassDayLists';
 import { BringItemCatalog1739000000026 } from './1739000000026-BringItemCatalog';
 import { SyncScheduleAssignments1739000000027 } from './1739000000027-SyncScheduleAssignments';
+import { SyncMissingBusinessEntities1739000000028 } from './1739000000028-SyncMissingBusinessEntities';
 
 /** Liste des migrations (ordre d’exécution). Utilisée par l’app au démarrage (migrationsRun). */
 export const migrations = [
@@ -59,4 +60,5 @@ export const migrations = [
   ClassDayLists1739000000025,
   BringItemCatalog1739000000026,
   SyncScheduleAssignments1739000000027,
+  SyncMissingBusinessEntities1739000000028,
 ];

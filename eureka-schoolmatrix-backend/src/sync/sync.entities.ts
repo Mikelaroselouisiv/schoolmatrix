@@ -41,6 +41,15 @@ import { SyncTombstone } from './sync-tombstone.entity';
 import { ClassTeacher } from '../teachers/class-teacher.entity';
 import { TeacherSubject } from '../teachers/teacher-subject.entity';
 import { TeacherClassSubject } from '../teachers/teacher-class-subject.entity';
+import { Lateness } from '../discipline/lateness.entity';
+import { DisciplinaryMeasure } from '../discipline/disciplinary-measure.entity';
+import { DisciplinaryDeduction } from '../discipline/disciplinary-deduction.entity';
+import { StudentServiceExemption } from '../economat/student-service-exemption.entity';
+import { Exercice } from '../finance/exercice.entity';
+import { Account } from '../finance/account.entity';
+import { JournalEntry } from '../finance/journal-entry.entity';
+import { JournalEntryLine } from '../finance/journal-entry-line.entity';
+import { OtherRevenue } from '../finance/other-revenue.entity';
 
 export type SyncEntityName =
   | 'SchoolProfile'
@@ -84,6 +93,15 @@ export type SyncEntityName =
   | 'FileMetadata'
   | 'HomeworkAssignment'
   | 'HomeworkGrade'
+  | 'Lateness'
+  | 'DisciplinaryMeasure'
+  | 'DisciplinaryDeduction'
+  | 'StudentServiceExemption'
+  | 'Account'
+  | 'Exercice'
+  | 'OtherRevenue'
+  | 'JournalEntry'
+  | 'JournalEntryLine'
   /** Toujours en premier dans ENTITY_ORDER : deletes avant upserts. */
   | 'SyncTombstone';
 
@@ -100,7 +118,7 @@ export const SYNC_ENTITY_DEFS: SyncEntityDef[] = [
   { name: 'SyncTombstone', target: SyncTombstone, timeField: 'updated_at' },
   { name: 'SchoolProfile', target: SchoolProfile, timeField: 'updated_at' },
   { name: 'SchoolSignature', target: SchoolSignature, timeField: 'updated_at' },
-  /** Comptes login Server → Remote (PK int acceptée comme uuid filaire). Roles seedés identiques des deux côtés. */
+  /** Comptes login Server → Remote (PK int). `role_id` est local ; le filaire porte `role_name`. */
   { name: 'User', target: User, timeField: 'updated_at' },
   { name: 'AcademicYear', target: AcademicYear, timeField: 'updated_at' },
   { name: 'Period', target: Period, timeField: 'created_at' },
@@ -118,6 +136,7 @@ export const SYNC_ENTITY_DEFS: SyncEntityDef[] = [
   { name: 'StudentPhoto', target: StudentPhoto, timeField: 'updated_at' },
   { name: 'FeeService', target: FeeService, timeField: 'updated_at' },
   { name: 'ClassFee', target: ClassFee, timeField: 'updated_at' },
+  { name: 'StudentServiceExemption', target: StudentServiceExemption, timeField: 'updated_at' },
   { name: 'ClassSubjectCoefficient', target: ClassSubjectCoefficient, timeField: 'updated_at' },
   { name: 'ExamSchedule', target: ExamSchedule, timeField: 'updated_at' },
   { name: 'ScheduleSlot', target: ScheduleSlot, timeField: 'updated_at' },
@@ -136,8 +155,16 @@ export const SYNC_ENTITY_DEFS: SyncEntityDef[] = [
   { name: 'Bank', target: Bank, timeField: 'updated_at' },
   { name: 'BankAccount', target: BankAccount, timeField: 'updated_at' },
   { name: 'Expense', target: Expense, timeField: 'updated_at' },
+  { name: 'Account', target: Account, timeField: 'created_at' },
+  { name: 'Exercice', target: Exercice, timeField: 'updated_at' },
+  { name: 'OtherRevenue', target: OtherRevenue, timeField: 'created_at' },
+  { name: 'JournalEntry', target: JournalEntry, timeField: 'created_at' },
+  { name: 'JournalEntryLine', target: JournalEntryLine, timeField: 'created_at' },
   { name: 'FileMetadata', target: FileMetadata, timeField: 'updated_at' },
   { name: 'Attendance', target: Attendance, timeField: 'created_at' },
+  { name: 'Lateness', target: Lateness, timeField: 'created_at' },
+  { name: 'DisciplinaryMeasure', target: DisciplinaryMeasure, timeField: 'updated_at' },
+  { name: 'DisciplinaryDeduction', target: DisciplinaryDeduction, timeField: 'created_at' },
   { name: 'HomeworkAssignment', target: HomeworkAssignment, timeField: 'updated_at' },
   { name: 'HomeworkGrade', target: HomeworkGrade, timeField: 'updated_at' },
   { name: 'PaymentTransaction', target: PaymentTransaction, timeField: 'created_at' },

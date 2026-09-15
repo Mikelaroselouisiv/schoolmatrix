@@ -94,8 +94,14 @@ Voir `ENTITY_ORDER` dans `apps/sync-agent/src/entities.js` et `SYNC_ENTITY_DEFS`
 
 Ordre notable : **Class avant Room** (`room.class_id` → classe pédagogique ; une classe a plusieurs salles avec `capacity`). **Student** après Room (`student.room_id`, optionnel).
 
-Inclut **`User`** (`password_hash`, photos, `role_id`). Les rôles sont seedés identiquement (mêmes ids) des deux côtés — pas de sync `Role` en V1.
+Inclut **`User`** (`password_hash`, photos, `role_id`). **Pas de sync `Role`** : les ids de rôles divergent dès qu’un Server a été seedé plus tard (rôles pédagogiques ajoutés) ou qu’une école a renommé `TEACHER`. Le filaire User porte donc **`role_name`** ; l’apply rattache le compte au rôle local de même nom (alias `TEACHER` / `PROFESSEUR`). Sans ça, Remote voyait les profs sur les classes et le Server avait un annuaire vide.
 
-**Horaires** : `ClassSubject` (matières de la fiche classe) **et** `ClassTeacher` / `TeacherSubject` / `TeacherClassSubject` (titulaires et profs par matière / salle) doivent voyager. Sans les assignations, le bloc Horaires voyait des classes « sans matières » alors que la page Classes était complète. `ScheduleSlot.teacher_id` est optionnel à l’apply (un créneau n’est plus refusé si le compte prof n’est pas encore arrivé).
+**Horaires** : `ClassSubject` (matières de la fiche classe) **et** `ClassTeacher` / `TeacherSubject` / `TeacherClassSubject` (titulaires et profs par matière / salle) doivent voyager. Sans les assignations, le bloc Horaires voyait des classes « sans matières » alors que la page Classes était complète. `ScheduleSlot.teacher_id` et `HomeworkAssignment.teacher_id` sont optionnels à l’apply (un créneau / devoir n’est plus refusé si le compte prof n’est pas encore arrivé). Les deux API (Server **et** GCP) doivent connaître ces entités — un image cloud périmée répond `Entité sync inconnue` et l’agent saute les profs des classes.
+
+**Métier aussi dans ENTITY_ORDER** : discipline (`Lateness`, `DisciplinaryMeasure`, `DisciplinaryDeduction`), économe (`StudentServiceExemption`), finance (`Account`, `Exercice`, `OtherRevenue`, `JournalEntry`, `JournalEntryLine`). Absents → fiche élève / caisse / journal différents entre Server et Remote.
+
+**Replace-all** (matières de classe, listes du jour, rentrée, liens parent) : toujours `repository.remove` (tombstone) — jamais `DELETE` SQL brut, sinon l’autre nœud ressuscite les anciennes lignes.
+
+Les comptes du plan comptable sont seedés des deux côtés (UUIDs différents, même `code`) : le filaire des lignes de journal porte `account_code`. Idem exercice (`exercice_date_debut` / `exercice_date_fin`).
 
 Conséquence : une école qui **renomme** un rôle (ex. `TEACHER` → `PROFESSEUR`) ne change que son libellé local ; le cloud garde l’ancien nom pour le même `role_id`. Le code ne doit donc **jamais** comparer `role.name === 'TEACHER'` : utiliser `TEACHER_ROLE_NAMES` / `isTeacherRoleName()` (`roles.constants.ts`, portés côté desktop `lib/dashboardRoles.ts` et mobile `lib/permissions.ts`). Le seed ne recrée pas `TEACHER` si un alias existe déjà, sinon l’annuaire professeurs se scinde en deux rôles.

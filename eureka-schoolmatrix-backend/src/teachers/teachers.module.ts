@@ -26,6 +26,7 @@ import { StudentScheduleController } from './student-schedule.controller';
 import { ScheduleMomentsController } from './schedule-moments.controller';
 import { SchoolWeekDutiesController } from './school-week-duties.controller';
 import { ClassBringItemsController } from './class-bring-items.controller';
+import { BringItemCatalogController } from './bring-item-catalog.controller';
 import { SchoolMaterialsController } from './school-materials.controller';
 import { ParentScopeModule } from '../auth/parent-scope.module';
 import { UsersModule } from '../users/users.module';
@@ -61,6 +62,7 @@ import { UsersModule } from '../users/users.module';
     ScheduleMomentsController,
     SchoolWeekDutiesController,
     ClassBringItemsController,
+    BringItemCatalogController,
     SchoolMaterialsController,
   ],
   providers: [TeachersService, ScheduleMomentsService, SchoolMaterialsService],

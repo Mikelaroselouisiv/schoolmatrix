@@ -67,7 +67,10 @@ export class ClassesService {
   }
 
   async setClassSubjects(classId: string, subjectIds: string[]): Promise<void> {
-    await this.classSubjectRepo.delete({ class_id: classId });
+    const previous = await this.classSubjectRepo.find({
+      where: { class_id: classId },
+    });
+    if (previous.length) await this.classSubjectRepo.remove(previous);
     const uniqueIds = [...new Set(subjectIds.filter(Boolean))];
     for (const subjectId of uniqueIds) {
       const cs = this.classSubjectRepo.create({

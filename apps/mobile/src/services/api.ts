@@ -1800,6 +1800,27 @@ export async function deleteSubject(id: string): Promise<void> {
   await api.delete(`/subjects/${id}`);
 }
 
+export type BringCatalogItem = { id: string; label: string };
+
+export async function listBringItemCatalog(): Promise<BringCatalogItem[]> {
+  const { data } = await api.get('/bring-item-catalog');
+  return Array.isArray(data?.catalog) ? data.catalog : [];
+}
+
+export async function createBringCatalogItem(label: string): Promise<BringCatalogItem> {
+  const { data } = await api.post<{ item?: BringCatalogItem }>('/bring-item-catalog', { label });
+  if (!data?.item) throw new Error('Matériel non créé');
+  return data.item;
+}
+
+export async function updateBringCatalogItem(id: string, label: string): Promise<void> {
+  await api.patch(`/bring-item-catalog/${id}`, { label });
+}
+
+export async function deleteBringCatalogItem(id: string): Promise<void> {
+  await api.delete(`/bring-item-catalog/${id}`);
+}
+
 export async function listClassesOrg(): Promise<ClassOrg[]> {
   const { data } = await api.get('/classes');
   return unwrapList<ClassOrg>(data);

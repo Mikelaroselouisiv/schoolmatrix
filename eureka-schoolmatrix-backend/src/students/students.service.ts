@@ -431,10 +431,13 @@ export class StudentsService {
     const profiles = await this.schoolProfileRepo.find({ take: 1 });
     const yearId = profiles[0]?.current_academic_year_id;
     if (yearId) {
-      await this.assignmentRepo.delete({
-        student: { id },
-        academic_year: { id: yearId },
+      const previous = await this.assignmentRepo.find({
+        where: {
+          student: { id },
+          academic_year: { id: yearId },
+        },
       });
+      if (previous.length) await this.assignmentRepo.remove(previous);
     }
     this.syncKick.kick('student-archive');
     return this.findOne(id);

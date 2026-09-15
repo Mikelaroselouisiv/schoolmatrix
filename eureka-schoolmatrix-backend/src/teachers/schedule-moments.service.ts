@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository, DataSource, EntityManager } from 'typeorm';
+import { In, Repository, DataSource, EntityManager, IsNull } from 'typeorm';
 import { Class } from '../classes/class.entity';
 import { User } from '../users/user.entity';
 import {
@@ -403,8 +403,14 @@ export class ScheduleMomentsService {
     };
 
     await this.dataSource.transaction(async (manager) => {
-      await manager.delete(SchoolWeekDuty, { academic_year: year });
-      await manager.delete(SchoolOpeningInstruction, { academic_year: year });
+      const oldDuties = await manager.find(SchoolWeekDuty, {
+        where: { academic_year: year },
+      });
+      const oldNotes = await manager.find(SchoolOpeningInstruction, {
+        where: { academic_year: year },
+      });
+      if (oldDuties.length) await manager.remove(oldDuties);
+      if (oldNotes.length) await manager.remove(oldNotes);
 
       const saveManual = async (
         day: number,
@@ -586,8 +592,66 @@ export class ScheduleMomentsService {
   }
 
   async listBringCatalog(): Promise<string[]> {
-    const rows = await this.catalogRepo.find({ order: { label: 'ASC' } });
+    const rows = await this.listBringCatalogItems();
     return rows.map((r) => r.label);
+  }
+
+  async listBringCatalogItems(): Promise<{ id: string; label: string }[]> {
+    const rows = await this.catalogRepo.find({ order: { label: 'ASC' } });
+    return rows.map((r) => ({ id: r.id, label: r.label }));
+  }
+
+  async createBringCatalogItem(raw: string): Promise<{ id: string; label: string }> {
+    const label = this.catalogLabels([raw])[0];
+    if (!label) throw new BadRequestException('Nom requis');
+    const existing = await this.catalogRepo
+      .createQueryBuilder('c')
+      .where('LOWER(c.label) = LOWER(:label)', { label })
+      .getOne();
+    if (existing) throw new BadRequestException('Ce matériel existe déjà');
+    const saved = await this.catalogRepo.save(this.catalogRepo.create({ label }));
+    return { id: saved.id, label: saved.label };
+  }
+
+  async updateBringCatalogItem(
+    id: string,
+    raw: string,
+  ): Promise<{ id: string; label: string }> {
+    const row = await this.catalogRepo.findOne({ where: { id } });
+    if (!row) throw new NotFoundException('Matériel introuvable');
+    const label = this.catalogLabels([raw])[0];
+    if (!label) throw new BadRequestException('Nom requis');
+    const clash = await this.catalogRepo
+      .createQueryBuilder('c')
+      .where('LOWER(c.label) = LOWER(:label)', { label })
+      .andWhere('c.id <> :id', { id })
+      .getOne();
+    if (clash) throw new BadRequestException('Ce matériel existe déjà');
+    const previous = row.label;
+    row.label = label;
+    const saved = await this.catalogRepo.save(row);
+    if (previous.toLowerCase() !== label.toLowerCase()) {
+      const uses = await this.bringRepo
+        .createQueryBuilder('b')
+        .where('LOWER(b.label) = LOWER(:previous)', { previous })
+        .getMany();
+      for (const use of uses) {
+        use.label = label;
+        await this.bringRepo.save(use);
+      }
+    }
+    return { id: saved.id, label: saved.label };
+  }
+
+  async removeBringCatalogItem(id: string): Promise<void> {
+    const row = await this.catalogRepo.findOne({ where: { id } });
+    if (!row) throw new NotFoundException('Matériel introuvable');
+    const uses = await this.bringRepo
+      .createQueryBuilder('b')
+      .where('LOWER(b.label) = LOWER(:label)', { label: row.label })
+      .getMany();
+    if (uses.length) await this.bringRepo.remove(uses);
+    await this.catalogRepo.remove(row);
   }
 
   private catalogLabels(raw?: string[] | null): string[] {
@@ -644,25 +708,16 @@ export class ScheduleMomentsService {
     }
 
     await this.dataSource.transaction(async (manager) => {
-      const delSub = manager
-        .createQueryBuilder()
-        .delete()
-        .from(ClassDaySubject)
-        .where('class_id = :classId', { classId });
-      const delBring = manager
-        .createQueryBuilder()
-        .delete()
-        .from(ClassBringItem)
-        .where('class_id = :classId', { classId });
-      if (year) {
-        delSub.andWhere('academic_year = :y', { y: year });
-        delBring.andWhere('academic_year = :y', { y: year });
-      } else {
-        delSub.andWhere('academic_year IS NULL');
-        delBring.andWhere('academic_year IS NULL');
-      }
-      await delSub.execute();
-      await delBring.execute();
+      const subWhere = year
+        ? { class_id: classId, academic_year: year }
+        : { class_id: classId, academic_year: IsNull() };
+      const bringWhere = year
+        ? { class_id: classId, academic_year: year }
+        : { class_id: classId, academic_year: IsNull() };
+      const oldSub = await manager.find(ClassDaySubject, { where: subWhere });
+      const oldBring = await manager.find(ClassBringItem, { where: bringWhere });
+      if (oldSub.length) await manager.remove(oldSub);
+      if (oldBring.length) await manager.remove(oldBring);
 
       for (const dayBody of incoming) {
         const day = parseWeekday(dayBody.day_of_week);

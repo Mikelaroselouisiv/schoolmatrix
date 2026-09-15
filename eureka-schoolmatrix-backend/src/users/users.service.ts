@@ -305,7 +305,10 @@ export class UsersService {
       await this.usersRepo.update(userId, patch);
     }
     if (params.linked_student_ids !== undefined) {
-      await this.linkedStudentRepo.delete({ user: { id: userId } });
+      const previous = await this.linkedStudentRepo.find({
+        where: { user: { id: userId } },
+      });
+      if (previous.length) await this.linkedStudentRepo.remove(previous);
       for (const studentId of [...new Set(params.linked_student_ids.filter(Boolean))]) {
         await this.linkStudent(userId, studentId, false);
       }
@@ -358,7 +361,10 @@ export class UsersService {
     if (!user) throw new NotFoundException('User not found');
     // Tombstone AVANT hard delete : le prochain pull cloud ne peut pas ressusciter.
     await this.syncService.markDeleted('User', userId, undefined, { kick: false });
-    await this.linkedStudentRepo.delete({ user: { id: userId } });
+    const links = await this.linkedStudentRepo.find({
+      where: { user: { id: userId } },
+    });
+    if (links.length) await this.linkedStudentRepo.remove(links);
     await this.usersRepo.remove(user);
     this.syncKick.kick('user-delete');
     return { deleted: true };

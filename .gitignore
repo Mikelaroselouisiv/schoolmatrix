@@ -63,6 +63,8 @@ apps/mobile/web-build/
 
 # Scripts SQL temporaires (prod, ne pas versionner)
 tmp-eureka-prod-*.sql
+tmp-andrea-*.sql
+tmp-*.sql
 
 # Installateurs locaux (binaires)
 /Eureka-SchoolMatrix-Remote*.exe

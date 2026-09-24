@@ -218,12 +218,12 @@ export function DashboardSubjectsPage() {
 
       {SUBJECT_AUDIENCES.map((group) => {
         const rows = subjects.filter((s) => {
-          const group = isSubjectAudience(s.audience)
+          const assigned = isSubjectAudience(s.audience)
             ? s.audience
             : s.section
               ? "PRESCOLAIRE"
               : "PRIMAIRE";
-          return group === group.key;
+          return assigned === group.key;
         });
         const preschool = group.key === "PRESCOLAIRE";
         return (

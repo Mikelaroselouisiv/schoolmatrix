@@ -2,7 +2,7 @@
   "expo": {
     "name": "School Matrix",
     "slug": "schoolmatrix-mobile",
-    "version": "1.0.4",
+    "version": "1.0.8",
     "orientation": "portrait",
     "icon": "./assets/logo.png",
     "userInterfaceStyle": "light",
@@ -14,7 +14,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.schoolmatrix.app",
-      "buildNumber": "6",
+      "buildNumber": "13",
       "appleTeamId": "P227YQ54ZL",
       "infoPlist": {
         "NSAppTransportSecurity": {
@@ -40,7 +40,7 @@
         "foregroundImage": "./assets/logo.png"
       },
       "package": "com.schoolmatrix.app",
-      "versionCode": 5,
+      "versionCode": 9,
       "usesCleartextTraffic": true,
       "softwareKeyboardLayoutMode": "resize",
       "permissions": [
@@ -62,8 +62,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "School Matrix utilise vos photos pour les fiches élèves.",
-          "cameraPermission": "School Matrix utilise la caméra pour photographier les élèves."
+          "photosPermission": "School Matrix utilise vos photos pour les fiches élèves et votre photo de profil.",
+          "cameraPermission": "School Matrix utilise la caméra pour les fiches élèves et votre photo de profil."
         }
       ],
       [

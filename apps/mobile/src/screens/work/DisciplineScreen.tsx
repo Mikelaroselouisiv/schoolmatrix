@@ -45,7 +45,7 @@ import type { WorkStackParamList } from '../../navigation/types';
 import { AccessDenied, useCanAccess } from '../../lib/access';
 
 type Props = NativeStackScreenProps<WorkStackParamList, 'Discipline'>;
-type TabId = 'appel' | 'retards' | 'points' | 'mesures';
+type TabId = 'retards' | 'points' | 'mesures';
 type PickerKind = 'class' | 'student' | 'measureType' | null;
 
 const MEASURE_TYPES = [
@@ -55,9 +55,9 @@ const MEASURE_TYPES = [
   { id: 'RENVOYE_DEFINITIVEMENT', label: 'Renvoyé définitivement' },
 ];
 
-export function DisciplineScreen({ navigation }: Props) {
+export function DisciplineScreen({ route }: Props) {
   const allowed = useCanAccess('discipline');
-  const [tab, setTab] = useState<TabId>('appel');
+  const [tab, setTab] = useState<TabId>(route.params?.tab ?? 'retards');
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [students, setStudents] = useState<StudentListItem[]>([]);
   const [boot, setBoot] = useState(true);
@@ -131,8 +131,12 @@ export function DisciplineScreen({ navigation }: Props) {
   }, [tab, classId, date, studentId]);
 
   useEffect(() => {
-    if (tab !== 'appel') void refreshLists();
-  }, [tab, refreshLists]);
+    if (route.params?.tab) setTab(route.params.tab);
+  }, [route.params?.tab]);
+
+  useEffect(() => {
+    void refreshLists();
+  }, [refreshLists]);
 
   const pickerItems = useMemo(() => {
     if (picker === 'class') return classes.map((c) => ({ id: c.id, label: c.name }));
@@ -277,7 +281,6 @@ export function DisciplineScreen({ navigation }: Props) {
         <View style={{ marginTop: 12 }}>
           <SegmentedControl
             options={[
-              { id: 'appel', label: 'Appel' },
               { id: 'retards', label: 'Retards' },
               { id: 'points', label: 'Points' },
               { id: 'mesures', label: 'Mesures' },
@@ -295,12 +298,6 @@ export function DisciplineScreen({ navigation }: Props) {
         {success ? (
           <View style={styles.ok}>
             <Text style={styles.okText}>{success}</Text>
-          </View>
-        ) : null}
-
-        {tab === 'appel' ? (
-          <View style={styles.card}>
-            <Button title="Ouvrir l’appel" onPress={() => navigation.navigate('Attendance')} />
           </View>
         ) : null}
 

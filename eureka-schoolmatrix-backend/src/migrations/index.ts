@@ -34,6 +34,8 @@ import { OpeningInstructionText1739000000031 } from './1739000000031-OpeningInst
 import { SchoolVacation1739000000032 } from './1739000000032-SchoolVacation';
 import { SchoolAgenda1739000000033 } from './1739000000033-SchoolAgenda';
 import { SchoolVacationRooms1739000000034 } from './1739000000034-SchoolVacationRooms';
+import { HomeworkPreschoolStudentWork1739000000035 } from './1739000000035-HomeworkPreschoolStudentWork';
+import { HomeworkNotation1739000000036 } from './1739000000036-HomeworkNotation';
 
 /** Liste des migrations (ordre d’exécution). Utilisée par l’app au démarrage (migrationsRun). */
 export const migrations = [
@@ -73,4 +75,6 @@ export const migrations = [
   SchoolVacation1739000000032,
   SchoolAgenda1739000000033,
   SchoolVacationRooms1739000000034,
+  HomeworkPreschoolStudentWork1739000000035,
+  HomeworkNotation1739000000036,
 ];

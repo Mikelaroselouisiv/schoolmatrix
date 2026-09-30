@@ -8,7 +8,8 @@ $ErrorActionPreference = 'Continue'
 $ExpectedProject = 'parallele-schoolmatrix'
 $ForbiddenSubstrings = @(
   'freres', 'bazile', 'baziles', 'pos-freres',
-  'israel', 'entrprise-israel', 'eau-cascade', 'pos-entrprise'
+  'israel', 'entrprise-israel', 'eau-cascade', 'pos-entrprise',
+  'shekinah', 'shekinah-schoolmatrix'
 )
 
 function Get-GcloudValue([string] $Key) {

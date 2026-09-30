@@ -32,7 +32,7 @@ import {
   examCellKey,
   defaultExamRange,
 } from "@/lib/scheduleGrid";
-import { isMaterialsCycle, periodScopeFromLevel } from "@/lib/educationLevels";
+import { isMaterialsCycle, periodScopeFromLevel, periodScopeLabel } from "@/lib/educationLevels";
 
 const DAYS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
 /** Semaine de classe : lundi → vendredi. */
@@ -215,6 +215,7 @@ type ExamPeriodItem = {
   class_id: string;
   class_name: string;
   class_level?: string | null;
+  period_id?: string | null;
   period_name: string;
   start_date: string;
   end_date: string;
@@ -651,6 +652,7 @@ export function DashboardSchedulePage() {
   const examPeriodFormRef = useRevealScroll<HTMLFormElement>(showExamPeriodForm);
   const emptyExamPeriodForm = {
     academic_year_id: "",
+    period_id: "",
     period_name: "",
     start_date: "",
     end_date: "",
@@ -658,6 +660,7 @@ export function DashboardSchedulePage() {
     class_ids: [] as string[],
   };
   const [examPeriodForm, setExamPeriodForm] = useState(emptyExamPeriodForm);
+  const [examPeriodFormPeriods, setExamPeriodFormPeriods] = useState<Period[]>([]);
   const [editingExamPeriodIds, setEditingExamPeriodIds] = useState<string[] | null>(null);
 
   const [showVacationForm, setShowVacationForm] = useState(false);
@@ -891,6 +894,41 @@ export function DashboardSchedulePage() {
   useEffect(() => {
     loadPeriods(academicYearFilter || defaultYearId);
   }, [academicYearFilter, defaultYearId]);
+
+  useEffect(() => {
+    if (!showExamPeriodForm) {
+      setExamPeriodFormPeriods([]);
+      return;
+    }
+    const yearId = examPeriodForm.academic_year_id;
+    if (!yearId) {
+      setExamPeriodFormPeriods([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetchWithAuth(`${API_BASE}/periods?academic_year_id=${yearId}`);
+        const data = await res.json();
+        if (cancelled) return;
+        const loaded: Period[] = data.periods ?? [];
+        setExamPeriodFormPeriods(loaded);
+        setExamPeriodForm((f) => {
+          if (f.period_id && loaded.some((p) => p.id === f.period_id)) return f;
+          const byName = f.period_name
+            ? loaded.find((p) => p.name === f.period_name)
+            : undefined;
+          if (byName) return { ...f, period_id: byName.id };
+          return f.period_id ? { ...f, period_id: "" } : f;
+        });
+      } catch {
+        if (!cancelled) setExamPeriodFormPeriods([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showExamPeriodForm, examPeriodForm.academic_year_id]);
 
   useEffect(() => {
     const list = classes.filter((c) => isListScheduleLevel(c.level));
@@ -1515,7 +1553,6 @@ export function DashboardSchedulePage() {
     setExamPeriodForm({
       ...emptyExamPeriodForm,
       academic_year_id: academicYearFilter || defaultYearId,
-      period_name: defaultPeriodName || "",
     });
     setShowExamPeriodForm(true);
   }
@@ -1526,6 +1563,7 @@ export function DashboardSchedulePage() {
     setEditingExamPeriodIds(items.map((p) => p.id));
     setExamPeriodForm({
       academic_year_id: first.academic_year_id || defaultYearId,
+      period_id: first.period_id || "",
       period_name: first.period_name || "",
       start_date: (first.start_date || "").slice(0, 10),
       end_date: (first.end_date || "").slice(0, 10),
@@ -1547,7 +1585,7 @@ export function DashboardSchedulePage() {
     if (
       !examPeriodForm.academic_year_id ||
       !examPeriodForm.class_ids.length ||
-      !examPeriodForm.period_name.trim() ||
+      !examPeriodForm.period_id ||
       !examPeriodForm.start_date ||
       !examPeriodForm.end_date
     ) {
@@ -1558,7 +1596,7 @@ export function DashboardSchedulePage() {
     try {
       const payload = {
         academic_year_id: examPeriodForm.academic_year_id,
-        period_name: examPeriodForm.period_name.trim(),
+        period_id: examPeriodForm.period_id,
         start_date: examPeriodForm.start_date,
         end_date: examPeriodForm.end_date,
         report_date: examPeriodForm.report_date || null,
@@ -2389,6 +2427,9 @@ export function DashboardSchedulePage() {
     }
   }
 
+  const examPeriodFormMixedScopes =
+    new Set(examPeriodFormPeriods.map((x) => x.scope || "ECOLE")).size > 1;
+
   if (loading) return <div className="animate-pulse text-slate-500">Chargement...</div>;
 
   const roomCard = (room: Room, kind: "cours" | "examens") => {
@@ -3175,7 +3216,14 @@ export function DashboardSchedulePage() {
                   <label className="mb-1 block text-[11px] font-medium text-slate-600">Année</label>
                   <select
                     value={examPeriodForm.academic_year_id}
-                    onChange={(e) => setExamPeriodForm((f) => ({ ...f, academic_year_id: e.target.value }))}
+                    onChange={(e) =>
+                      setExamPeriodForm((f) => ({
+                        ...f,
+                        academic_year_id: e.target.value,
+                        period_id: "",
+                        period_name: "",
+                      }))
+                    }
                     className="class-input max-w-[12rem] bg-white"
                     required
                   >
@@ -3189,18 +3237,36 @@ export function DashboardSchedulePage() {
                 </div>
                 <div>
                   <label className="mb-1 block text-[11px] font-medium text-slate-600">Période</label>
-                  <input
-                    list="exam-period-names"
-                    value={examPeriodForm.period_name}
-                    onChange={(e) => setExamPeriodForm((f) => ({ ...f, period_name: e.target.value }))}
+                  <select
+                    value={examPeriodForm.period_id}
+                    onChange={(e) => {
+                      const period_id = e.target.value;
+                      const chosen = examPeriodFormPeriods.find((p) => p.id === period_id);
+                      setExamPeriodForm((f) => ({
+                        ...f,
+                        period_id,
+                        period_name: chosen?.name || "",
+                      }));
+                    }}
+                    disabled={!examPeriodForm.academic_year_id}
                     className="class-input w-full max-w-[14rem] bg-white"
                     required
-                  />
-                  <datalist id="exam-period-names">
-                    {periods.map((p) => (
-                      <option key={p.id} value={p.name} />
+                  >
+                    <option value="">
+                      {examPeriodForm.academic_year_id
+                        ? examPeriodFormPeriods.length
+                          ? "Sélectionner"
+                          : "Aucune période pour cette année"
+                        : "Choisir l’année d’abord"}
+                    </option>
+                    {examPeriodFormPeriods.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {examPeriodFormMixedScopes
+                          ? `${p.name} — ${periodScopeLabel(p.scope || "ECOLE")}`
+                          : p.name}
+                      </option>
                     ))}
-                  </datalist>
+                  </select>
                 </div>
                 <div>
                   <label className="mb-1 block text-[11px] font-medium text-slate-600">Du</label>

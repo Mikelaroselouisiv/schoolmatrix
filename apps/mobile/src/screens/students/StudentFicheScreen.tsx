@@ -34,6 +34,7 @@ import {
   getStudentDossierHomework,
   getStudentSchedule,
   listSchoolVacations,
+  uniqueSchoolVacations,
   type ClassDayList,
   type DisciplineSummary,
   type ExamResults,
@@ -152,7 +153,15 @@ export function StudentFicheScreen({ navigation, route }: Props) {
         setHomework([]);
       }
       try {
-        setVacations(await listSchoolVacations({ academic_year_id: yearId || undefined }));
+        const rows = await listSchoolVacations({
+          academic_year_id: yearId || undefined,
+          class_id: s?.class_id || undefined,
+        });
+        setVacations(
+          uniqueSchoolVacations(
+            rows.filter((v) => !v.class_id || !s?.class_id || v.class_id === s.class_id),
+          ),
+        );
       } catch {
         setVacations([]);
       }

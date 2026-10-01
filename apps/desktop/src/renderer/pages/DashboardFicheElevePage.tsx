@@ -285,8 +285,23 @@ type SchoolVacationItem = {
   end_date: string;
   motif: string;
   kind?: string | null;
-  room_id?: string | null;
+  class_id?: string | null;
 };
+
+function uniqueClassVacations(list: SchoolVacationItem[], classId?: string | null): SchoolVacationItem[] {
+  const filtered = list.filter((v) => !v.class_id || !classId || v.class_id === classId);
+  const seen = new Map<string, SchoolVacationItem>();
+  for (const v of filtered) {
+    const key = [
+      (v.start_date || "").slice(0, 10),
+      (v.end_date || "").slice(0, 10),
+      (v.motif || "").trim().toLowerCase(),
+      v.kind === "CONGE" ? "CONGE" : "VACANCE",
+    ].join("|");
+    if (!seen.has(key)) seen.set(key, v);
+  }
+  return [...seen.values()].sort((a, b) => (a.start_date || "").localeCompare(b.start_date || ""));
+}
 
 export function DashboardFicheElevePage() {
   const [searchParams] = useSearchParams();
@@ -713,8 +728,10 @@ export function DashboardFicheElevePage() {
         }
       }
       try {
-        const vacQs = selectedYearId ? `?academic_year_id=${selectedYearId}` : "";
-        const vacRes = await fetchWithAuth(`${API_BASE}/school-vacations${vacQs}`);
+        const vacParams = new URLSearchParams();
+        if (selectedYearId) vacParams.set("academic_year_id", selectedYearId);
+        if (yearClassId) vacParams.set("class_id", yearClassId);
+        const vacRes = await fetchWithAuth(`${API_BASE}/school-vacations?${vacParams}`);
         const vacData = await vacRes.json();
         setSchoolVacations(vacRes.ok ? (vacData.school_vacations ?? []) : []);
       } catch {
@@ -773,6 +790,11 @@ export function DashboardFicheElevePage() {
         .then((d) => setPayment({ academic_year: d.academic_year ?? yearName, by_service: d.by_service ?? [], transactions: d.transactions }));
     }
   };
+
+  const visibleFicheVacations = useMemo(
+    () => uniqueClassVacations(schoolVacations, student?.class_id),
+    [schoolVacations, student?.class_id],
+  );
 
   const schedulePdfSections = useMemo<PdfSection[]>(() => {
     const sections: PdfSection[] = [];
@@ -932,9 +954,7 @@ export function DashboardFicheElevePage() {
         },
       });
     }
-    const visibleVacations = schoolVacations.filter(
-      (v) => !v.room_id || !student?.room_id || v.room_id === student.room_id,
-    );
+    const visibleVacations = visibleFicheVacations;
     if (visibleVacations.length > 0) {
       sections.push({
         title: "Vacances",
@@ -957,7 +977,7 @@ export function DashboardFicheElevePage() {
       });
     }
     return sections;
-  }, [scheduleSlots, examSchedules, examPeriods, extracurricularActivities, parentMeetings, schoolVacations, dayLists, student?.class_level, student?.room_id]);
+  }, [scheduleSlots, examSchedules, examPeriods, extracurricularActivities, parentMeetings, visibleFicheVacations, dayLists, student?.class_level]);
 
   const ficheLevel =
     dossierYears.find((y) => y.academic_year_id === selectedYearId)?.class_level ||
@@ -1702,12 +1722,10 @@ export function DashboardFicheElevePage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {schoolVacations.filter((v) => !v.room_id || !student?.room_id || v.room_id === student.room_id).length === 0 ? (
-                        <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">Aucune période pour cette salle.</td></tr>
+                      {visibleFicheVacations.length === 0 ? (
+                        <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">Aucune période pour cette classe.</td></tr>
                       ) : (
-                        [...schoolVacations]
-                          .filter((v) => !v.room_id || !student?.room_id || v.room_id === student.room_id)
-                          .sort((a, b) => (a.start_date || "").localeCompare(b.start_date || ""))
+                        visibleFicheVacations
                           .map((v) => (
                           <tr key={v.id} className="border-b border-[var(--app-border)] hover:bg-slate-50/50">
                             <td className="px-4 py-2 text-slate-600">{v.kind === "CONGE" ? "Congé" : "Vacance"}</td>

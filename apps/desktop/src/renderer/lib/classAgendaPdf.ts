@@ -167,7 +167,6 @@ type Vacation = {
   end_date: string;
   motif: string;
   kind?: string | null;
-  room_name?: string | null;
 };
 
 function courseSections(slots: Slot[], moments: Moment[]): PdfSection[] {
@@ -430,14 +429,12 @@ export async function buildClassAgendaPdfBlob(params: {
           { header: "Début", key: "debut" },
           { header: "Fin", key: "fin" },
           { header: "Motif", key: "motif" },
-          { header: "Salles", key: "salles" },
         ],
         rows: [...lines.values()].map((items) => ({
           type: vacationKindLabel(items[0].kind),
           debut: formatDateJJMMAAAA(items[0].start_date),
           fin: formatDateJJMMAAAA(items[0].end_date),
           motif: items[0].motif,
-          salles: items.map((item) => item.room_name).filter(Boolean).join(", ") || "—",
         })),
       },
     });

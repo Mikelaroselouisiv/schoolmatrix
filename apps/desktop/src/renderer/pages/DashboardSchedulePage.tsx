@@ -239,19 +239,6 @@ type Subject = { id: string; name: string };
 type Room = { id: string; name: string; class_id?: string | null; active?: boolean };
 type AcademicYear = { id: string; name: string };
 type Period = { id: string; name: string; scope?: string };
-type ExamSchedule = {
-  id: string;
-  class_id: string;
-  class_name: string;
-  subject_id: string;
-  subject_name: string;
-  period: string;
-  period_id?: string | null;
-  academic_year_id?: string | null;
-  exam_date: string;
-  start_time: string;
-  end_time: string;
-};
 type RoomAssignment = { teacher_id: number; teacher_name: string; subject_id: string };
 type TeacherAssignment = { teacher_id: number; teacher_name: string; class_id: string; subject_id?: string; subject_name?: string };
 type ClassMoment = {

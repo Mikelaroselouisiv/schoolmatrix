@@ -38,6 +38,7 @@ import { HomeworkPreschoolStudentWork1739000000035 } from './1739000000035-Homew
 import { HomeworkNotation1739000000036 } from './1739000000036-HomeworkNotation';
 import { ExamPeriodPeriodId1739000000037 } from './1739000000037-ExamPeriodPeriodId';
 import { SchoolVacationClasses1739000000038 } from './1739000000038-SchoolVacationClasses';
+import { StudentAbsenceReset1739000000039 } from './1739000000039-StudentAbsenceReset';
 
 /** Liste des migrations (ordre d’exécution). Utilisée par l’app au démarrage (migrationsRun). */
 export const migrations = [
@@ -81,4 +82,5 @@ export const migrations = [
   HomeworkNotation1739000000036,
   ExamPeriodPeriodId1739000000037,
   SchoolVacationClasses1739000000038,
+  StudentAbsenceReset1739000000039,
 ];

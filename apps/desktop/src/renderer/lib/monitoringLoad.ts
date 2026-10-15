@@ -10,7 +10,8 @@ export type MonitorSection =
   | "argent"
   | "discipline"
   | "moyennes"
-  | "travaux";
+  | "travaux"
+  | "programmation";
 
 export type AttendanceStatus = "PRESENT" | "ABSENT" | "LATE" | "EXCUSED" | null;
 

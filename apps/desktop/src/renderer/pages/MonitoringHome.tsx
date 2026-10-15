@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { getImageUrl, useSchoolProfile } from "@/context/SchoolProfileContext";
 import { ExportPdfButton } from "@/components/ExportPdfButton";
 import { canSeeMonitoringFinance } from "@/lib/dashboardRoles";
+import { ProgramBoard } from "@/pages/ProgramBoard";
 import { EDUCATION_LEVELS, educationLevelLabel } from "@/lib/educationLevels";
 import { formatGdes } from "@/lib/format";
 import { getSectionsPdfBlob, type PdfSection } from "@/lib/pdfExport";
@@ -54,6 +55,7 @@ const SECTIONS: { id: MonitorSection; label: string; money?: boolean }[] = [
   { id: "discipline", label: "Discipline" },
   { id: "moyennes", label: "Moyennes" },
   { id: "travaux", label: "Leçons et devoirs" },
+  { id: "programmation", label: "Programmation" },
 ];
 
 function Stat({
@@ -387,7 +389,7 @@ export function MonitoringHome() {
   }, [dossier, roomPick]);
 
   const pdf = useMemo(() => {
-    if (!data) return null;
+    if (!data || section === "programmation") return null;
     return monitoringPdf(section, data, showMoney);
   }, [data, section, showMoney]);
 
@@ -643,7 +645,7 @@ export function MonitoringHome() {
         </div>
       )}
 
-      {section !== "jour" && (
+      {section !== "jour" && section !== "programmation" && (
       <div className="monitor-search">
         <input
           value={query}
@@ -917,6 +919,7 @@ export function MonitoringHome() {
               )}
             </section>
             <section className="monitor-panel monitor-journal">
+              <ProgramBoard mode="school" preview onOpen={() => setSection("programmation")} />
               <div className="monitor-journal-block">
                 <div className="monitor-panel-head">
                   <h2 className="monitor-title">Sanctions</h2>
@@ -1243,6 +1246,10 @@ export function MonitoringHome() {
 
       {data && section === "travaux" && !detailsReady && (
         <p className="monitor-note">Chargement...</p>
+      )}
+
+      {section === "programmation" && (
+        <ProgramBoard mode="school" reloadKey={reloadKey} />
       )}
 
       {data && section === "travaux" && detailsReady && (

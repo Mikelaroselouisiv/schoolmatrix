@@ -48,23 +48,30 @@ function trustedApkHost(): string {
   }
 }
 
+function isTrustedApkUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:') return false;
+    if (u.host !== trustedApkHost()) return false;
+    if (!u.pathname.toLowerCase().endsWith('.apk')) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function isValidManifest(data: Partial<MobileUpdateManifest>): data is MobileUpdateManifest {
   if (
     typeof data.version !== 'string' ||
     typeof data.versionCode !== 'number' ||
     typeof data.apkUrl !== 'string' ||
-    !data.apkUrl
+    !data.apkUrl ||
+    !isTrustedApkUrl(data.apkUrl)
   ) {
     return false;
   }
-  try {
-    const u = new URL(data.apkUrl);
-    if (u.protocol !== 'https:') return false;
-    if (u.host !== trustedApkHost()) return false;
-    if (!u.pathname.toLowerCase().endsWith('.apk')) return false;
-  } catch {
-    return false;
-  }
+  if (data.apkUrlArm64 && !isTrustedApkUrl(data.apkUrlArm64)) return false;
+  if (data.apkUrlArmv7 && !isTrustedApkUrl(data.apkUrlArmv7)) return false;
   return true;
 }
 
@@ -82,8 +89,8 @@ export async function checkForUpdate(): Promise<MobileUpdateManifest | null> {
       versionCode: data.versionCode,
       apkUrl: data.apkUrl,
       notes: typeof data.notes === 'string' ? data.notes : undefined,
-      sha256: typeof data.sha256 === 'string' ? data.sha256 : undefined,
-      size: typeof data.size === 'number' ? data.size : undefined,
+      sha256: data.sha256,
+      size: data.size,
       publishedAt: typeof data.publishedAt === 'string' ? data.publishedAt : undefined,
       mandatory: data.mandatory === true,
     };

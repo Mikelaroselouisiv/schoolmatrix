@@ -1,12 +1,12 @@
-import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
+import { Alert, Platform, ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
 import type { ReactNode } from 'react';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../../components/ui';
 import { OfflineBanner } from '../../components/OfflineBanner';
 import { useAuth } from '../../context/AuthContext';
 import { useSchool } from '../../context/SchoolContext';
+import { useAppUpdate } from '../../context/AppUpdateContext';
 import { getVisibleFamilies, screensForFamilyVisible } from '../../lib/permissions';
 import { FAMILY_ICONS, SCREEN_ICONS, openProductScreen } from '../../lib/moreNavigation';
 import { colors } from '../../theme/tokens';
@@ -20,6 +20,7 @@ const MENU_FAMILIES: MobileFamilyId[] = ['life', 'org', 'money', 'insight', 'adm
 export function MoreScreen({ navigation }: Props) {
   const { roleName, rolePermissions } = useAuth();
   const { theme } = useSchool();
+  const { currentVersion, available, requestUserCheck } = useAppUpdate();
   const families = getVisibleFamilies(roleName, rolePermissions).filter((f) =>
     MENU_FAMILIES.includes(f.id as MobileFamilyId),
   );
@@ -64,10 +65,25 @@ export function MoreScreen({ navigation }: Props) {
           accentTint={theme.accentTint}
         >
           <MenuRow
-            title="Version"
-            icon="information-circle-outline"
-            value={Constants.expoConfig?.version || '1.0.0'}
+            title={available ? 'Mettre à jour' : 'Version'}
+            icon={available ? 'cloud-download-outline' : 'information-circle-outline'}
+            value={
+              available
+                ? `${currentVersion} → ${available.version}`
+                : currentVersion
+            }
+            emphasize={!!available}
             isLast
+            onPress={() => {
+              if (Platform.OS === 'ios') {
+                Alert.alert(
+                  'School Matrix',
+                  `Version ${currentVersion}\n\nLes mises à jour iOS s’installent avec un nouvel IPA.`,
+                );
+                return;
+              }
+              requestUserCheck();
+            }}
           />
         </MenuSection>
       </ScrollView>
@@ -107,12 +123,14 @@ function MenuRow({
   value,
   isLast,
   onPress,
+  emphasize,
 }: {
   title: string;
   icon: keyof typeof Ionicons.glyphMap;
   value?: string;
   isLast?: boolean;
   onPress?: () => void;
+  emphasize?: boolean;
 }) {
   const body = (
     <>
@@ -122,7 +140,10 @@ function MenuRow({
       <View style={styles.rowBody}>
         <Text style={styles.rowTitle}>{title}</Text>
         {value ? (
-          <Text style={styles.rowValue} numberOfLines={2}>
+          <Text
+            style={[styles.rowValue, emphasize && styles.rowValueUpdate]}
+            numberOfLines={2}
+          >
             {value}
           </Text>
         ) : null}
@@ -213,5 +234,9 @@ const styles = StyleSheet.create({
   rowValue: {
     fontSize: 13,
     color: colors.textMuted,
+  },
+  rowValueUpdate: {
+    color: colors.flame,
+    fontWeight: '600',
   },
 });

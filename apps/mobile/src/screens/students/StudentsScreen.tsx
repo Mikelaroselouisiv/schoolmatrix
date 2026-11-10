@@ -23,6 +23,7 @@ import { useSchool } from '../../context/SchoolContext';
 import { canEditStudent, canSeeStudentNisu } from '../../lib/permissions';
 import { AccessDenied, useCanBrowseStudents } from '../../lib/access';
 import { studentDisplayName } from '../../lib/format';
+import { useLatestRequest } from '../../lib/latestRequest';
 import { learnerNoun } from '../../lib/educationLevels';
 import {
   getAcademicYears,
@@ -55,6 +56,7 @@ export function StudentsScreen({ navigation }: Props) {
   const linkedOnly = useLinkedOnly(roleName);
   const canEnroll = canEditStudent(roleName, rolePermissions);
   const canSeeNisu = canSeeStudentNisu(roleName, rolePermissions);
+  const latest = useLatestRequest();
 
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<(StudentListItem | LinkedStudent)[]>([]);
@@ -117,15 +119,21 @@ export function StudentsScreen({ navigation }: Props) {
       setItems([]);
       return;
     }
+    const still = latest();
+    const requestedClass = classId;
     setError('');
     setLoadingList(true);
     try {
-      const list = await getStudents({ class_id: classId });
+      const list = (await getStudents({ class_id: requestedClass })).filter(
+        (student) => !student.class_id || student.class_id === requestedClass,
+      );
+      if (!still()) return;
       setItems(list);
       await cacheStudentsList(list);
     } catch (err) {
+      if (!still()) return;
       const cached = await readCachedStudentsList();
-      const forClass = cached.filter((s) => s.class_id === classId);
+      const forClass = cached.filter((s) => s.class_id === requestedClass);
       if (forClass.length) {
         setItems(forClass);
         setError('Hors ligne — liste en cache.');
@@ -134,10 +142,12 @@ export function StudentsScreen({ navigation }: Props) {
         setItems([]);
       }
     } finally {
-      setLoadingList(false);
-      setRefreshing(false);
+      if (still()) {
+        setLoadingList(false);
+        setRefreshing(false);
+      }
     }
-  }, [classId]);
+  }, [classId, latest]);
 
   useEffect(() => {
     if (linkedOnly) {
@@ -352,9 +362,7 @@ function FilterChip({
       style={[styles.chip, disabled && { opacity: 0.45 }]}
     >
       <Text style={styles.chipLabel}>{label}</Text>
-      <Text style={styles.chipValue} numberOfLines={1}>
-        {value}
-      </Text>
+      <Text style={styles.chipValue}>{value}</Text>
     </Pressable>
   );
 }

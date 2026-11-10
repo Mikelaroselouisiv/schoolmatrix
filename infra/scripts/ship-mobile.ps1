@@ -1,11 +1,14 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Bump version mobile → EAS build APK → download artifact → upload feed GCS.
+  Bump version mobile → EAS build 1 APK ARM universel → download → upload feed GCS.
 
 .DESCRIPTION
   Equivaut electron-updater côté desktop, pour l’APK Expo.
   Le checker in-app lit installers/mobile/latest.json.
+
+  Un seul APK : armeabi-v7a + arm64-v8a (pas x86 / simulateur).
+  S’installe sur Android 10/11 32 bits et Android 13–17 64 bits.
 
   Important: le premier APK installé doit déjà contenir le checker ;
   les ships suivants notifient les appareils.
@@ -99,9 +102,6 @@ function Set-MobileVersions([string] $NewVersion, [int] $NewCode) {
   if ($raw.Length -gt 0 -and [int][char]$raw[0] -eq 0xFEFF) { $raw = $raw.Substring(1) }
   $updated = [regex]::Replace($raw, '("version"\s*:\s*")[^"]+(")', "`${1}$NewVersion`${2}", 1)
   $updated = [regex]::Replace($updated, '("versionCode"\s*:\s*)\d+', "`${1}$NewCode", 1)
-  if ($updated -notmatch [regex]::Escape("`"$NewVersion`"") -or $updated -notmatch "versionCode`"\s*:\s*$NewCode") {
-    # fallback soft check
-  }
   $utf8NoBom = New-Object System.Text.UTF8Encoding $false
   [System.IO.File]::WriteAllText($AppJsonPath, $updated, $utf8NoBom)
 
@@ -109,6 +109,53 @@ function Set-MobileVersions([string] $NewVersion, [int] $NewCode) {
   if ($pkgRaw.Length -gt 0 -and [int][char]$pkgRaw[0] -eq 0xFEFF) { $pkgRaw = $pkgRaw.Substring(1) }
   $pkgUpdated = [regex]::Replace($pkgRaw, '("version"\s*:\s*")[^"]+(")', "`${1}$NewVersion`${2}", 1)
   [System.IO.File]::WriteAllText($PkgJsonPath, $pkgUpdated, $utf8NoBom)
+}
+
+function Invoke-EasAndroidApkBuild {
+  param(
+    [Parameter(Mandatory = $true)][string] $EasProfile,
+    [Parameter(Mandatory = $true)][string] $OutApk
+  )
+
+  $buildJsonPath = Join-Path ([System.IO.Path]::GetTempPath()) ("eas-build-{0}.json" -f [guid]::NewGuid().ToString('N'))
+  Push-Location $MobileDir
+  try {
+    Write-Host "eas build -p android --profile $EasProfile --non-interactive --wait --json"
+    $rawOut = & npx eas-cli build -p android --profile $EasProfile --non-interactive --wait --json 2>$null
+    if ($LASTEXITCODE -ne 0) {
+      throw "eas build ($EasProfile) a echoue (exit $LASTEXITCODE)"
+    }
+    $rawText = if ($rawOut -is [System.Array]) { ($rawOut | Out-String).Trim() } else { [string]$rawOut }
+    $rawText = $rawText.Trim()
+    $jsonStart = -1
+    for ($i = 0; $i -lt $rawText.Length; $i++) {
+      $ch = $rawText[$i]
+      if ($ch -eq '[' -or $ch -eq '{') { $jsonStart = $i; break }
+    }
+    if ($jsonStart -lt 0) { throw "Sortie eas build --json illisible ($EasProfile):`n$rawText" }
+    $jsonOnly = $rawText.Substring($jsonStart)
+    Set-Content -LiteralPath $buildJsonPath -Value $jsonOnly -Encoding utf8
+
+    $parsed = $jsonOnly | ConvertFrom-Json
+    $build = if ($parsed -is [System.Array]) { $parsed[0] } else { $parsed }
+    $artifactUrl = $null
+    if ($build.artifacts -and $build.artifacts.buildUrl) {
+      $artifactUrl = [string]$build.artifacts.buildUrl
+    } elseif ($build.artifacts -and $build.artifacts.applicationArchiveUrl) {
+      $artifactUrl = [string]$build.artifacts.applicationArchiveUrl
+    }
+    if (-not $artifactUrl) {
+      throw "artifacts.buildUrl manquant ($EasProfile). Ne pas utiliser eas build:download pour les APK."
+    }
+    Write-Host "Artifact URL ($EasProfile): $artifactUrl"
+    $outDir = Split-Path -Parent $OutApk
+    New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+    Write-Host "Download -> $OutApk"
+    Invoke-WebRequest -Uri $artifactUrl -OutFile $OutApk
+  } finally {
+    Pop-Location
+    Remove-Item -LiteralPath $buildJsonPath -Force -ErrorAction SilentlyContinue
+  }
 }
 
 Write-Step 'Assert GCP tenant'
@@ -128,57 +175,18 @@ Invoke-OrDry "write app.json + package.json" {
   Set-MobileVersions $newVersion $newCode
 }
 
+$outDir = Join-Path $MobileDir 'dist'
 $resolvedApk = $ApkPath
 
 if (-not $SkipBuild) {
-  Write-Step "EAS build Android profile=$Profile"
   if (-not (Get-Command eas -ErrorAction SilentlyContinue) -and -not (Get-Command npx -ErrorAction SilentlyContinue)) {
     Write-Error 'eas / npx requis (eas-cli).'
   }
 
-  $buildJsonPath = Join-Path ([System.IO.Path]::GetTempPath()) ("eas-build-{0}.json" -f [guid]::NewGuid().ToString('N'))
-
-  Invoke-OrDry "eas build -p android --profile $Profile --non-interactive --wait --json" {
-    Push-Location $MobileDir
-    try {
-      $rawOut = & npx eas-cli build -p android --profile $Profile --non-interactive --wait --json 2>$null
-      if ($LASTEXITCODE -ne 0) {
-        throw "eas build a echoue (exit $LASTEXITCODE)"
-      }
-      $rawText = if ($rawOut -is [System.Array]) { ($rawOut | Out-String).Trim() } else { [string]$rawOut }
-      $rawText = $rawText.Trim()
-      # --json peut être un objet OU un tableau
-      $jsonStart = -1
-      for ($i = 0; $i -lt $rawText.Length; $i++) {
-        $ch = $rawText[$i]
-        if ($ch -eq '[' -or $ch -eq '{') { $jsonStart = $i; break }
-      }
-      if ($jsonStart -lt 0) { throw "Sortie eas build --json illisible:`n$rawText" }
-      $jsonOnly = $rawText.Substring($jsonStart)
-      Set-Content -LiteralPath $buildJsonPath -Value $jsonOnly -Encoding utf8
-
-      $parsed = $jsonOnly | ConvertFrom-Json
-      $build = if ($parsed -is [System.Array]) { $parsed[0] } else { $parsed }
-      $artifactUrl = $null
-      if ($build.artifacts -and $build.artifacts.buildUrl) {
-        $artifactUrl = [string]$build.artifacts.buildUrl
-      } elseif ($build.artifacts -and $build.artifacts.applicationArchiveUrl) {
-        $artifactUrl = [string]$build.artifacts.applicationArchiveUrl
-      }
-      if (-not $artifactUrl) {
-        throw "artifacts.buildUrl manquant dans la sortie EAS. Ne pas utiliser eas build:download pour les APK."
-      }
-      Write-Host "Artifact URL: $artifactUrl"
-
-      $outDir = Join-Path $MobileDir 'dist'
-      New-Item -ItemType Directory -Force -Path $outDir | Out-Null
-      $resolvedApk = Join-Path $outDir ("SchoolMatrix-{0}+{1}.apk" -f $newVersion, $newCode)
-      Write-Host "Download -> $resolvedApk"
-      Invoke-WebRequest -Uri $artifactUrl -OutFile $resolvedApk
-    } finally {
-      Pop-Location
-      Remove-Item -LiteralPath $buildJsonPath -Force -ErrorAction SilentlyContinue
-    }
+  $resolvedApk = Join-Path $outDir ("SchoolMatrix-{0}+{1}.apk" -f $newVersion, $newCode)
+  Write-Step "EAS build Android profile=$Profile (armeabi-v7a + arm64-v8a)"
+  Invoke-OrDry "eas build profile=$Profile" {
+    Invoke-EasAndroidApkBuild -EasProfile $Profile -OutApk $resolvedApk
   }
 } else {
   if (-not $resolvedApk) {
@@ -196,8 +204,16 @@ if (-not $resolvedApk -or -not (Test-Path -LiteralPath $resolvedApk)) {
 }
 
 Write-Step 'Upload GCS feed'
-& $UploadScript -ApkPath $resolvedApk -Version $newVersion -VersionCode $newCode -Notes $Notes -Bucket $Bucket
+$uploadArgs = @{
+  ApkPath     = $resolvedApk
+  Version     = $newVersion
+  VersionCode = $newCode
+  Notes       = $Notes
+  Bucket      = $Bucket
+}
+& $UploadScript @uploadArgs
 
 Write-Host ""
 Write-Host "Ship mobile OK: $newVersion ($newCode)" -ForegroundColor Green
+Write-Host "  APK : $resolvedApk"
 Write-Host "Feed: https://storage.googleapis.com/$Bucket/installers/mobile/latest.json"

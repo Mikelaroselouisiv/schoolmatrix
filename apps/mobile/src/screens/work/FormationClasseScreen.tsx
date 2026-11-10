@@ -19,6 +19,7 @@ import {
 } from '../../components/ui';
 import { useSchool } from '../../context/SchoolContext';
 import { studentDisplayName } from '../../lib/format';
+import { useLatestRequest } from '../../lib/latestRequest';
 import { colors } from '../../theme/tokens';
 import {
   computeFormationDecisions,
@@ -59,6 +60,7 @@ const DECISION_LABEL: Record<string, string> = Object.fromEntries(
 export function FormationClasseScreen({}: Props) {
   const allowed = useCanAccess('formation-classe');
   const { context } = useSchool();
+  const latest = useLatestRequest();
   const [years, setYears] = useState<AcademicYear[]>([]);
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [students, setStudents] = useState<FormationStudent[]>([]);
@@ -86,17 +88,21 @@ export function FormationClasseScreen({}: Props) {
       setStudents([]);
       return;
     }
+    const still = latest();
     setLoading(true);
     setError('');
     try {
-      setStudents(await getFormationStudents(yearId, classId));
+      const list = await getFormationStudents(yearId, classId);
+      if (!still()) return;
+      setStudents(list);
     } catch (err) {
+      if (!still()) return;
       setError(err instanceof Error ? err.message : 'Chargement impossible');
       setStudents([]);
     } finally {
-      setLoading(false);
+      if (still()) setLoading(false);
     }
-  }, [yearId, classId]);
+  }, [yearId, classId, latest]);
 
   useEffect(() => {
     let cancelled = false;
@@ -287,7 +293,7 @@ export function FormationClasseScreen({}: Props) {
             <View style={styles.card}>
               <Text style={styles.cardTitle}>
                 {studentDisplayName(item)}
-                {item.order_number ? ` · ${item.order_number}` : ''}
+                {item.management_code ? ` · ${item.management_code}` : ''}
               </Text>
               <Muted>
                 Salle {item.room_name || 'Sans salle'}

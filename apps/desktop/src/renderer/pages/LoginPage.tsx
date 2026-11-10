@@ -1,9 +1,10 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { AppUpdateControls } from '../components/AppUpdateControls';
 import { PasswordInput } from '../components/PasswordInput';
 import { useAuth } from '../context/AuthContext';
 import { useSchoolProfileOptional } from '../context/SchoolProfileContext';
+import { LoginFailedError, lockMessage } from '../lib/loginLock';
 import { getToken } from '../services/api';
 
 export function LoginPage() {
@@ -15,6 +16,26 @@ export function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [lockUntil, setLockUntil] = useState<number | null>(null);
+  const [permanentlyBlocked, setPermanentlyBlocked] = useState(false);
+  const [remaining, setRemaining] = useState(0);
+
+  useEffect(() => {
+    if (permanentlyBlocked || lockUntil == null) return;
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((lockUntil - Date.now()) / 1000));
+      setRemaining(left);
+      if (left <= 0) {
+        setLockUntil(null);
+        setError('');
+      }
+    };
+    tick();
+    const id = window.setInterval(tick, 250);
+    return () => window.clearInterval(id);
+  }, [lockUntil, permanentlyBlocked]);
+
+  const locked = permanentlyBlocked || (lockUntil != null && remaining > 0);
 
   if (!authLoading && (user || getToken())) {
     return <Navigate to="/dashboard" replace />;
@@ -22,6 +43,7 @@ export function LoginPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    if (locked) return;
     setError('');
     setLoading(true);
     try {
@@ -30,11 +52,21 @@ export function LoginPage() {
       navigate('/dashboard', { replace: true });
     } catch (err: unknown) {
       console.error('Login API error:', err);
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Erreur de connexion. Vérifiez que le backend est démarré.',
-      );
+      if (err instanceof LoginFailedError && err.permanentlyBlocked) {
+        setPermanentlyBlocked(true);
+        setLockUntil(null);
+        setError(lockMessage(0, true));
+      } else if (err instanceof LoginFailedError && err.retryAfterSeconds > 0) {
+        setLockUntil(Date.now() + err.retryAfterSeconds * 1000);
+        setRemaining(err.retryAfterSeconds);
+        setError(lockMessage(err.retryAfterSeconds, false));
+      } else {
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'Erreur de connexion. Vérifiez que le backend est démarré.',
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -85,15 +117,25 @@ export function LoginPage() {
               Se souvenir de moi
             </label>
           </div>
-          {error && (
-            <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</div>
+          {(error || locked) && (
+            <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg whitespace-pre-line tabular-nums">
+              {permanentlyBlocked
+                ? lockMessage(0, true)
+                : lockUntil != null && remaining > 0
+                  ? lockMessage(remaining, false)
+                  : error}
+            </div>
           )}
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || locked}
             className="app-btn-primary w-full disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {loading ? 'Connexion…' : 'Se connecter'}
+            {loading
+              ? 'Connexion…'
+              : locked
+                ? 'Connexion indisponible'
+                : 'Se connecter'}
           </button>
         </form>
         <p className="mt-4 text-sm text-slate-600 text-center">

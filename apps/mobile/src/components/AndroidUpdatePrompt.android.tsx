@@ -18,12 +18,21 @@ import {
   resumePendingInstallerIfAny,
   subscribeAppActive,
 } from '../services/app-update';
+import { useAppUpdate } from '../context/AppUpdateContext';
 
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const FIRST_CHECK_MS = 8_000;
 const SNOOZE_KEY = 'schoolmatrix.mobile.update.snooze';
 
-type Phase = 'idle' | 'prompt' | 'downloading' | 'installing' | 'needPermission' | 'error';
+type Phase =
+  | 'idle'
+  | 'checking'
+  | 'prompt'
+  | 'downloading'
+  | 'installing'
+  | 'needPermission'
+  | 'error'
+  | 'upToDate';
 
 async function readSnooze(): Promise<{ until: number; versionCode: number } | null> {
   try {
@@ -51,44 +60,63 @@ async function writeSnooze(versionCode: number) {
  * Fichier plateforme : ne pas utiliser sur iOS.
  */
 export function AndroidUpdatePrompt() {
+  const { currentVersion, setAvailable, userCheckNonce } = useAppUpdate();
   const [manifest, setManifest] = useState<MobileUpdateManifest | null>(null);
   const [phase, setPhase] = useState<Phase>('idle');
   const [progress, setProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
   const checking = useRef(false);
   const awaitingSources = useRef(false);
+  const lastUserCheck = useRef(0);
 
-  const runCheck = useCallback(async () => {
-    if (checking.current) return;
+  const runCheck = useCallback(async (force = false) => {
     if (phase === 'downloading' || phase === 'installing') return;
+    if (checking.current && !force) return;
     checking.current = true;
+    if (force) {
+      setPhase('checking');
+      setErrorMsg('');
+    }
     try {
       const remote = await checkForUpdate();
+      setAvailable(remote);
       if (!remote) {
-        if (phase === 'prompt') {
-          setManifest(null);
-          setPhase('idle');
-        }
-        return;
-      }
-      const snooze = await readSnooze();
-      if (
-        !remote.mandatory &&
-        snooze &&
-        snooze.versionCode === remote.versionCode &&
-        Date.now() < snooze.until
-      ) {
-        setManifest(remote);
+        setManifest(null);
+        setPhase(force ? 'upToDate' : 'idle');
         return;
       }
       setManifest(remote);
-      setPhase((p) => (p === 'needPermission' || p === 'error' ? p : 'prompt'));
+      if (!force && !remote.mandatory) {
+        const snooze = await readSnooze();
+        if (
+          snooze &&
+          snooze.versionCode === remote.versionCode &&
+          Date.now() < snooze.until
+        ) {
+          if (phase !== 'prompt' && phase !== 'needPermission' && phase !== 'error') {
+            setPhase('idle');
+          }
+          return;
+        }
+      }
+      if (force) {
+        setPhase('prompt');
+      } else {
+        setPhase((p) =>
+          p === 'needPermission' || p === 'error' || p === 'downloading' || p === 'installing'
+            ? p
+            : 'prompt',
+        );
+      }
     } catch {
-      // silencieux
+      if (force) {
+        setPhase('error');
+        setErrorMsg('Impossible de vérifier les mises à jour. Réessayez.');
+      }
     } finally {
       checking.current = false;
     }
-  }, [phase]);
+  }, [phase, setAvailable]);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -120,6 +148,12 @@ export function AndroidUpdatePrompt() {
       unsub();
     };
   }, [runCheck]);
+
+  useEffect(() => {
+    if (userCheckNonce === 0 || userCheckNonce === lastUserCheck.current) return;
+    lastUserCheck.current = userCheckNonce;
+    void runCheck(true);
+  }, [userCheckNonce, runCheck]);
 
   const dismiss = useCallback(() => {
     if (manifest?.mandatory) return;
@@ -165,23 +199,73 @@ export function AndroidUpdatePrompt() {
   }, []);
 
   const visible =
-    !!manifest &&
-    (phase === 'prompt' ||
-      phase === 'downloading' ||
-      phase === 'installing' ||
-      phase === 'needPermission' ||
-      phase === 'error');
+    phase === 'checking' ||
+    phase === 'upToDate' ||
+    phase === 'error' ||
+    (!!manifest &&
+      (phase === 'prompt' ||
+        phase === 'downloading' ||
+        phase === 'installing' ||
+        phase === 'needPermission'));
 
-  if (!visible || !manifest) return null;
+  if (!visible) return null;
 
   const pct = Math.round(Math.min(100, Math.max(0, progress * 100)));
+  const showUpdateBody = !!manifest && phase !== 'checking' && phase !== 'upToDate';
 
   return (
     <Modal visible transparent animationType="fade" statusBarTranslucent>
       <View style={styles.backdrop}>
         <View style={styles.card}>
+          {phase === 'checking' ? (
+            <>
+              <Text style={styles.title}>Mise à jour</Text>
+              <Text style={styles.version}>Version installée {currentVersion}</Text>
+              <View style={styles.row}>
+                <ActivityIndicator color={colors.ink} />
+                <Text style={styles.progressLabel}>Vérification…</Text>
+              </View>
+            </>
+          ) : null}
+
+          {phase === 'upToDate' ? (
+            <>
+              <Text style={styles.title}>Vous êtes à jour</Text>
+              <Text style={styles.version}>Version {currentVersion}</Text>
+              <Text style={styles.notes}>
+                Aucune nouvelle version n’est disponible pour le moment.
+              </Text>
+              <View style={styles.actions}>
+                <View />
+                <Pressable onPress={() => setPhase('idle')} style={styles.primaryBtn}>
+                  <Text style={styles.primaryText}>OK</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : null}
+
+          {phase === 'error' && !manifest ? (
+            <>
+              <Text style={styles.title}>Mise à jour</Text>
+              <Text style={styles.version}>Version {currentVersion}</Text>
+              <Text style={styles.error}>{errorMsg}</Text>
+              <View style={styles.actions}>
+                <Pressable onPress={() => setPhase('idle')} style={styles.laterBtn} hitSlop={8}>
+                  <Text style={styles.later}>Fermer</Text>
+                </Pressable>
+                <Pressable onPress={() => void runCheck(true)} style={styles.primaryBtn}>
+                  <Text style={styles.primaryText}>Réessayer</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : null}
+
+          {showUpdateBody && manifest ? (
+            <>
           <Text style={styles.title}>Mise à jour disponible</Text>
-          <Text style={styles.version}>Version {manifest.version}</Text>
+          <Text style={styles.version}>
+            {currentVersion} → {manifest.version}
+          </Text>
           <Text style={styles.notes}>
             {manifest.notes?.trim() ||
               'Une nouvelle version de School Matrix est prête à être installée.'}
@@ -252,6 +336,8 @@ export function AndroidUpdatePrompt() {
                 <Text style={styles.primaryText}>Réessayer</Text>
               </Pressable>
             </View>
+          ) : null}
+            </>
           ) : null}
         </View>
       </View>

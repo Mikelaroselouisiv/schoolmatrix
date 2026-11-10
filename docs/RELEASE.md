@@ -58,11 +58,11 @@ Les apps installées notifient → téléchargent → redémarrent (desktop) / o
 ### Mobile (Expo APK)
 
 ```powershell
-# Bump version + versionCode → eas build --wait --json → download artifacts.buildUrl → GCS
+# Bump + 1 APK ARM universel (32 + 64 bits) → GCS latest.json
 powershell -ExecutionPolicy Bypass -File infra/scripts/ship-mobile.ps1 -Bump patch
 
 # Upload APK + latest.json seulement
-powershell -ExecutionPolicy Bypass -File infra/scripts/upload-mobile-apk.ps1 -ApkPath ./path/to.apk
+powershell -ExecutionPolicy Bypass -File infra/scripts/upload-mobile-apk.ps1 -ApkPath ./SchoolMatrix.apk
 ```
 
 Ne pas utiliser `eas build:download` pour les APK (utiliser `artifacts.buildUrl` ; `--json` peut être un tableau).

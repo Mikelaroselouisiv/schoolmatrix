@@ -7,6 +7,7 @@ import { SchoolProvider } from './src/context/SchoolContext';
 import { NetworkProvider } from './src/context/NetworkContext';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { AndroidUpdatePrompt } from './src/components/AndroidUpdatePrompt';
+import { AppUpdateProvider } from './src/context/AppUpdateContext';
 import { TeacherBirthdayReminders } from './src/components/TeacherBirthdayReminders';
 import { TeacherMorningDutyReminders } from './src/components/TeacherMorningDutyReminders';
 
@@ -17,6 +18,7 @@ export default function App() {
         <AuthProvider>
           <NetworkProvider>
             <SchoolProvider>
+              <AppUpdateProvider>
               <View style={{ flex: 1 }}>
                 <StatusBar style="dark" />
                 <RootNavigator />
@@ -24,6 +26,7 @@ export default function App() {
                 <TeacherMorningDutyReminders />
                 <AndroidUpdatePrompt />
               </View>
+              </AppUpdateProvider>
             </SchoolProvider>
           </NetworkProvider>
         </AuthProvider>

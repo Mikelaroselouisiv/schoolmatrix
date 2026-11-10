@@ -1,6 +1,7 @@
 import axios, { type AxiosError } from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import { resolveApiBaseUrl } from '../config/api';
+import { LoginFailedError } from '../lib/loginLock';
 
 const TOKEN_KEY = 'schoolmatrix_token';
 
@@ -114,8 +115,32 @@ export async function login(
     await writeToken(data.access_token);
     return data;
   } catch (err) {
-    throw new Error(axiosMessage(err, 'Identifiants invalides'));
+    throw toLoginError(err);
   }
+}
+
+function toLoginError(err: unknown): LoginFailedError {
+  if (err instanceof LoginFailedError) return err;
+  if (axios.isAxiosError(err) && err.response?.data && typeof err.response.data === 'object') {
+    const data = err.response.data as {
+      message?: string | string[];
+      retry_after_seconds?: number;
+      permanently_blocked?: boolean;
+    };
+    const raw = data.message;
+    const message = Array.isArray(raw)
+      ? raw.join(', ')
+      : typeof raw === 'string' && raw.trim()
+        ? raw
+        : axiosMessage(err, 'Identifiants invalides');
+    const retry = Number(data.retry_after_seconds);
+    return new LoginFailedError(
+      message,
+      Number.isFinite(retry) ? Math.max(0, retry) : 0,
+      data.permanently_blocked === true,
+    );
+  }
+  return new LoginFailedError(axiosMessage(err, 'Identifiants invalides'));
 }
 
 export async function logout(): Promise<void> {
@@ -370,6 +395,11 @@ export type ClassItem = {
   level?: string | null;
   can_take_attendance?: boolean;
   can_set_materials?: boolean;
+  room_id?: string | null;
+  room_name?: string | null;
+  room_count?: number;
+  student_count?: number;
+  rooms?: { id: string; name: string; capacity?: number | null }[];
 };
 
 
@@ -1934,6 +1964,14 @@ export async function createStudent(
   }
 }
 
+export async function archiveStudent(id: string): Promise<void> {
+  try {
+    await api.delete(`/students/${id}`);
+  } catch (err) {
+    throw new Error(axiosMessage(err, 'Impossible de retirer l’élève'));
+  }
+}
+
 export async function updateStudent(
   id: string,
   body: Partial<StudentWriteBody>,
@@ -1952,6 +1990,7 @@ export type FormationStudent = {
   first_name: string;
   last_name: string;
   order_number?: string | null;
+  management_code?: string | null;
   room_id?: string | null;
   room_name?: string | null;
   decision?: string | null;

@@ -11,11 +11,12 @@ import { RolesGuard } from './roles.guard';
 import { LoginThrottleService } from './login-throttle.service';
 import { RefreshTokenService } from './refresh-token.service';
 import { RefreshToken } from './refresh-token.entity';
+import { LoginThrottle } from './login-throttle.entity';
 
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
-    TypeOrmModule.forFeature([RefreshToken]),
+    TypeOrmModule.forFeature([RefreshToken, LoginThrottle]),
     UsersModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -35,6 +36,6 @@ import { RefreshToken } from './refresh-token.entity';
     LoginThrottleService,
     RefreshTokenService,
   ],
-  exports: [RolesGuard, UsersModule, JwtModule, PassportModule],
+  exports: [RolesGuard, UsersModule, JwtModule, PassportModule, LoginThrottleService],
 })
 export class AuthModule {}

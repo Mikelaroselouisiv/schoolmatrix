@@ -1,10 +1,13 @@
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
-
-interface Bucket {
-  failures: number;
-  windowStartedAt: number;
-  lockedUntil: number;
-}
+import { InjectRepository } from '@nestjs/typeorm';
+import { In, Repository } from 'typeorm';
+import { LoginThrottle } from './login-throttle.entity';
+import {
+  applyLoginFailure,
+  emptyLoginLockState,
+  retryAfterSeconds,
+  type LoginLockState,
+} from './login-lock';
 
 const MINUTE = 60_000;
 
@@ -15,121 +18,213 @@ function envInt(name: string, fallback: number): number {
   return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
 
+export type LoginFailureResult =
+  | { kind: 'ok'; remainingAttempts: number }
+  | { kind: 'locked'; retryAfterSeconds: number; stage: number }
+  | { kind: 'blocked' };
+
 /**
- * Limitation des tentatives de connexion, en mémoire du processus.
+ * Limitation des tentatives de connexion, persistée en base.
  *
- * Volontairement indexée sur l'IDENTIFIANT saisi, pas sur l'IP : le front
- * WordPress appelle l'API depuis une seule IP serveur, une limite par IP
- * stricte bloquerait toute l'école dès qu'un parent se trompe.
+ * Indexée sur l'IDENTIFIANT saisi, pas sur l'IP : le front WordPress appelle
+ * l'API depuis une seule IP serveur.
  *
- * Un second compteur par IP existe, beaucoup plus large et désactivable
- * (LOGIN_MAX_FAILURES_PER_IP=0), pour freiner le balayage multi-comptes.
+ * Échelle par identifiant (3 essais par palier) :
+ *   1 min → 5 min → 1 h → 6 h → blocage du compte.
  *
- * Réglages (env) :
- *   LOGIN_MAX_FAILURES         défaut 5    échecs par identifiant
- *   LOGIN_WINDOW_MINUTES       défaut 15   fenêtre glissante
- *   LOGIN_LOCK_MINUTES         défaut 15   durée du blocage
- *   LOGIN_MAX_FAILURES_PER_IP  défaut 60   0 = désactivé
+ * Un second compteur par IP, beaucoup plus large (LOGIN_MAX_FAILURES_PER_IP=0
+ * pour désactiver), freine le balayage multi-comptes sans minuterie échelonnée.
  */
 @Injectable()
 export class LoginThrottleService {
   private readonly logger = new Logger(LoginThrottleService.name);
-  private readonly byLogin = new Map<string, Bucket>();
-  private readonly byIp = new Map<string, Bucket>();
-
-  private readonly maxFailures = envInt('LOGIN_MAX_FAILURES', 5);
-  private readonly windowMs = envInt('LOGIN_WINDOW_MINUTES', 15) * MINUTE;
-  private readonly lockMs = envInt('LOGIN_LOCK_MINUTES', 15) * MINUTE;
   private readonly maxFailuresPerIp = envInt('LOGIN_MAX_FAILURES_PER_IP', 60);
+  private readonly ipLockMs = envInt('LOGIN_IP_LOCK_MINUTES', 15) * MINUTE;
 
-  /** À appeler AVANT de vérifier le mot de passe. Lève 429 si bloqué. */
-  assertAllowed(login: string, ip?: string): void {
-    this.assertBucket(this.byLogin, this.key(login), this.maxFailures);
+  constructor(
+    @InjectRepository(LoginThrottle)
+    private readonly repo: Repository<LoginThrottle>,
+  ) {}
+
+  /** À appeler AVANT de vérifier le mot de passe. Lève 429 / 403 si bloqué. */
+  async assertAllowed(login: string, ip?: string): Promise<void> {
+    await this.assertLoginBucket(this.key(login));
     if (ip && this.maxFailuresPerIp > 0) {
-      this.assertBucket(this.byIp, ip, this.maxFailuresPerIp);
+      await this.assertIpBucket(this.ipKey(ip));
     }
   }
 
   /** Identifiants refusés. */
-  recordFailure(login: string, ip?: string): void {
-    this.bump(this.byLogin, this.key(login), this.maxFailures);
+  async recordFailure(login: string, ip?: string): Promise<LoginFailureResult> {
     if (ip && this.maxFailuresPerIp > 0) {
-      this.bump(this.byIp, ip, this.maxFailuresPerIp);
+      await this.bumpIp(this.ipKey(ip));
     }
+    return this.bumpLogin(this.key(login));
   }
 
   /** Mot de passe correct : on repart de zéro. */
-  recordSuccess(login: string, ip?: string): void {
-    this.byLogin.delete(this.key(login));
-    if (ip) this.byIp.delete(ip);
+  async recordSuccess(login: string, ip?: string): Promise<void> {
+    await this.repo.delete({ identifier: this.key(login) });
+    if (ip) await this.repo.delete({ identifier: this.ipKey(ip) });
+  }
+
+  /** Réactivation admin : le titulaire peut se reconnecter. */
+  async clearForUser(email?: string | null, phone?: string | null): Promise<void> {
+    const ids = [email, phone]
+      .filter((v): v is string => !!v && v.trim() !== '')
+      .map((v) => this.key(v));
+    if (!ids.length) return;
+    await this.repo.delete({ identifier: In(ids) });
   }
 
   private key(login: string): string {
     return login.trim().toLowerCase();
   }
 
-  private assertBucket(
-    store: Map<string, Bucket>,
-    key: string,
-    max: number,
-  ): void {
-    const now = Date.now();
-    const bucket = store.get(key);
-    if (!bucket) return;
-    if (bucket.lockedUntil > now) {
-      const retryAfter = Math.ceil((bucket.lockedUntil - now) / 1000);
-      throw new HttpException(
-        {
-          message:
-            'Trop de tentatives de connexion. Réessayez dans quelques minutes.',
-          error: 'Too Many Requests',
-          statusCode: HttpStatus.TOO_MANY_REQUESTS,
-          retry_after_seconds: retryAfter,
-        },
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-    if (now - bucket.windowStartedAt > this.windowMs) {
-      store.delete(key);
-      return;
-    }
-    if (bucket.failures >= max) {
-      bucket.lockedUntil = now + this.lockMs;
-      throw new HttpException(
-        {
-          message:
-            'Trop de tentatives de connexion. Réessayez dans quelques minutes.',
-          error: 'Too Many Requests',
-          statusCode: HttpStatus.TOO_MANY_REQUESTS,
-          retry_after_seconds: Math.ceil(this.lockMs / 1000),
-        },
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
+  private ipKey(ip: string): string {
+    return `ip:${ip.trim()}`;
+  }
+
+  private toState(row: LoginThrottle | null): LoginLockState {
+    if (!row) return emptyLoginLockState();
+    return {
+      stage: row.stage,
+      failures_in_stage: row.failures_in_stage,
+      locked_until: row.locked_until,
+      permanently_blocked: row.permanently_blocked,
+    };
+  }
+
+  private async save(identifier: string, state: LoginLockState): Promise<void> {
+    await this.repo.save({
+      identifier,
+      stage: state.stage,
+      failures_in_stage: state.failures_in_stage,
+      locked_until: state.locked_until,
+      permanently_blocked: state.permanently_blocked,
+    });
+  }
+
+  denyLocked(retryAfter: number, stage: number): never {
+    this.throwLocked(retryAfter, stage);
+  }
+
+  denyBlocked(): never {
+    this.throwBlocked();
+  }
+
+  private throwLocked(retryAfter: number, stage: number): never {
+    throw new HttpException(
+      {
+        message: `Trop de tentatives de connexion. Réessayez dans ${formatLockHint(retryAfter)}.`,
+        error: 'Too Many Requests',
+        statusCode: HttpStatus.TOO_MANY_REQUESTS,
+        retry_after_seconds: retryAfter,
+        lock_stage: stage,
+        permanently_blocked: false,
+      },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
+  }
+
+  private throwBlocked(): never {
+    throw new HttpException(
+      {
+        message:
+          "Compte bloqué après trop de tentatives. Contactez l'administration de l'école.",
+        error: 'Forbidden',
+        statusCode: HttpStatus.FORBIDDEN,
+        retry_after_seconds: 0,
+        permanently_blocked: true,
+      },
+      HttpStatus.FORBIDDEN,
+    );
+  }
+
+  private async assertLoginBucket(identifier: string): Promise<void> {
+    const row = await this.repo.findOne({ where: { identifier } });
+    if (!row) return;
+    if (row.permanently_blocked) this.throwBlocked();
+    const now = new Date();
+    if (row.locked_until && row.locked_until.getTime() > now.getTime()) {
+      this.throwLocked(retryAfterSeconds(row.locked_until, now), row.stage);
     }
   }
 
-  private bump(store: Map<string, Bucket>, key: string, max: number): void {
-    const now = Date.now();
-    this.prune(store, now);
-    const bucket = store.get(key);
-    if (!bucket || now - bucket.windowStartedAt > this.windowMs) {
-      store.set(key, { failures: 1, windowStartedAt: now, lockedUntil: 0 });
-      return;
-    }
-    bucket.failures += 1;
-    if (bucket.failures >= max) {
-      bucket.lockedUntil = now + this.lockMs;
-      this.logger.warn(`Connexions bloquées ${this.lockMs / MINUTE} min pour « ${key} ».`);
+  private async assertIpBucket(identifier: string): Promise<void> {
+    const row = await this.repo.findOne({ where: { identifier } });
+    if (!row) return;
+    const now = new Date();
+    if (row.locked_until && row.locked_until.getTime() > now.getTime()) {
+      this.throwLocked(retryAfterSeconds(row.locked_until, now), row.stage);
     }
   }
 
-  /** Empêche la map de grossir indéfiniment sur une longue exécution. */
-  private prune(store: Map<string, Bucket>, now: number): void {
-    if (store.size < 5000) return;
-    for (const [k, b] of store) {
-      if (b.lockedUntil <= now && now - b.windowStartedAt > this.windowMs) {
-        store.delete(k);
-      }
+  private async bumpLogin(identifier: string): Promise<LoginFailureResult> {
+    const row = await this.repo.findOne({ where: { identifier } });
+    const now = new Date();
+    if (row?.permanently_blocked) return { kind: 'blocked' };
+    if (row?.locked_until && row.locked_until.getTime() > now.getTime()) {
+      return {
+        kind: 'locked',
+        retryAfterSeconds: retryAfterSeconds(row.locked_until, now),
+        stage: row.stage,
+      };
     }
+
+    const { next, event } = applyLoginFailure(this.toState(row), now);
+    await this.save(identifier, next);
+    if (event.kind === 'blocked') {
+      this.logger.warn(`Compte bloqué (trop de connexions) pour « ${identifier} ».`);
+      return { kind: 'blocked' };
+    }
+    if (event.kind === 'locked') {
+      this.logger.warn(
+        `Connexions verrouillées ${Math.round(event.lockMs / MINUTE)} min pour « ${identifier} » (palier ${event.stage}).`,
+      );
+      return {
+        kind: 'locked',
+        retryAfterSeconds: event.retryAfterSeconds,
+        stage: event.stage,
+      };
+    }
+    return { kind: 'ok', remainingAttempts: event.remainingAttempts };
   }
+
+  private async bumpIp(identifier: string): Promise<void> {
+    const now = new Date();
+    const row = await this.repo.findOne({ where: { identifier } });
+    if (row?.locked_until && row.locked_until.getTime() > now.getTime()) return;
+    const failures = (row?.failures_in_stage ?? 0) + 1;
+    if (failures >= this.maxFailuresPerIp) {
+      await this.save(identifier, {
+        stage: 0,
+        failures_in_stage: 0,
+        locked_until: new Date(now.getTime() + this.ipLockMs),
+        permanently_blocked: false,
+      });
+      this.logger.warn(
+        `Connexions bloquées ${this.ipLockMs / MINUTE} min pour ${identifier}.`,
+      );
+      return;
+    }
+    await this.save(identifier, {
+      stage: 0,
+      failures_in_stage: failures,
+      locked_until: null,
+      permanently_blocked: false,
+    });
+  }
+}
+
+function formatLockHint(seconds: number): string {
+  if (seconds >= 3600) {
+    const h = Math.ceil(seconds / 3600);
+    return h <= 1 ? '1 heure' : `${h} heures`;
+  }
+  if (seconds >= 60) {
+    const m = Math.ceil(seconds / 60);
+    return m <= 1 ? '1 minute' : `${m} minutes`;
+  }
+  return seconds <= 1 ? '1 seconde' : `${seconds} secondes`;
 }

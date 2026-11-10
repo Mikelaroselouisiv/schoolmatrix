@@ -64,12 +64,17 @@ Android : `softwareKeyboardLayoutMode: "resize"`. Rebuild natif requis après ch
 
 ### Build APK (preview) + login cloud
 
+Un seul APK ARM universel (`armeabi-v7a` + `arm64-v8a`, pas x86 simulateur).  
+Android 10/11 32 bits et Android 13–17 64 bits installent le même fichier.
+
 ```bash
 cd apps/mobile
 npx eas-cli build -p android --profile preview
 ```
 
 Installer l’APK, se connecter → API `http://34.95.43.132`.
+
+EAS signe toujours l’APK (keystore du projet Expo). Android / Play Protect peut quand même demander « Installer quand même » hors Play Store — ce n’est pas une app non signée. Si une ancienne version debug est déjà installée, la désinstaller d’abord.
 
 ### Publier une MAJ APK (feed GCS)
 

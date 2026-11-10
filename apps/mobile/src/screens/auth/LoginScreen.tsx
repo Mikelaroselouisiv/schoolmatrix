@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Image, StyleSheet, Switch, Text, View } from 'react-native';
 import axios from 'axios';
 import { Button, ErrorBanner, PasswordField, TextField } from '../../components/ui';
@@ -6,8 +6,10 @@ import { FormScrollView } from '../../components/FormScrollView';
 import { useAuth } from '../../context/AuthContext';
 import { useSchool } from '../../context/SchoolContext';
 import { colors } from '../../theme/tokens';
+import { LoginFailedError, lockMessage } from '../../lib/loginLock';
 
 function formatLoginError(err: unknown): string {
+  if (err instanceof LoginFailedError) return err.message;
   if (axios.isAxiosError(err)) {
     if (!err.response) {
       return 'Impossible de joindre le serveur. Vérifiez votre connexion internet.';
@@ -32,15 +34,46 @@ export function LoginScreen() {
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [lockUntil, setLockUntil] = useState<number | null>(null);
+  const [permanentlyBlocked, setPermanentlyBlocked] = useState(false);
+  const [remaining, setRemaining] = useState(0);
+
+  useEffect(() => {
+    if (permanentlyBlocked || lockUntil == null) return;
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((lockUntil - Date.now()) / 1000));
+      setRemaining(left);
+      if (left <= 0) {
+        setLockUntil(null);
+        setError('');
+      }
+    };
+    tick();
+    const id = setInterval(tick, 250);
+    return () => clearInterval(id);
+  }, [lockUntil, permanentlyBlocked]);
+
+  const locked = permanentlyBlocked || (lockUntil != null && remaining > 0);
 
   async function handleSubmit() {
+    if (locked) return;
     setError('');
     setLoading(true);
     try {
       await login(loginValue, password, rememberMe);
       await refetch();
     } catch (err) {
-      setError(formatLoginError(err));
+      if (err instanceof LoginFailedError && err.permanentlyBlocked) {
+        setPermanentlyBlocked(true);
+        setLockUntil(null);
+        setError(lockMessage(0, true));
+      } else if (err instanceof LoginFailedError && err.retryAfterSeconds > 0) {
+        setLockUntil(Date.now() + err.retryAfterSeconds * 1000);
+        setRemaining(err.retryAfterSeconds);
+        setError(lockMessage(err.retryAfterSeconds, false));
+      } else {
+        setError(formatLoginError(err));
+      }
     } finally {
       setLoading(false);
     }
@@ -85,11 +118,25 @@ export function LoginScreen() {
             />
             <Text style={styles.rememberLabel}>Se souvenir de moi</Text>
           </View>
-          <ErrorBanner message={error} />
+          <ErrorBanner
+            message={
+              permanentlyBlocked
+                ? lockMessage(0, true)
+                : lockUntil != null && remaining > 0
+                  ? lockMessage(remaining, false)
+                  : error
+            }
+          />
           <Button
-            title={loading ? 'Connexion…' : 'Se connecter'}
+            title={
+              loading
+                ? 'Connexion…'
+                : locked
+                  ? 'Connexion indisponible'
+                  : 'Se connecter'
+            }
             onPress={() => void handleSubmit()}
-            disabled={loading || !loginValue.trim() || !password}
+            disabled={loading || locked || !loginValue.trim() || !password}
           />
         </View>
       </FormScrollView>

@@ -1,5 +1,6 @@
 import axios, { type AxiosRequestConfig } from 'axios';
 import { resolveApiBaseUrl } from '../config/resolve-api-base-url';
+import { LoginFailedError } from '../lib/loginLock';
 
 const TOKEN_KEY = 'token';
 
@@ -98,11 +99,18 @@ export async function login(
     return data;
   } catch (err: unknown) {
     if (axios.isAxiosError(err)) {
-      const message =
-        (err.response?.data as { message?: string } | undefined)?.message ||
-        err.message ||
-        'Identifiants invalides';
-      throw new Error(message);
+      const data = err.response?.data as {
+        message?: string;
+        retry_after_seconds?: number;
+        permanently_blocked?: boolean;
+      } | undefined;
+      const message = data?.message || err.message || 'Identifiants invalides';
+      const retry = Number(data?.retry_after_seconds);
+      throw new LoginFailedError(
+        message,
+        Number.isFinite(retry) ? Math.max(0, retry) : 0,
+        data?.permanently_blocked === true,
+      );
     }
     throw err;
   }

@@ -7,6 +7,7 @@ import { UserLinkedStudent } from './user-linked-student.entity';
 import { Role } from '../roles/role.entity';
 import { Student } from '../students/student.entity';
 import { RefreshToken } from '../auth/refresh-token.entity';
+import { LoginThrottle } from '../auth/login-throttle.entity';
 import { SyncKickService } from '../sync/sync-kick.service';
 import { SyncService } from '../sync/sync.service';
 import { DEFAULT_STAFF_EMAIL_DOMAIN, DEFAULT_STAFF_PASSWORD } from './staff-account.constants';
@@ -29,6 +30,8 @@ export class UsersService {
     private readonly studentRepo: Repository<Student>,
     @InjectRepository(RefreshToken)
     private readonly refreshTokenRepo: Repository<RefreshToken>,
+    @InjectRepository(LoginThrottle)
+    private readonly loginThrottleRepo: Repository<LoginThrottle>,
     private readonly syncKick: SyncKickService,
     private readonly syncService: SyncService,
   ) {}
@@ -316,6 +319,14 @@ export class UsersService {
     // Désactivation / MDP admin : révoque les sessions renouvelables.
     if (params.active === false) {
       await this.revokeSessions(userId, 'account_disabled');
+    }
+    if (params.active === true) {
+      const identifiers = [user.email, patch.email as string | undefined, user.phone, patch.phone as string | undefined]
+        .filter((v): v is string => typeof v === 'string' && v.trim() !== '')
+        .map((v) => v.trim().toLowerCase());
+      if (identifiers.length) {
+        await this.loginThrottleRepo.delete({ identifier: In(identifiers) });
+      }
     }
     if (params.password !== undefined && params.password.length > 0) {
       await this.revokeSessions(userId, 'password_changed');

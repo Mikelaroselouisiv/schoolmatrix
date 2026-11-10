@@ -1,10 +1,10 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Publie un APK mobile + latest.json vers GCS (feed MAJ in-app).
+  Publie un APK ARM universel + latest.json vers GCS (feed MAJ in-app).
 
 .PARAMETER ApkPath
-  Chemin vers le fichier .apk
+  APK unique (armeabi-v7a + arm64-v8a). Obligatoire.
 
 .PARAMETER Version
   Semver (ex. 1.0.1) — défaut : lu depuis apps/mobile/app.json
@@ -57,35 +57,40 @@ if (-not $Version -or $VersionCode -le 0) {
   Write-Error 'Version / versionCode manquants (passez -Version / -VersionCode ou renseignez app.json).'
 }
 
-$apkFile = Get-Item -LiteralPath $ApkPath
+$file = Get-Item -LiteralPath $ApkPath
 $destName = "SchoolMatrix-$Version+$VersionCode.apk"
-$destPrefix = "gs://$Bucket/installers/mobile/"
-$apkDest = "$destPrefix$destName"
-$publicApkUrl = "https://storage.googleapis.com/$Bucket/installers/mobile/$destName"
-
-$size = [int64]$apkFile.Length
-$sha256 = (Get-FileHash -LiteralPath $apkFile.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-$publishedAt = [DateTime]::UtcNow.ToString('o')
+$apkDest = "gs://$Bucket/installers/mobile/$destName"
+$publicUrl = "https://storage.googleapis.com/$Bucket/installers/mobile/$destName"
+$sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+$size = [int64]$file.Length
 
 Write-Host "Upload APK -> $apkDest"
-& gsutil -h "Cache-Control:public,max-age=31536000,immutable" cp $apkFile.FullName $apkDest
+& gsutil -h "Cache-Control:public,max-age=31536000,immutable" cp $file.FullName $apkDest
 if ($LASTEXITCODE -ne 0) { throw "gsutil cp APK a echoue" }
 
+$publishedAt = [DateTime]::UtcNow.ToString('o')
+# apkUrlArm* = même fichier : les installs 1.0.10 (feeds 2-APK) peuvent encore se mettre à jour.
 $manifest = [ordered]@{
-  version     = $Version
-  versionCode = $VersionCode
-  apkUrl      = $publicApkUrl
-  sha256      = $sha256
-  size        = $size
-  publishedAt = $publishedAt
-  notes       = if ($Notes) { $Notes } else { "School Matrix $Version ($VersionCode)" }
-  mandatory   = [bool]$Mandatory
+  version       = $Version
+  versionCode   = $VersionCode
+  apkUrl        = $publicUrl
+  sha256        = $sha256
+  size          = $size
+  apkUrlArm64   = $publicUrl
+  sha256Arm64   = $sha256
+  sizeArm64     = $size
+  apkUrlArmv7   = $publicUrl
+  sha256Armv7   = $sha256
+  sizeArmv7     = $size
+  publishedAt   = $publishedAt
+  notes         = if ($Notes) { $Notes } else { "School Matrix $Version ($VersionCode)" }
+  mandatory     = [bool]$Mandatory
 }
 
 $tmpJson = Join-Path ([System.IO.Path]::GetTempPath()) ("schoolmatrix-mobile-latest-{0}.json" -f [guid]::NewGuid().ToString('N'))
 ($manifest | ConvertTo-Json -Depth 5) | Set-Content -LiteralPath $tmpJson -Encoding utf8
 
-$latestDest = "${destPrefix}latest.json"
+$latestDest = "gs://$Bucket/installers/mobile/latest.json"
 Write-Host "Upload feed -> $latestDest"
 & gsutil -h "Cache-Control:no-store,max-age=0" cp $tmpJson $latestDest
 if ($LASTEXITCODE -ne 0) { throw "gsutil cp latest.json a echoue" }
@@ -93,6 +98,4 @@ Remove-Item -LiteralPath $tmpJson -Force -ErrorAction SilentlyContinue
 
 Write-Host "Termine."
 Write-Host "  Feed: https://storage.googleapis.com/$Bucket/installers/mobile/latest.json"
-Write-Host "  APK:  $publicApkUrl"
-Write-Host "  sha256: $sha256"
-Write-Host "  size: $size"
+Write-Host "  APK: $publicUrl"

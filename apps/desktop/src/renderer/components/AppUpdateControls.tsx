@@ -103,10 +103,8 @@ export function AppUpdateControls({
     state.status === 'downloaded';
 
   const buttonLabel = hasUpdate
-    ? 'Mettre à jour'
-    : variant === 'login'
-      ? `v${state.currentVersion} · Mise à jour`
-      : `v${state.currentVersion}`;
+    ? `v${state.currentVersion} · Mettre à jour`
+    : `v${state.currentVersion} · Mise à jour`;
 
   return (
     <>

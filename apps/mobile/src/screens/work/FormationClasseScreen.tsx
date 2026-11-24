@@ -53,9 +53,11 @@ const DECISION_OPTIONS = [
   { id: 'RENVOYE_DEFINITIVEMENT', label: 'Renvoyé définitivement' },
 ];
 
-const DECISION_LABEL: Record<string, string> = Object.fromEntries(
-  DECISION_OPTIONS.map((d) => [d.id, d.label]),
-);
+const DECISION_LABEL: Record<string, string> = {
+  ...Object.fromEntries(DECISION_OPTIONS.map((d) => [d.id, d.label])),
+  CAS_SPECIAL: 'Cas spécial',
+  EXPELLED: 'Expulsé',
+};
 
 export function FormationClasseScreen({}: Props) {
   const allowed = useCanAccess('formation-classe');
@@ -337,7 +339,7 @@ export function FormationClasseScreen({}: Props) {
                   <Text style={styles.editLink}>Changer de classe</Text>
                 </Pressable>
               ) : null}
-              {item.assignment_id ? (
+              {isPreschool && item.assignment_id ? (
                 <Pressable
                   onPress={() => {
                     setDecisionTarget(item);

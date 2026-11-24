@@ -1263,7 +1263,7 @@ export type PreschoolGradeRow = {
   student_name: string;
   level: string | null;
   frequency: string | null;
-  observation: string;
+  appreciation: string;
   grade_id: string | null;
   assignment_id?: string | null;
   decision?: string | null;
@@ -1548,8 +1548,8 @@ export async function saveGrades(body: {
         student_id: string;
         level?: string;
         frequency?: string;
-        observation?: string;
       }[];
+  appreciations?: { student_id: string; text?: string | null }[];
   decisions?: { assignment_id: string; decision?: string | null }[];
 }): Promise<void> {
   const path = body.preschool ? '/grades/preschool/save' : '/grades/save';
@@ -1559,6 +1559,7 @@ export async function saveGrades(body: {
     subject_id: body.subject_id,
     period_id: body.period_id,
     grades: body.grades,
+    ...(body.appreciations ? { appreciations: body.appreciations } : {}),
     ...(body.decisions ? { decisions: body.decisions } : {}),
   });
 }

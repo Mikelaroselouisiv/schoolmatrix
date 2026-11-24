@@ -40,6 +40,8 @@ import { ExamPeriodPeriodId1739000000037 } from './1739000000037-ExamPeriodPerio
 import { SchoolVacationClasses1739000000038 } from './1739000000038-SchoolVacationClasses';
 import { StudentAbsenceReset1739000000039 } from './1739000000039-StudentAbsenceReset';
 import { LoginThrottle1739000000040 } from './1739000000040-LoginThrottle';
+import { PreschoolAppreciation1739000000041 } from './1739000000041-PreschoolAppreciation';
+import { YearEndThresholds1739000000042 } from './1739000000042-YearEndThresholds';
 
 /** Liste des migrations (ordre d’exécution). Utilisée par l’app au démarrage (migrationsRun). */
 export const migrations = [
@@ -85,4 +87,6 @@ export const migrations = [
   SchoolVacationClasses1739000000038,
   StudentAbsenceReset1739000000039,
   LoginThrottle1739000000040,
+  PreschoolAppreciation1739000000041,
+  YearEndThresholds1739000000042,
 ];

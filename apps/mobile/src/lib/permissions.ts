@@ -184,6 +184,7 @@ export function canAccessPermission(
   rolePermissions?: string[],
 ): boolean {
   if (permissionKey === 'dashboard' || permissionKey === 'public') return true;
+  if (isSupervisorRole(roleName) && permissionKey === 'grades') return true;
   if (isTeacherRole(roleName) && permissionKey === 'teacher-hub') return true;
   if (isTeacherRole(roleName) && permissionKey === 'stats-academiques') return true;
   if (

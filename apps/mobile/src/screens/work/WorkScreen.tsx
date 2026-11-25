@@ -64,7 +64,7 @@ const TEACHER_OPS: {
 ];
 
 const SUPERVISOR_OPS: {
-  id: 'listes' | 'appel' | 'retards' | 'points' | 'mesures';
+  id: 'listes' | 'appel' | 'retards' | 'points' | 'mesures' | 'grades';
   label: string;
   hint: string;
   icon: keyof typeof Ionicons.glyphMap;
@@ -98,6 +98,12 @@ const SUPERVISOR_OPS: {
     label: 'Mesures',
     hint: 'Surveillance, retenue et renvoi',
     icon: 'shield-checkmark-outline',
+  },
+  {
+    id: 'grades',
+    label: 'Saisie des notes',
+    hint: 'Enregistrer les résultats',
+    icon: 'create-outline',
   },
 ];
 
@@ -385,6 +391,7 @@ export function WorkScreen({ navigation }: Props) {
                 onPress={() => {
                   if (op.id === 'listes') navigation.navigate('ClassRoster');
                   else if (op.id === 'appel') navigation.navigate('Attendance');
+                  else if (op.id === 'grades') navigation.navigate('Grades');
                   else navigation.navigate('Discipline', { tab: op.id });
                 }}
                 accessibilityRole="button"
